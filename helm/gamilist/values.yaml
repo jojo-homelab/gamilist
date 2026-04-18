@@ -1,0 +1,26 @@
+namespace: gamilist
+
+frontend:
+  image: gamilist-frontend
+  tag: latest
+  replicas: 1
+  port: 80
+
+backend:
+  image: gamilist-backend
+  tag: latest
+  replicas: 1
+  port: 5001
+
+postgres:
+  image: postgres
+  tag: "16-alpine"
+  replicas: 1
+  port: 5432
+  database: gamilist
+  user: gamilist
+  password: gamilist
+  storageSize: 1Gi
+
+ingress:
+  host: gamilist.local
