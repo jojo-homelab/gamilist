@@ -3,7 +3,10 @@ kind: Ingress
 metadata:
   name: gamilist
   namespace: {{ .Values.namespace }}
-  annotations: {}
+  annotations:
+    # Increase the max upload size for cover image uploads (default is 1MB).
+    # Adjust this value in values.yaml via ingress.maxBodySize.
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ .Values.ingress.maxBodySize | quote }}
 spec:
   ingressClassName: nginx
   rules:
