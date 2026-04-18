@@ -9,7 +9,7 @@
  *   My List   — games the user has added, filterable by status
  *   Favourites — starred games
  *   Search    — RAWG-powered game search
- *   Settings  — card size and upload button size sliders (persisted in the database)
+ *   Settings  — card size, column count, and upload button size sliders (persisted in the database via Save button)
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -321,11 +321,17 @@ function Spinner({ text = "Loading…" }) {
 /**
  * Responsive grid of GameCards.
  * Renders an empty-state message when the games array is empty.
+ *
+ * cardCount === 0 → auto-fill columns based on cardW (responsive)
+ * cardCount  >  0 → fixed number of columns regardless of viewport width
  */
-function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, emptyMsg, cardW, cardH, uploadBtnMult }) {
+function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, emptyMsg, cardW, cardH, uploadBtnMult, cardCount }) {
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
+  const cols = cardCount > 0
+    ? `repeat(${cardCount}, 1fr)`
+    : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${cardW}px, 1fr))`, gap: 20 }}>
+    <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
       {games.map(g => (
         <GameCard key={g.id} game={g} listEntry={myList[g.id] || null} cardH={cardH} uploadBtnMult={uploadBtnMult}
           onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded} />
@@ -346,6 +352,9 @@ function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUplo
  *   cardWMult     — card width multiplier (persisted in DB via /api/settings)
  *   cardHMult     — card height multiplier (persisted in DB via /api/settings)
  *   uploadBtnMult — cover upload button size multiplier (persisted in DB)
+ *   cardCount     — fixed column count; 0 = auto-fill (persisted in DB)
+ *   settingsDirty — true when sliders have been moved but not yet saved
+ *   settingsSaved — brief "Saved ✓" flash state after a successful save
  *   statusFilter  — integer status ID to filter My List, or null for all
  *   query         — current search input value
  *   searchResults — array of RAWG game objects from the last search
@@ -353,11 +362,14 @@ function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUplo
  *   backendOk     — null (loading) | true | false — drives the warning banner
  */
 export default function App() {
-  const [tab, setTab]                   = useState("mylist");
-  const [cardWMult, setCardWMult]       = useState(1.5);
-  const [cardHMult, setCardHMult]       = useState(1.5);
+  const [tab, setTab]                     = useState("mylist");
+  const [cardWMult, setCardWMult]         = useState(1.5);
+  const [cardHMult, setCardHMult]         = useState(1.5);
   const [uploadBtnMult, setUploadBtnMult] = useState(1.0);
-  const [statusFilter, setStatusFilter] = useState(null);
+  const [cardCount, setCardCount]         = useState(0);
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+  const [statusFilter, setStatusFilter]   = useState(null);
   const [query, setQuery]               = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -367,8 +379,8 @@ export default function App() {
   const [listLoading, setListLoading]   = useState(true);
   const [backendOk, setBackendOk]       = useState(null);
 
-  // Ref used to debounce settings saves — avoids a DB write on every slider tick
-  const settingsTimer = useRef(null);
+  // Ref used to clear the "Saved ✓" flash timeout on unmount
+  const savedTimer = useRef(null);
 
   // Load settings and game list from the database on first render
   useEffect(() => {
@@ -377,6 +389,7 @@ export default function App() {
         setCardWMult(s.cardWMult);
         setCardHMult(s.cardHMult);
         setUploadBtnMult(s.uploadBtnMult);
+        setCardCount(s.cardCount ?? 0);
       })
       .catch(() => {}); // non-fatal — defaults are already set in state
 
@@ -384,22 +397,28 @@ export default function App() {
       .then(data => { setMyList(data); setBackendOk(true); })
       .catch(() => setBackendOk(false))
       .finally(() => setListLoading(false));
+
+    return () => { if (savedTimer.current) clearTimeout(savedTimer.current); };
   }, []);
 
   /**
-   * Persist settings to the database after a 500ms debounce.
-   * Called on every slider change; the timer resets if the user keeps dragging
-   * so only one request fires when they stop.
+   * Persist all current settings to the database.
+   * Called explicitly when the user clicks the Save button.
+   * Shows a "Saved ✓" flash for 2 seconds after a successful save.
    */
-  const saveSettings = useCallback((patch) => {
-    if (settingsTimer.current) clearTimeout(settingsTimer.current);
-    settingsTimer.current = setTimeout(() => {
-      apiFetch("/settings", {
+  const saveSettings = useCallback(async (w, h, btn, count) => {
+    try {
+      await apiFetch("/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      }).catch(e => console.error("Failed to save settings", e));
-    }, 500);
+        body: JSON.stringify({ cardWMult: w, cardHMult: h, uploadBtnMult: btn, cardCount: count }),
+      });
+      setSettingsDirty(false);
+      setSettingsSaved(true);
+      savedTimer.current = setTimeout(() => setSettingsSaved(false), 2000);
+    } catch (e) {
+      console.error("Failed to save settings", e);
+    }
   }, []);
 
   /**
@@ -436,25 +455,37 @@ export default function App() {
 
   /**
    * Toggle the favourite flag on a list entry.
-   * When starring a game that has no rating yet, automatically sets rating to 10
-   * as a convenience (the user can change it afterwards).
+   * When starring (not un-starring):
+   *   - Status is automatically set to Played (1) since favouriting implies completion.
+   *   - Rating is set to 10 if none exists yet, as a convenience default.
    */
   const toggleFav = (id) => {
     const entry = myList[id];
     if (!entry) return;
     const wasFav = entry.favourite;
+    const starring = !wasFav;
     const next = {
       ...entry,
-      favourite: !wasFav,
-      userRating: !wasFav && entry.userRating == null ? 10 : entry.userRating,
+      favourite: starring,
+      status:    starring ? 1 : entry.status,           // auto-Played when starring
+      userRating: starring && entry.userRating == null ? 10 : entry.userRating,
     };
     setMyList(p => ({ ...p, [id]: next }));
     persist(id, next);
   };
 
-  /** Update the user's personal rating for a listed game. */
+  /**
+   * Update the user's personal rating for a listed game.
+   * Setting any non-null rating automatically marks the game as Played (1),
+   * since rating implies the user has experience with the game.
+   */
   const rateGame = (id, v) => {
-    const next = { ...myList[id], userRating: v };
+    const entry = myList[id];
+    const next = {
+      ...entry,
+      userRating: v,
+      status: v != null ? 1 : entry.status,  // auto-Played when a rating is set
+    };
     setMyList(p => ({ ...p, [id]: next }));
     persist(id, next);
   };
@@ -499,15 +530,17 @@ export default function App() {
   const cardW = Math.round(210 * cardWMult);
   const cardH = Math.round(170 * cardHMult);
 
-  const updateW = (v) => { setCardWMult(v);       saveSettings({ cardWMult: v }); };
-  const updateH = (v) => { setCardHMult(v);       saveSettings({ cardHMult: v }); };
-  const updateBtn = (v) => { setUploadBtnMult(v); saveSettings({ uploadBtnMult: v }); };
+  // Slider updaters — update live state immediately; mark dirty so Save button appears
+  const updateW   = (v) => { setCardWMult(v);       setSettingsDirty(true); };
+  const updateH   = (v) => { setCardHMult(v);       setSettingsDirty(true); };
+  const updateBtn = (v) => { setUploadBtnMult(v);   setSettingsDirty(true); };
+  const updateCount = (v) => { setCardCount(v);     setSettingsDirty(true); };
 
   // First favourited game (or any listed game) used as the Settings preview card
   const previewFav = favEntries[0] || allEntries[0] || null;
 
   // Shared props passed to every Grid to avoid prop drilling
-  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, cardW, cardH, uploadBtnMult };
+  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, cardW, cardH, uploadBtnMult, cardCount };
 
   return (
     <div style={{ minHeight: "100vh", background: "#080814", color: "#e0e0f0", fontFamily: "system-ui, -apple-system, sans-serif" }}>
@@ -591,34 +624,78 @@ export default function App() {
         {/* ── Settings tab ── */}
         {tab === "settings" && (
           <>
-            <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", marginBottom: 28 }}>Settings</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 28 }}>
+              <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff" }}>Settings</div>
+              {/* Save button — only active when sliders have been moved */}
+              <button
+                onClick={() => saveSettings(cardWMult, cardHMult, uploadBtnMult, cardCount)}
+                disabled={!settingsDirty}
+                style={{
+                  padding: "8px 20px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 13, cursor: settingsDirty ? "pointer" : "not-allowed",
+                  background: settingsSaved ? "#1a3a1a" : settingsDirty ? "#7c6ef7" : "#1a1a2e",
+                  color:      settingsSaved ? "#4caf80" : settingsDirty ? "#fff"    : "#333",
+                  transition: "all 0.2s",
+                }}>
+                {settingsSaved ? "Saved ✓" : "Save Settings"}
+              </button>
+              {settingsDirty && !settingsSaved && (
+                <span style={{ fontSize: 12, color: "#555" }}>Unsaved changes</span>
+              )}
+            </div>
+
             <div style={{ display: "flex", gap: 32, alignItems: "flex-start", flexWrap: "wrap" }}>
 
-              {/* Card size sliders */}
+              {/* ── Card Settings panel ── */}
               <div style={{ background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px", minWidth: 340 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#eeeeff", marginBottom: 20 }}>Card Size</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#eeeeff", marginBottom: 6 }}>Card Settings</div>
+                <div style={{ fontSize: 11, color: "#444", marginBottom: 20 }}>
+                  Control the dimensions of each game card and how many columns appear in the grid.
+                  Width and Height scale from a base size; Columns overrides the responsive layout
+                  with a fixed count (0 = auto-fill based on width).
+                </div>
+
                 {[
-                  { label: "Width",  value: cardWMult, onChange: updateW, color: "#7c6ef7" },
-                  { label: "Height", value: cardHMult, onChange: updateH, color: "#38bdf8" },
-                ].map(({ label, value, onChange, color }) => (
+                  { label: "Width",  value: cardWMult,  onChange: updateW,   color: "#7c6ef7", min: "0.25", max: "5",   step: "0.05", marks: ["0.25×","1×","2×","3×","5×"] },
+                  { label: "Height", value: cardHMult,  onChange: updateH,   color: "#38bdf8", min: "0.25", max: "5",   step: "0.05", marks: ["0.25×","1×","2×","3×","5×"] },
+                ].map(({ label, value, onChange, color, min, max, step, marks }) => (
                   <div key={label} style={{ marginBottom: 24 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={{ fontSize: 12, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>{label}</span>
                       <span style={{ fontSize: 12, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
                     </div>
-                    <input type="range" min="0.25" max="5" step="0.05" value={value}
+                    <input type="range" min={min} max={max} step={step} value={value}
                       onChange={e => onChange(parseFloat(e.target.value))}
                       style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
-                      <span>0.25×</span><span>1×</span><span>2×</span><span>3×</span><span>5×</span>
+                      {marks.map(m => <span key={m}>{m}</span>)}
                     </div>
                   </div>
                 ))}
+
+                {/* Columns slider — 0 means auto */}
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Columns</span>
+                    <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700 }}>
+                      {cardCount === 0 ? "Auto" : cardCount}
+                    </span>
+                  </div>
+                  <input type="range" min="0" max="8" step="1" value={cardCount}
+                    onChange={e => updateCount(parseInt(e.target.value))}
+                    style={{ width: "100%", accentColor: "#a78bfa", cursor: "pointer" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
+                    <span>Auto</span><span>2</span><span>4</span><span>6</span><span>8</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Upload button size slider */}
+              {/* ── Cover Upload Button panel ── */}
               <div style={{ background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px", minWidth: 340 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#eeeeff", marginBottom: 20 }}>Cover Upload Button</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#eeeeff", marginBottom: 6 }}>Cover Upload Button</div>
+                <div style={{ fontSize: 11, color: "#444", marginBottom: 20 }}>
+                  Adjusts the size of the  button that appears on the bottom-right of each card.
+                  Increase it if the default is too small to tap comfortably.
+                </div>
                 <div style={{ marginBottom: 24 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                     <span style={{ fontSize: 12, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Size</span>
@@ -631,19 +708,18 @@ export default function App() {
                     <span>0.5×</span><span>1×</span><span>2×</span><span>3×</span><span>4×</span>
                   </div>
                 </div>
-                <div style={{ fontSize: 11, color: "#444" }}>
-                  Controls the  button size on each game card.
-                </div>
               </div>
 
-              {/* Live preview of the current card size */}
+              {/* ── Live preview — reflects all current slider values ── */}
               <div>
                 <div style={{ fontSize: 12, color: "#555", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Preview</div>
                 <div style={{ width: cardW }}>
                   {previewFav
-                    ? <GameCard game={previewFav.game} listEntry={previewFav} cardH={cardH}
+                    ? <GameCard game={previewFav.game} listEntry={previewFav} cardH={cardH} uploadBtnMult={uploadBtnMult}
                         onAdd={addToList} onRemove={removeFromList} onToggleFav={toggleFav} onRate={rateGame} onCoverUploaded={handleCoverUploaded} />
-                    : <div style={{ height: cardH + 120, background: "#0c0c1c", border: "1px dashed #1a1a2e", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "#333", fontSize: 12 }}>Add a game to preview</div>
+                    : <div style={{ height: cardH + 120, background: "#0c0c1c", border: "1px dashed #1a1a2e", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "#333", fontSize: 12 }}>
+                        Add a game to your list to preview
+                      </div>
                   }
                 </div>
               </div>

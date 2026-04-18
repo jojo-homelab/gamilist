@@ -80,6 +80,7 @@ def init_db():
       card_w_mult     — Card width multiplier (default 1.5)
       card_h_mult     — Card height multiplier (default 1.5)
       upload_btn_mult — Cover upload button size multiplier (default 1.0)
+      card_count      — Fixed grid column count; 0 means auto-fill (default 0)
     """
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -99,11 +100,16 @@ def init_db():
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS settings (
                     id              INTEGER PRIMARY KEY DEFAULT 1,
-                    card_w_mult     REAL NOT NULL DEFAULT 1.5,
-                    card_h_mult     REAL NOT NULL DEFAULT 1.5,
-                    upload_btn_mult REAL NOT NULL DEFAULT 1.0,
+                    card_w_mult     REAL    NOT NULL DEFAULT 1.5,
+                    card_h_mult     REAL    NOT NULL DEFAULT 1.5,
+                    upload_btn_mult REAL    NOT NULL DEFAULT 1.0,
+                    card_count      INTEGER NOT NULL DEFAULT 0,
                     CONSTRAINT single_row CHECK (id = 1)
                 )
+            """)
+            # Migrate existing settings rows that pre-date the card_count column
+            cur.execute("""
+                ALTER TABLE settings ADD COLUMN IF NOT EXISTS card_count INTEGER NOT NULL DEFAULT 0
             """)
 
 
@@ -156,9 +162,10 @@ def get_settings():
             "cardWMult":     row["card_w_mult"],
             "cardHMult":     row["card_h_mult"],
             "uploadBtnMult": row["upload_btn_mult"],
+            "cardCount":     row["card_count"],
         })
     # No row yet — return defaults so the frontend has something to work with
-    return jsonify({"cardWMult": 1.5, "cardHMult": 1.5, "uploadBtnMult": 1.0})
+    return jsonify({"cardWMult": 1.5, "cardHMult": 1.5, "uploadBtnMult": 1.0, "cardCount": 0})
 
 
 @app.route("/api/settings", methods=["PUT"])
@@ -181,26 +188,30 @@ def put_settings():
     card_w_mult     = body.get("cardWMult")
     card_h_mult     = body.get("cardHMult")
     upload_btn_mult = body.get("uploadBtnMult")
+    card_count      = body.get("cardCount")
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
-                INSERT INTO settings (id, card_w_mult, card_h_mult, upload_btn_mult)
+                INSERT INTO settings (id, card_w_mult, card_h_mult, upload_btn_mult, card_count)
                 VALUES (1,
                     COALESCE(%s, 1.5),
                     COALESCE(%s, 1.5),
-                    COALESCE(%s, 1.0))
+                    COALESCE(%s, 1.0),
+                    COALESCE(%s, 0))
                 ON CONFLICT (id) DO UPDATE SET
                     card_w_mult     = COALESCE(EXCLUDED.card_w_mult,     settings.card_w_mult),
                     card_h_mult     = COALESCE(EXCLUDED.card_h_mult,     settings.card_h_mult),
-                    upload_btn_mult = COALESCE(EXCLUDED.upload_btn_mult, settings.upload_btn_mult)
+                    upload_btn_mult = COALESCE(EXCLUDED.upload_btn_mult, settings.upload_btn_mult),
+                    card_count      = COALESCE(EXCLUDED.card_count,      settings.card_count)
                 RETURNING *
-            """, (card_w_mult, card_h_mult, upload_btn_mult))
+            """, (card_w_mult, card_h_mult, upload_btn_mult, card_count))
             row = cur.fetchone()
     return jsonify({
         "cardWMult":     row["card_w_mult"],
         "cardHMult":     row["card_h_mult"],
         "uploadBtnMult": row["upload_btn_mult"],
+        "cardCount":     row["card_count"],
     })
 
 
