@@ -56,12 +56,16 @@ def get_db():
 
 def init_db():
     """
-    Create the 'entries' table if it does not already exist.
+    Create all required tables if they do not already exist.
 
-    Called once at startup. The table stores one row per game the user has
-    added to their list, keyed on RAWG's numeric game_id.
+    Called once at startup.
 
-    Columns:
+    Tables:
+      entries  — One row per game the user has added to their list.
+      settings — Single-row table storing UI preferences (card size, upload button size).
+                 Enforced to one row via CHECK (id = 1) and a DEFAULT 1 primary key.
+
+    entries columns:
       game_id     — RAWG game ID (primary key)
       game_data   — Full RAWG game object stored as JSONB (name, cover URL, genres, etc.)
       status      — Integer index into the STATUSES list in the frontend (0–6)
@@ -71,6 +75,11 @@ def init_db():
       cover_mime  — MIME type of the cover image (e.g. "image/jpeg")
       created_at  — Row insertion timestamp
       updated_at  — Last modification timestamp (used for list ordering)
+
+    settings columns:
+      card_w_mult     — Card width multiplier (default 1.5)
+      card_h_mult     — Card height multiplier (default 1.5)
+      upload_btn_mult — Cover upload button size multiplier (default 1.0)
     """
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -85,6 +94,15 @@ def init_db():
                     cover_mime  TEXT,
                     created_at  TIMESTAMPTZ DEFAULT NOW(),
                     updated_at  TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    id              INTEGER PRIMARY KEY DEFAULT 1,
+                    card_w_mult     REAL NOT NULL DEFAULT 1.5,
+                    card_h_mult     REAL NOT NULL DEFAULT 1.5,
+                    upload_btn_mult REAL NOT NULL DEFAULT 1.0,
+                    CONSTRAINT single_row CHECK (id = 1)
                 )
             """)
 
@@ -110,6 +128,80 @@ def row_to_entry(row):
         "favourite":  row["favourite"],
         "hasCover":   row["cover_image"] is not None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Settings routes
+# ---------------------------------------------------------------------------
+
+@app.route("/api/settings", methods=["GET"])
+def get_settings():
+    """
+    Return the current UI settings row.
+
+    If no settings row exists yet (first launch), returns the default values
+    without writing anything to the database — the row is created on first PUT.
+
+    Returns JSON:
+      cardWMult     — card width multiplier
+      cardHMult     — card height multiplier
+      uploadBtnMult — upload button size multiplier
+    """
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM settings WHERE id = 1")
+            row = cur.fetchone()
+    if row:
+        return jsonify({
+            "cardWMult":     row["card_w_mult"],
+            "cardHMult":     row["card_h_mult"],
+            "uploadBtnMult": row["upload_btn_mult"],
+        })
+    # No row yet — return defaults so the frontend has something to work with
+    return jsonify({"cardWMult": 1.5, "cardHMult": 1.5, "uploadBtnMult": 1.0})
+
+
+@app.route("/api/settings", methods=["PUT"])
+def put_settings():
+    """
+    Create or update the UI settings row (upsert).
+
+    Accepts a partial body — only the keys present are updated.
+    Missing keys fall back to their current database values via COALESCE,
+    so callers don't need to send the full object on every change.
+
+    Request body (JSON, all optional):
+      cardWMult     — card width multiplier
+      cardHMult     — card height multiplier
+      uploadBtnMult — upload button size multiplier
+
+    Returns the full updated settings object.
+    """
+    body = request.get_json()
+    card_w_mult     = body.get("cardWMult")
+    card_h_mult     = body.get("cardHMult")
+    upload_btn_mult = body.get("uploadBtnMult")
+
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                INSERT INTO settings (id, card_w_mult, card_h_mult, upload_btn_mult)
+                VALUES (1,
+                    COALESCE(%s, 1.5),
+                    COALESCE(%s, 1.5),
+                    COALESCE(%s, 1.0))
+                ON CONFLICT (id) DO UPDATE SET
+                    card_w_mult     = COALESCE(EXCLUDED.card_w_mult,     settings.card_w_mult),
+                    card_h_mult     = COALESCE(EXCLUDED.card_h_mult,     settings.card_h_mult),
+                    upload_btn_mult = COALESCE(EXCLUDED.upload_btn_mult, settings.upload_btn_mult)
+                RETURNING *
+            """, (card_w_mult, card_h_mult, upload_btn_mult))
+            row = cur.fetchone()
+    return jsonify({
+        "cardWMult":     row["card_w_mult"],
+        "cardHMult":     row["card_h_mult"],
+        "uploadBtnMult": row["upload_btn_mult"],
+    })
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@
  *   My List   — games the user has added, filterable by status
  *   Favourites — starred games
  *   Search    — RAWG-powered game search
- *   Settings  — card size sliders (persisted in localStorage)
+ *   Settings  — card size and upload button size sliders (persisted in the database)
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -113,10 +113,15 @@ function RatingInput({ value, onChange }) {
 
 /**
  * Hidden file input that uploads a custom cover image to the backend.
- * Renders as a small camera button overlaid on the bottom-right of the card image.
+ * Renders as a camera button overlaid on the bottom-right of the card image.
  * After a successful upload, calls onUploaded() so the parent can refresh the cover.
+ *
+ * Props:
+ *   gameId      — ID of the game entry to attach the cover to
+ *   onUploaded  — callback fired after a successful upload
+ *   sizeMult    — multiplier controlling the button's font size and padding (default 1)
  */
-function CoverUpload({ gameId, onUploaded }) {
+function CoverUpload({ gameId, onUploaded, sizeMult = 1 }) {
   const ref = useRef();
   const [uploading, setUploading] = useState(false);
 
@@ -139,7 +144,13 @@ function CoverUpload({ gameId, onUploaded }) {
     <>
       <input ref={ref} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
       <button onClick={() => ref.current.click()} disabled={uploading}
-        style={{ position: "absolute", bottom: 8, right: 8, background: "rgba(0,0,0,0.7)", border: "1px solid #333", borderRadius: 6, padding: "3px 8px", color: uploading ? "#555" : "#aaa", cursor: "pointer", fontSize: 10 }}>
+        style={{
+          position: "absolute", bottom: 8, right: 8,
+          background: "rgba(0,0,0,0.7)", border: "1px solid #333", borderRadius: 6,
+          padding: `${3 * sizeMult}px ${8 * sizeMult}px`,
+          color: uploading ? "#555" : "#aaa", cursor: "pointer",
+          fontSize: Math.round(10 * sizeMult),
+        }}>
         {uploading ? "…" : ""}
       </button>
     </>
@@ -167,8 +178,9 @@ function CoverUpload({ gameId, onUploaded }) {
  *   onRate          — (gameId, rating) => void
  *   onCoverUploaded — (gameId) => void
  *   cardH           — card image height in pixels
+ *   uploadBtnMult   — size multiplier forwarded to CoverUpload
  */
-function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, cardH = 255 }) {
+function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, cardH = 255, uploadBtnMult = 1 }) {
   const [hover, setHover]       = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [imgErr, setImgErr]     = useState(false);
@@ -229,7 +241,7 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
         )}
 
         {/* Cover upload button — bottom-right corner, only for listed games */}
-        {listEntry && <CoverUpload gameId={game.id} onUploaded={handleCoverUploaded} />}
+        {listEntry && <CoverUpload gameId={game.id} onUploaded={handleCoverUploaded} sizeMult={uploadBtnMult} />}
       </div>
 
       {/* Card body */}
@@ -310,12 +322,12 @@ function Spinner({ text = "Loading…" }) {
  * Responsive grid of GameCards.
  * Renders an empty-state message when the games array is empty.
  */
-function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, emptyMsg, cardW, cardH }) {
+function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, emptyMsg, cardW, cardH, uploadBtnMult }) {
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
   return (
     <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${cardW}px, 1fr))`, gap: 20 }}>
       {games.map(g => (
-        <GameCard key={g.id} game={g} listEntry={myList[g.id] || null} cardH={cardH}
+        <GameCard key={g.id} game={g} listEntry={myList[g.id] || null} cardH={cardH} uploadBtnMult={uploadBtnMult}
           onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded} />
       ))}
     </div>
@@ -331,8 +343,9 @@ function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUplo
  *
  * State:
  *   tab           — active tab ("mylist" | "favs" | "search" | "settings")
- *   cardWMult     — card width multiplier (persisted in localStorage)
- *   cardHMult     — card height multiplier (persisted in localStorage)
+ *   cardWMult     — card width multiplier (persisted in DB via /api/settings)
+ *   cardHMult     — card height multiplier (persisted in DB via /api/settings)
+ *   uploadBtnMult — cover upload button size multiplier (persisted in DB)
  *   statusFilter  — integer status ID to filter My List, or null for all
  *   query         — current search input value
  *   searchResults — array of RAWG game objects from the last search
@@ -341,8 +354,9 @@ function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUplo
  */
 export default function App() {
   const [tab, setTab]                   = useState("mylist");
-  const [cardWMult, setCardWMult]       = useState(() => parseFloat(localStorage.getItem("cardWMult") || "1.5"));
-  const [cardHMult, setCardHMult]       = useState(() => parseFloat(localStorage.getItem("cardHMult") || "1.5"));
+  const [cardWMult, setCardWMult]       = useState(1.5);
+  const [cardHMult, setCardHMult]       = useState(1.5);
+  const [uploadBtnMult, setUploadBtnMult] = useState(1.0);
   const [statusFilter, setStatusFilter] = useState(null);
   const [query, setQuery]               = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -353,12 +367,39 @@ export default function App() {
   const [listLoading, setListLoading]   = useState(true);
   const [backendOk, setBackendOk]       = useState(null);
 
-  // Load the full game list from the database on first render
+  // Ref used to debounce settings saves — avoids a DB write on every slider tick
+  const settingsTimer = useRef(null);
+
+  // Load settings and game list from the database on first render
   useEffect(() => {
+    apiFetch("/settings")
+      .then(s => {
+        setCardWMult(s.cardWMult);
+        setCardHMult(s.cardHMult);
+        setUploadBtnMult(s.uploadBtnMult);
+      })
+      .catch(() => {}); // non-fatal — defaults are already set in state
+
     apiFetch("/list")
       .then(data => { setMyList(data); setBackendOk(true); })
       .catch(() => setBackendOk(false))
       .finally(() => setListLoading(false));
+  }, []);
+
+  /**
+   * Persist settings to the database after a 500ms debounce.
+   * Called on every slider change; the timer resets if the user keeps dragging
+   * so only one request fires when they stop.
+   */
+  const saveSettings = useCallback((patch) => {
+    if (settingsTimer.current) clearTimeout(settingsTimer.current);
+    settingsTimer.current = setTimeout(() => {
+      apiFetch("/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      }).catch(e => console.error("Failed to save settings", e));
+    }, 500);
   }, []);
 
   /**
@@ -458,14 +499,15 @@ export default function App() {
   const cardW = Math.round(210 * cardWMult);
   const cardH = Math.round(170 * cardHMult);
 
-  const updateW = (v) => { setCardWMult(v); localStorage.setItem("cardWMult", v); };
-  const updateH = (v) => { setCardHMult(v); localStorage.setItem("cardHMult", v); };
+  const updateW = (v) => { setCardWMult(v);       saveSettings({ cardWMult: v }); };
+  const updateH = (v) => { setCardHMult(v);       saveSettings({ cardHMult: v }); };
+  const updateBtn = (v) => { setUploadBtnMult(v); saveSettings({ uploadBtnMult: v }); };
 
   // First favourited game (or any listed game) used as the Settings preview card
   const previewFav = favEntries[0] || allEntries[0] || null;
 
   // Shared props passed to every Grid to avoid prop drilling
-  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, cardW, cardH };
+  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, cardW, cardH, uploadBtnMult };
 
   return (
     <div style={{ minHeight: "100vh", background: "#080814", color: "#e0e0f0", fontFamily: "system-ui, -apple-system, sans-serif" }}>
@@ -572,6 +614,26 @@ export default function App() {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* Upload button size slider */}
+              <div style={{ background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px", minWidth: 340 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#eeeeff", marginBottom: 20 }}>Cover Upload Button</div>
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Size</span>
+                    <span style={{ fontSize: 12, color: "#e6a63a", fontWeight: 700 }}>{uploadBtnMult.toFixed(1)}×</span>
+                  </div>
+                  <input type="range" min="0.5" max="4" step="0.05" value={uploadBtnMult}
+                    onChange={e => updateBtn(parseFloat(e.target.value))}
+                    style={{ width: "100%", accentColor: "#e6a63a", cursor: "pointer" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
+                    <span>0.5×</span><span>1×</span><span>2×</span><span>3×</span><span>4×</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: "#444" }}>
+                  Controls the  button size on each game card.
+                </div>
               </div>
 
               {/* Live preview of the current card size */}
