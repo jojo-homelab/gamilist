@@ -81,6 +81,7 @@ def init_db():
       card_h_mult     — Card height multiplier (default 1.5)
       upload_btn_mult — Cover upload button size multiplier (default 1.0)
       card_count      — Fixed grid column count; 0 means auto-fill (default 0)
+      upload_btn_text — Optional label shown on the upload button (default empty → shows emoji)
     """
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -107,10 +108,9 @@ def init_db():
                     CONSTRAINT single_row CHECK (id = 1)
                 )
             """)
-            # Migrate existing settings rows that pre-date the card_count column
-            cur.execute("""
-                ALTER TABLE settings ADD COLUMN IF NOT EXISTS card_count INTEGER NOT NULL DEFAULT 0
-            """)
+            # Migrate existing rows that pre-date newer columns
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS card_count      INTEGER NOT NULL DEFAULT 0")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS upload_btn_text TEXT    NOT NULL DEFAULT ''")
 
 
 init_db()
@@ -163,9 +163,10 @@ def get_settings():
             "cardHMult":     row["card_h_mult"],
             "uploadBtnMult": row["upload_btn_mult"],
             "cardCount":     row["card_count"],
+            "uploadBtnText": row["upload_btn_text"],
         })
     # No row yet — return defaults so the frontend has something to work with
-    return jsonify({"cardWMult": 1.5, "cardHMult": 1.5, "uploadBtnMult": 1.0, "cardCount": 0})
+    return jsonify({"cardWMult": 1.5, "cardHMult": 1.5, "uploadBtnMult": 1.0, "cardCount": 0, "uploadBtnText": ""})
 
 
 @app.route("/api/settings", methods=["PUT"])
@@ -189,29 +190,33 @@ def put_settings():
     card_h_mult     = body.get("cardHMult")
     upload_btn_mult = body.get("uploadBtnMult")
     card_count      = body.get("cardCount")
+    upload_btn_text = body.get("uploadBtnText")  # None means "don't change"
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
-                INSERT INTO settings (id, card_w_mult, card_h_mult, upload_btn_mult, card_count)
+                INSERT INTO settings (id, card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text)
                 VALUES (1,
                     COALESCE(%s, 1.5),
                     COALESCE(%s, 1.5),
                     COALESCE(%s, 1.0),
-                    COALESCE(%s, 0))
+                    COALESCE(%s, 0),
+                    COALESCE(%s, ''))
                 ON CONFLICT (id) DO UPDATE SET
                     card_w_mult     = COALESCE(EXCLUDED.card_w_mult,     settings.card_w_mult),
                     card_h_mult     = COALESCE(EXCLUDED.card_h_mult,     settings.card_h_mult),
                     upload_btn_mult = COALESCE(EXCLUDED.upload_btn_mult, settings.upload_btn_mult),
-                    card_count      = COALESCE(EXCLUDED.card_count,      settings.card_count)
+                    card_count      = COALESCE(EXCLUDED.card_count,      settings.card_count),
+                    upload_btn_text = COALESCE(EXCLUDED.upload_btn_text, settings.upload_btn_text)
                 RETURNING *
-            """, (card_w_mult, card_h_mult, upload_btn_mult, card_count))
+            """, (card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text))
             row = cur.fetchone()
     return jsonify({
         "cardWMult":     row["card_w_mult"],
         "cardHMult":     row["card_h_mult"],
         "uploadBtnMult": row["upload_btn_mult"],
         "cardCount":     row["card_count"],
+        "uploadBtnText": row["upload_btn_text"],
     })
 
 
