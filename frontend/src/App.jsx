@@ -342,34 +342,37 @@ function SteamLibrarySection({ library, steamMappings, myList, onImport, onRefre
   };
 
   // Initialise selections whenever the library or mappings change.
-  // Played games are matched to the closest-rated non-skip mapping by playtime tier.
+  // Played games are ranked by playtime and distributed proportionally across
+  // rated mappings (highest playtime → top mapping). This ensures every tier,
+  // including Favourites, always gets coverage regardless of absolute hours.
   useEffect(() => {
     if (!library) return;
     const ratedMappings = (steamMappings || [])
       .filter(m => !m.skip && resolveRating(m) !== null)
       .sort((a, b) => resolveRating(b) - resolveRating(a)); // highest first
 
-    const suggestMapping = (playtime) => {
-      if (!ratedMappings.length || playtime === 0) return null;
-      const h = playtime / 60;
-      // Map hours to a target index in the sorted list
-      let idx;
-      if      (h >= 200) idx = 0;
-      else if (h >= 50)  idx = Math.floor(ratedMappings.length * 0.15);
-      else if (h >= 10)  idx = Math.floor(ratedMappings.length * 0.35);
-      else if (h >= 3)   idx = Math.floor(ratedMappings.length * 0.55);
-      else               idx = Math.floor(ratedMappings.length * 0.75);
-      return ratedMappings[Math.min(idx, ratedMappings.length - 1)];
-    };
-
     const init = {};
-    for (const g of library.games) {
-      if (g.gamilist_id) continue;
-      const mapping = suggestMapping(g.playtime_forever);
-      init[g.appid] = mapping
-        ? { checked: true, status: mapping.status, rating: resolveRating(mapping) }
-        : { checked: true, status: g.playtime_forever > 0 ? 1 : 3, rating: null };
+
+    if (ratedMappings.length) {
+      // Sort new played games by playtime descending to assign tiers
+      const playedNew = library.games
+        .filter(g => !g.gamilist_id && g.playtime_forever > 0)
+        .sort((a, b) => b.playtime_forever - a.playtime_forever);
+
+      playedNew.forEach((g, rank) => {
+        const pct = rank / playedNew.length; // 0 = most played, approaches 1
+        const idx = Math.min(Math.floor(pct * ratedMappings.length), ratedMappings.length - 1);
+        const mapping = ratedMappings[idx];
+        init[g.appid] = { checked: true, status: mapping.status, rating: resolveRating(mapping) };
+      });
     }
+
+    // Unplayed or no mappings defined
+    for (const g of library.games) {
+      if (g.gamilist_id || init[g.appid]) continue;
+      init[g.appid] = { checked: true, status: g.playtime_forever > 0 ? 1 : 3, rating: null };
+    }
+
     setSelections(init);
   }, [library, steamMappings]);
 
@@ -777,19 +780,17 @@ export default function App() {
 
   // Helpers for mapping table
   const DEFAULT_MAPPINGS = [
-    { pattern: "Favourites",              status: 1, skip: false, defaultRating: 10  },
-    { pattern: "(10) Masterpiece",        status: 1, skip: false, defaultRating: 10  },
-    { pattern: "(9.5) Freaking Amazing",  status: 1, skip: false, defaultRating: 9.5 },
-    { pattern: "(9) Excellent",           status: 1, skip: false, defaultRating: 9   },
-    { pattern: "(8.5) Amazing",           status: 1, skip: false, defaultRating: 8.5 },
-    { pattern: "(8) Great",               status: 1, skip: false, defaultRating: 8   },
-    { pattern: "(7.5) Very Good",         status: 1, skip: false, defaultRating: 7.5 },
-    { pattern: "(7) Good",                status: 1, skip: false, defaultRating: 7   },
-    { pattern: "(6.5) Decent",            status: 1, skip: false, defaultRating: 6.5 },
-    { pattern: "(6) Fine",                status: 1, skip: false, defaultRating: 6   },
-    { pattern: "(5.5) Mixed",             status: 1, skip: false, defaultRating: 5.5 },
-    { pattern: "(5) Average",             status: 1, skip: false, defaultRating: 5   },
-    { pattern: "(1-2) Dropped",           status: 6, skip: false, defaultRating: 5   },
+    { pattern: "Favourites",             status: 1, skip: false, defaultRating: 10  },
+    { pattern: "(9.5) Freaking Amazing", status: 1, skip: false, defaultRating: 9.5 },
+    { pattern: "(9) Excellent",          status: 1, skip: false, defaultRating: 9   },
+    { pattern: "(8.5) Amazing",          status: 1, skip: false, defaultRating: 8.5 },
+    { pattern: "(8) Great",              status: 1, skip: false, defaultRating: 8   },
+    { pattern: "(7.5) Very Good",        status: 1, skip: false, defaultRating: 7.5 },
+    { pattern: "(7) Good",              status: 1, skip: false, defaultRating: 7   },
+    { pattern: "(6.5) Decent",           status: 1, skip: false, defaultRating: 6.5 },
+    { pattern: "(6) Fine",               status: 1, skip: false, defaultRating: 6   },
+    { pattern: "(5) Average",            status: 1, skip: false, defaultRating: 5   },
+    { pattern: "(1-5) Dropped",          status: 6, skip: false, defaultRating: 5   },
   ].map((m, i) => ({ ...m, id: i + 1 }));
 
   const dragMappingIdx = useRef(null);
