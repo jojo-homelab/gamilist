@@ -790,7 +790,7 @@ export default function App() {
     { pattern: "(6.5) Decent",           status: 1, skip: false, defaultRating: 6.5 },
     { pattern: "(6) Fine",               status: 1, skip: false, defaultRating: 6   },
     { pattern: "(5) Average",            status: 1, skip: false, defaultRating: 5   },
-    { pattern: "(1-5) Dropped",          status: 6, skip: false, defaultRating: 5   },
+    { pattern: "(1-5) Dropped",           status: 6, skip: false, defaultRating: 2   },
   ].map((m, i) => ({ ...m, id: i + 1 }));
 
   const dragMappingIdx = useRef(null);
