@@ -298,7 +298,7 @@ function GlowRow({ rank, label, enabled, color, onToggle, onColor }) {
  */
 function MappingRow({ mapping, onChange, onDelete }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 130px 54px auto auto", gap: 8, alignItems: "center", marginBottom: 8 }}>
+    <>
       <input type="text" value={mapping.pattern} onChange={e => onChange({ ...mapping, pattern: e.target.value })}
         placeholder="e.g. Favourites  or  (8) Great"
         style={{ background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }} />
@@ -318,7 +318,7 @@ function MappingRow({ mapping, onChange, onDelete }) {
         Skip
       </label>
       <button onClick={onDelete} style={{ background: "transparent", border: "1px solid #2a2a40", borderRadius: 5, color: "#555", cursor: "pointer", padding: "4px 8px", fontSize: 12, fontFamily: "inherit" }}>×</button>
-    </div>
+    </>
   );
 }
 
@@ -329,7 +329,7 @@ function MappingRow({ mapping, onChange, onDelete }) {
  * Status is pre-filled based on playtime (>0 → Played, 0 → Backlog).
  * The "(N)" pattern in the user's mapping list is used to auto-fill ratings.
  */
-function SteamLibrarySection({ library, steamMappings, tagsByAppid, myList, onImport, onRefresh }) {
+function SteamLibrarySection({ library, steamMappings, myList, onImport, onRefresh }) {
   const [filter, setFilter]           = useState("new");  // "new" | "all"
   const [selections, setSelections]   = useState({});
   const [importing, setImporting]     = useState(false);
@@ -341,38 +341,37 @@ function SteamLibrarySection({ library, steamMappings, tagsByAppid, myList, onIm
     return m ? parseFloat(m[1]) : null;
   };
 
-  // Find best matching mapping for a set of Steam tags
-  const findMapping = (tags) => {
-    if (!tags?.length || !steamMappings?.length) return null;
-    for (const tag of tags) {
-      const exact = steamMappings.find(m => !m.skip && m.pattern && m.pattern.toLowerCase() === tag.toLowerCase());
-      if (exact) return exact;
-    }
-    for (const tag of tags) {
-      const partial = steamMappings.find(m => !m.skip && m.pattern && (
-        tag.toLowerCase().includes(m.pattern.toLowerCase()) || m.pattern.toLowerCase().includes(tag.toLowerCase())
-      ));
-      if (partial) return partial;
-    }
-    return null;
-  };
-
-  // Initialise selections whenever the library or tag data changes
+  // Initialise selections whenever the library or mappings change.
+  // Played games are matched to the closest-rated non-skip mapping by playtime tier.
   useEffect(() => {
     if (!library) return;
+    const ratedMappings = (steamMappings || [])
+      .filter(m => !m.skip && resolveRating(m) !== null)
+      .sort((a, b) => resolveRating(b) - resolveRating(a)); // highest first
+
+    const suggestMapping = (playtime) => {
+      if (!ratedMappings.length || playtime === 0) return null;
+      const h = playtime / 60;
+      // Map hours to a target index in the sorted list
+      let idx;
+      if      (h >= 200) idx = 0;
+      else if (h >= 50)  idx = Math.floor(ratedMappings.length * 0.15);
+      else if (h >= 10)  idx = Math.floor(ratedMappings.length * 0.35);
+      else if (h >= 3)   idx = Math.floor(ratedMappings.length * 0.55);
+      else               idx = Math.floor(ratedMappings.length * 0.75);
+      return ratedMappings[Math.min(idx, ratedMappings.length - 1)];
+    };
+
     const init = {};
     for (const g of library.games) {
       if (g.gamilist_id) continue;
-      const tags = tagsByAppid?.[String(g.appid)] ?? [];
-      const mapping = findMapping(tags);
-      if (mapping) {
-        init[g.appid] = { checked: true, status: mapping.status, rating: resolveRating(mapping) };
-      } else {
-        init[g.appid] = { checked: true, status: g.playtime_forever > 0 ? 1 : 3, rating: null };
-      }
+      const mapping = suggestMapping(g.playtime_forever);
+      init[g.appid] = mapping
+        ? { checked: true, status: mapping.status, rating: resolveRating(mapping) }
+        : { checked: true, status: g.playtime_forever > 0 ? 1 : 3, rating: null };
     }
     setSelections(init);
-  }, [library, tagsByAppid, steamMappings]);
+  }, [library, steamMappings]);
 
   if (!library) return null;
 
@@ -421,15 +420,9 @@ function SteamLibrarySection({ library, steamMappings, tagsByAppid, myList, onIm
   return (
     <div style={{ marginTop: 24 }}>
       {/* Summary bar */}
-      {(() => {
-        const autoCategorized = tagsByAppid
-          ? library.games.filter(g => !g.gamilist_id && findMapping(tagsByAppid[String(g.appid)] ?? [])).length
-          : 0;
-        return (
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
         <span style={{ fontSize: 13, color: "#888" }}>
           {library.total} games total · {library.games.filter(g => g.gamilist_id).length} already in GamiList · {library.games.filter(g => !g.gamilist_id).length} new
-          {autoCategorized > 0 && <span style={{ color: "#4caf80", marginLeft: 8 }}>· {autoCategorized} auto-categorized</span>}
         </span>
         <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
           {["new", "all"].map(f => (
@@ -440,8 +433,6 @@ function SteamLibrarySection({ library, steamMappings, tagsByAppid, myList, onIm
           ))}
         </div>
       </div>
-        );
-      })()}
 
       {/* Import controls */}
       {filter === "new" && displayed.length > 0 && (
@@ -494,27 +485,12 @@ function SteamLibrarySection({ library, steamMappings, tagsByAppid, myList, onIm
                   <span style={{ fontSize: 11, color: "#444", whiteSpace: "nowrap", minWidth: 36, textAlign: "right" }}>{formatHours(g.playtime_forever)}</span>
                   {!inList && (
                     <>
-                      {steamMappings.filter(m => !m.skip).length > 0 && (
-                        <select defaultValue="" onChange={e => {
-                          const i = parseInt(e.target.value);
-                          if (isNaN(i)) return;
-                          const m = steamMappings[i];
-                          const rating = resolveRating(m);
-                          setSelections(p => ({ ...p, [g.appid]: { ...p[g.appid], status: m.status, ...(rating !== null ? { rating } : {}) } }));
-                          e.target.value = "";
-                        }} style={{ background: "#0a0a14", border: "1px solid #2a2a50", borderRadius: 5, padding: "3px 6px", color: "#7c6ef7", fontSize: 11, fontFamily: "inherit", outline: "none" }}>
-                          <option value="" disabled>Category…</option>
-                          {steamMappings.map((m, i) => !m.skip && <option key={i} value={i}>{m.pattern}</option>)}
-                        </select>
-                      )}
-                      <select value={sel.status ?? 1}
-                        onChange={e => setSelections(p => ({ ...p, [g.appid]: { ...p[g.appid], status: parseInt(e.target.value) } }))}
-                        style={{ background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 5, padding: "3px 6px", color: STATUSES[sel.status ?? 1]?.color || "#e0e0f0", fontSize: 11, fontFamily: "inherit", outline: "none" }}>
-                        {STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                      </select>
-                      <input type="number" min="0" max="10" step="0.5" placeholder="–" value={sel.rating ?? ""}
-                        onChange={e => setSelections(p => ({ ...p, [g.appid]: { ...p[g.appid], rating: e.target.value ? parseFloat(e.target.value) : null } }))}
-                        style={{ width: 46, background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 5, padding: "3px 6px", color: "#e6a63a", fontSize: 11, fontFamily: "inherit", outline: "none" }} />
+                      <span style={{ fontSize: 11, fontWeight: 600, color: STATUSES[sel.status ?? 3]?.color || "#555", whiteSpace: "nowrap", minWidth: 80, textAlign: "right" }}>
+                        {STATUSES[sel.status ?? 3]?.label ?? "—"}
+                      </span>
+                      <span style={{ fontSize: 11, color: sel.rating != null ? "#e6a63a" : "#333", whiteSpace: "nowrap", minWidth: 32, textAlign: "right" }}>
+                        {sel.rating != null ? `★ ${sel.rating}` : "—"}
+                      </span>
                     </>
                   )}
                 </div>
@@ -549,8 +525,6 @@ export default function App() {
   const [steamLibrary, setSteamLibrary]   = useState(null);
   const [steamSyncing, setSteamSyncing]   = useState(false);
   const [steamError, setSteamError]       = useState(null);
-  const [steamTagsByAppid, setSteamTagsByAppid] = useState(null); // {appid: [tag,...]} from sharedconfig.vdf
-  const [vdfLoaded, setVdfLoaded]         = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [saving, setSaving]               = useState(false);
   const [toast, setToast]                 = useState(null);
@@ -704,54 +678,6 @@ export default function App() {
     finally { setSearchLoading(false); }
   };
 
-  // Parse Steam's sharedconfig.vdf to extract per-game user tags (categories)
-  const loadVdf = (file) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target.result;
-      // Tokenize: quoted strings and braces
-      const tokens = [];
-      const re = /"((?:[^"\\]|\\.)*)"|(\{)|(\})/g;
-      let m;
-      while ((m = re.exec(text)) !== null) {
-        if (m[1] !== undefined) tokens.push({ t: "s", v: m[1] });
-        else if (m[2])          tokens.push({ t: "{" });
-        else                    tokens.push({ t: "}" });
-      }
-      // Recursive descent parser
-      let i = 0;
-      function parseObj() {
-        const obj = {};
-        while (i < tokens.length && tokens[i].t !== "}") {
-          if (tokens[i].t === "s") {
-            const key = tokens[i].v; i++;
-            if (i < tokens.length) {
-              if (tokens[i].t === "{") { i++; obj[key] = parseObj(); i++; }
-              else if (tokens[i].t === "s") { obj[key] = tokens[i].v; i++; }
-            }
-          } else { i++; }
-        }
-        return obj;
-      }
-      if (tokens[0]?.t === "s") i++;
-      if (tokens[i]?.t === "{") i++;
-      const root = parseObj();
-      // Navigate Software > Valve > Steam > Apps (case variations)
-      const steam = root?.Software?.Valve?.Steam ?? root?.software?.valve?.steam ?? {};
-      const apps = steam?.Apps ?? steam?.apps ?? {};
-      const byAppid = {};
-      for (const [appid, data] of Object.entries(apps)) {
-        if (typeof data !== "object") continue;
-        const tags = data?.tags ?? data?.Tags ?? {};
-        const vals = typeof tags === "object" ? Object.values(tags) : [];
-        if (vals.length) byAppid[appid] = vals;
-      }
-      setSteamTagsByAppid(byAppid);
-      setVdfLoaded(true);
-    };
-    reader.readAsText(file);
-  };
-
   // Steam library sync
   const syncSteam = useCallback(async () => {
     setSteamSyncing(true);
@@ -851,18 +777,32 @@ export default function App() {
 
   // Helpers for mapping table
   const DEFAULT_MAPPINGS = [
-    { pattern: "Favourites",       status: 1, skip: false, defaultRating: 10  },
-    { pattern: "(10) Masterpiece", status: 1, skip: false, defaultRating: 10  },
-    { pattern: "(9) Excellent",    status: 1, skip: false, defaultRating: 9   },
-    { pattern: "(8) Great",        status: 1, skip: false, defaultRating: 8   },
-    { pattern: "(7) Good",         status: 1, skip: false, defaultRating: 7   },
-    { pattern: "(6) Fine",         status: 1, skip: false, defaultRating: 6   },
-    { pattern: "(5) Average",      status: 1, skip: false, defaultRating: 5   },
-    { pattern: "(1-2) Dropped",    status: 6, skip: false, defaultRating: 5   },
+    { pattern: "Favourites",              status: 1, skip: false, defaultRating: 10  },
+    { pattern: "(10) Masterpiece",        status: 1, skip: false, defaultRating: 10  },
+    { pattern: "(9.5) Freaking Amazing",  status: 1, skip: false, defaultRating: 9.5 },
+    { pattern: "(9) Excellent",           status: 1, skip: false, defaultRating: 9   },
+    { pattern: "(8.5) Amazing",           status: 1, skip: false, defaultRating: 8.5 },
+    { pattern: "(8) Great",               status: 1, skip: false, defaultRating: 8   },
+    { pattern: "(7.5) Very Good",         status: 1, skip: false, defaultRating: 7.5 },
+    { pattern: "(7) Good",                status: 1, skip: false, defaultRating: 7   },
+    { pattern: "(6.5) Decent",            status: 1, skip: false, defaultRating: 6.5 },
+    { pattern: "(6) Fine",                status: 1, skip: false, defaultRating: 6   },
+    { pattern: "(5.5) Mixed",             status: 1, skip: false, defaultRating: 5.5 },
+    { pattern: "(5) Average",             status: 1, skip: false, defaultRating: 5   },
+    { pattern: "(1-2) Dropped",           status: 6, skip: false, defaultRating: 5   },
   ].map((m, i) => ({ ...m, id: i + 1 }));
+
+  const dragMappingIdx = useRef(null);
+  const [dragOverMappingIdx, setDragOverMappingIdx] = useState(null);
 
   const addMapping = () => updateMappings([...steamMappings, { id: Date.now(), pattern: "", status: 3, skip: false, defaultRating: null }]);
   const loadDefaultMappings = () => updateMappings(DEFAULT_MAPPINGS);
+  const reorderMappings = (fromIdx, toIdx) => {
+    const next = [...steamMappings];
+    const [item] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, item);
+    updateMappings(next);
+  };
   const updateMapping = (idx, val) => updateMappings(steamMappings.map((m, i) => i === idx ? val : m));
   const deleteMapping = (idx) => updateMappings(steamMappings.filter((_, i) => i !== idx));
 
@@ -1082,33 +1022,6 @@ export default function App() {
                       {steamError && <div style={{ marginTop: 10, fontSize: 12, color: "#ff8080", lineHeight: 1.5 }}>{steamError}</div>}
                     </div>
                   )}
-                  {(() => {
-                    const id32 = steamId.match(/^\d{17}$/) ? String(BigInt(steamId) - 76561197960265728n) : null;
-                    const vdfPath = id32 ? `~/Library/Application Support/Steam/userdata/${id32}/7/remote/sharedconfig.vdf` : null;
-                    return (
-                      <div style={{ marginTop: 20, borderTop: "1px solid #1a1a2e", paddingTop: 16 }}>
-                        <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Load Category Data</div>
-                        <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.6 }}>
-                          Load once — your Steam categories auto-populate every game's status and rating during import.
-                        </div>
-                        {vdfPath && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px" }}>
-                            <code style={{ flex: 1, fontSize: 10, color: "#7c6ef7", wordBreak: "break-all" }}>{vdfPath}</code>
-                            <button onClick={() => navigator.clipboard.writeText(vdfPath)}
-                              style={{ flexShrink: 0, padding: "3px 8px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 4, color: "#555", cursor: "pointer", fontSize: 10, fontFamily: "inherit" }}>
-                              Copy
-                            </button>
-                          </div>
-                        )}
-                        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                          <input type="file" accept=".vdf" style={{ display: "none" }} onChange={e => e.target.files[0] && loadVdf(e.target.files[0])} />
-                          <span style={{ padding: "6px 14px", background: vdfLoaded ? "#0a2a0a" : "#12121e", border: `1px solid ${vdfLoaded ? "#4caf8055" : "#2a2a40"}`, borderRadius: 7, fontSize: 12, color: vdfLoaded ? "#4caf80" : "#888", fontFamily: "inherit" }}>
-                            {vdfLoaded ? `✓ Categories loaded (${Object.keys(steamTagsByAppid || {}).length} games tagged)` : "Choose sharedconfig.vdf…"}
-                          </span>
-                        </label>
-                      </div>
-                    );
-                  })()}
                 </div>
 
                 {/* Category Mappings */}
@@ -1122,13 +1035,22 @@ export default function App() {
 
                   {steamMappings.length > 0 && (
                     <div style={{ marginBottom: 8 }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 130px 54px auto auto", gap: 8, marginBottom: 6 }}>
-                        {["Pattern / Collection name", "Status", "★", "Skip", ""].map((h, i) => (
+                      <div style={{ display: "grid", gridTemplateColumns: "16px 1fr 130px 54px auto auto", gap: 8, marginBottom: 6 }}>
+                        {["", "Pattern / Category name", "Status", "★", "Skip", ""].map((h, i) => (
                           <span key={i} style={{ fontSize: 10, color: "#444", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{h}</span>
                         ))}
                       </div>
                       {steamMappings.map((m, i) => (
-                        <MappingRow key={m.id ?? i} mapping={m} onChange={v => updateMapping(i, v)} onDelete={() => deleteMapping(i)} />
+                        <div key={m.id ?? i} draggable
+                          onDragStart={() => { dragMappingIdx.current = i; }}
+                          onDragEnd={() => { dragMappingIdx.current = null; setDragOverMappingIdx(null); }}
+                          onDragOver={e => { e.preventDefault(); setDragOverMappingIdx(i); }}
+                          onDragLeave={() => setDragOverMappingIdx(null)}
+                          onDrop={() => { setDragOverMappingIdx(null); if (dragMappingIdx.current !== null && dragMappingIdx.current !== i) reorderMappings(dragMappingIdx.current, i); }}
+                          style={{ opacity: dragOverMappingIdx === i ? 0.4 : 1, display: "grid", gridTemplateColumns: "16px 1fr 130px 54px auto auto", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                          <span style={{ cursor: "grab", color: "#333", fontSize: 13, textAlign: "center", userSelect: "none" }}>⠿</span>
+                          <MappingRow mapping={m} onChange={v => updateMapping(i, v)} onDelete={() => deleteMapping(i)} />
+                        </div>
                       ))}
                     </div>
                   )}
@@ -1153,7 +1075,6 @@ export default function App() {
                 <SteamLibrarySection
                   library={steamLibrary}
                   steamMappings={steamMappings}
-                  tagsByAppid={steamTagsByAppid}
                   myList={myList}
                   onImport={importSteamGames}
                   onRefresh={syncSteam}
