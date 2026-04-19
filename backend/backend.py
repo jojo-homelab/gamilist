@@ -111,12 +111,15 @@ def init_db():
             # Migrate existing rows that pre-date newer columns
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS card_count      INTEGER NOT NULL DEFAULT 0")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS upload_btn_text TEXT    NOT NULL DEFAULT ''")
-            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow1_enabled  BOOLEAN NOT NULL DEFAULT TRUE")
-            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow1_color    TEXT    NOT NULL DEFAULT '#FFD700'")
-            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow2_enabled  BOOLEAN NOT NULL DEFAULT TRUE")
-            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow2_color    TEXT    NOT NULL DEFAULT '#C0C0C0'")
-            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow3_enabled  BOOLEAN NOT NULL DEFAULT TRUE")
-            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow3_color    TEXT    NOT NULL DEFAULT '#CD7F32'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow1_enabled   BOOLEAN NOT NULL DEFAULT TRUE")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow1_color     TEXT    NOT NULL DEFAULT '#FFD700'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow2_enabled   BOOLEAN NOT NULL DEFAULT TRUE")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow2_color     TEXT    NOT NULL DEFAULT '#C0C0C0'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow3_enabled   BOOLEAN NOT NULL DEFAULT TRUE")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow3_color     TEXT    NOT NULL DEFAULT '#CD7F32'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS steam_api_key   TEXT    NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS steam_id        TEXT    NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS steam_mappings  JSONB   NOT NULL DEFAULT '[]'")
 
 
 init_db()
@@ -170,12 +173,15 @@ def get_settings():
             "uploadBtnMult": row["upload_btn_mult"],
             "cardCount":     row["card_count"],
             "uploadBtnText": row["upload_btn_text"],
-            "glow1Enabled":  row["glow1_enabled"],
-            "glow1Color":    row["glow1_color"],
-            "glow2Enabled":  row["glow2_enabled"],
-            "glow2Color":    row["glow2_color"],
-            "glow3Enabled":  row["glow3_enabled"],
-            "glow3Color":    row["glow3_color"],
+            "glow1Enabled":   row["glow1_enabled"],
+            "glow1Color":     row["glow1_color"],
+            "glow2Enabled":   row["glow2_enabled"],
+            "glow2Color":     row["glow2_color"],
+            "glow3Enabled":   row["glow3_enabled"],
+            "glow3Color":     row["glow3_color"],
+            "steamApiKey":    row["steam_api_key"],
+            "steamId":        row["steam_id"],
+            "steamMappings":  row["steam_mappings"] or [],
         })
     # No row yet — return defaults so the frontend has something to work with
     return jsonify({
@@ -183,6 +189,7 @@ def get_settings():
         "glow1Enabled": True,  "glow1Color": "#FFD700",
         "glow2Enabled": True,  "glow2Color": "#C0C0C0",
         "glow3Enabled": True,  "glow3Color": "#CD7F32",
+        "steamApiKey": "", "steamId": "", "steamMappings": [],
     })
 
 
@@ -214,20 +221,27 @@ def put_settings():
     glow2_color     = body.get("glow2Color")
     glow3_enabled   = body.get("glow3Enabled")
     glow3_color     = body.get("glow3Color")
+    steam_api_key   = body.get("steamApiKey")
+    steam_id        = body.get("steamId")
+    steam_mappings  = body.get("steamMappings")
+    steam_mappings_json = json.dumps(steam_mappings) if steam_mappings is not None else None
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
                 INSERT INTO settings (
                     id, card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
-                    glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color
+                    glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
+                    steam_api_key, steam_id, steam_mappings
                 )
                 VALUES (1,
                     COALESCE(%s, 1.5), COALESCE(%s, 1.5), COALESCE(%s, 1.0),
                     COALESCE(%s, 0),   COALESCE(%s, ''),
                     COALESCE(%s, TRUE),  COALESCE(%s, '#FFD700'),
                     COALESCE(%s, TRUE),  COALESCE(%s, '#C0C0C0'),
-                    COALESCE(%s, TRUE),  COALESCE(%s, '#CD7F32'))
+                    COALESCE(%s, TRUE),  COALESCE(%s, '#CD7F32'),
+                    COALESCE(%s, ''),    COALESCE(%s, ''),
+                    COALESCE(%s::jsonb, '[]'::jsonb))
                 ON CONFLICT (id) DO UPDATE SET
                     card_w_mult     = COALESCE(EXCLUDED.card_w_mult,     settings.card_w_mult),
                     card_h_mult     = COALESCE(EXCLUDED.card_h_mult,     settings.card_h_mult),
@@ -239,10 +253,14 @@ def put_settings():
                     glow2_enabled   = COALESCE(EXCLUDED.glow2_enabled,   settings.glow2_enabled),
                     glow2_color     = COALESCE(EXCLUDED.glow2_color,     settings.glow2_color),
                     glow3_enabled   = COALESCE(EXCLUDED.glow3_enabled,   settings.glow3_enabled),
-                    glow3_color     = COALESCE(EXCLUDED.glow3_color,     settings.glow3_color)
+                    glow3_color     = COALESCE(EXCLUDED.glow3_color,     settings.glow3_color),
+                    steam_api_key   = COALESCE(EXCLUDED.steam_api_key,   settings.steam_api_key),
+                    steam_id        = COALESCE(EXCLUDED.steam_id,        settings.steam_id),
+                    steam_mappings  = COALESCE(EXCLUDED.steam_mappings,  settings.steam_mappings)
                 RETURNING *
             """, (card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
-                  glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color))
+                  glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
+                  steam_api_key, steam_id, steam_mappings_json))
             row = cur.fetchone()
     return jsonify({
         "cardWMult":     row["card_w_mult"],
@@ -256,6 +274,9 @@ def put_settings():
         "glow2Color":    row["glow2_color"],
         "glow3Enabled":  row["glow3_enabled"],
         "glow3Color":    row["glow3_color"],
+        "steamApiKey":   row["steam_api_key"],
+        "steamId":       row["steam_id"],
+        "steamMappings": row["steam_mappings"] or [],
     })
 
 
@@ -342,7 +363,8 @@ def image_proxy():
     Returns the raw image bytes with the original Content-Type header.
     """
     url = request.args.get("url")
-    if not url or "rawg.io" not in url:
+    allowed = ("rawg.io", "steamstatic.com", "steamcdn-a.akamaihd.net")
+    if not url or not any(h in url for h in allowed):
         return jsonify({"error": "Invalid URL"}), 400
     r = requests.get(url, stream=True)
     return Response(r.content, content_type=r.headers.get("Content-Type", "image/jpeg"))
@@ -476,6 +498,77 @@ def get_cover(game_id):
     if not row or not row[0]:
         return jsonify({"error": "No cover"}), 404
     return Response(bytes(row[0]), content_type=row[1] or "image/jpeg")
+
+
+# ---------------------------------------------------------------------------
+# Steam integration
+# ---------------------------------------------------------------------------
+
+@app.route("/api/steam/library")
+def steam_library():
+    """
+    Fetch the user's owned Steam games and cross-reference with the local list.
+
+    Reads Steam credentials from the settings row, resolves a vanity URL to a
+    SteamID64 if needed, then calls IPlayerService/GetOwnedGames.
+
+    Each returned game includes a `gamilist_id` field: the entry's game_id if the
+    game name already exists in the local list, otherwise null.
+
+    Returns JSON:
+      { "games": [...], "total": N }
+    """
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT steam_api_key, steam_id FROM settings WHERE id = 1")
+            row = cur.fetchone()
+
+    if not row or not row["steam_api_key"] or not row["steam_id"]:
+        return jsonify({"error": "Steam credentials not configured"}), 400
+
+    api_key  = row["steam_api_key"]
+    steam_id = row["steam_id"].strip()
+
+    # Resolve vanity URL to SteamID64 (17-digit numeric ID)
+    if not (steam_id.isdigit() and len(steam_id) == 17):
+        r = requests.get(
+            "https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/",
+            params={"key": api_key, "vanityurl": steam_id},
+        )
+        r.raise_for_status()
+        result = r.json().get("response", {})
+        if result.get("success") != 1:
+            return jsonify({"error": f"Could not resolve Steam ID '{steam_id}'. Make sure your profile is public."}), 400
+        steam_id = result["steamid"]
+
+    # Fetch owned games
+    r = requests.get(
+        "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/",
+        params={
+            "key": api_key,
+            "steamid": steam_id,
+            "include_appinfo": "true",
+            "include_played_free_games": "true",
+            "format": "json",
+        },
+    )
+    r.raise_for_status()
+    games = r.json().get("response", {}).get("games", [])
+
+    if not games:
+        return jsonify({"error": "No games found. Make sure your Steam profile and game details are set to Public."}), 404
+
+    # Cross-reference with local list by game name (case-insensitive)
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT game_id, game_data->>'name' AS name FROM entries")
+            local = {r["name"].lower(): r["game_id"] for r in cur.fetchall()}
+
+    for g in games:
+        g["gamilist_id"] = local.get(g["name"].lower())
+
+    games.sort(key=lambda g: g["name"].lower())
+    return jsonify({"games": games, "total": len(games)})
 
 
 if __name__ == "__main__":
