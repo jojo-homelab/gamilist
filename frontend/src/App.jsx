@@ -291,6 +291,71 @@ function GlowRow({ rank, label, enabled, color, onToggle, onColor }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// VDF parser — parses Steam's sharedconfig.vdf to extract category assignments
+// ---------------------------------------------------------------------------
+
+function parseVdf(text) {
+  let pos = 0;
+  const skip = () => {
+    while (pos < text.length) {
+      if (text[pos] === '/' && text[pos + 1] === '/') {
+        while (pos < text.length && text[pos] !== '\n') pos++;
+      } else if (/\s/.test(text[pos])) { pos++; }
+      else break;
+    }
+  };
+  const readString = () => {
+    skip();
+    if (text[pos] === '"') {
+      pos++;
+      let s = '';
+      while (pos < text.length && text[pos] !== '"') {
+        if (text[pos] === '\\') { pos++; s += text[pos++]; }
+        else s += text[pos++];
+      }
+      pos++;
+      return s;
+    }
+    let s = '';
+    while (pos < text.length && !/[\s{}]/.test(text[pos])) s += text[pos++];
+    return s;
+  };
+  const parseObj = () => {
+    const obj = {};
+    skip();
+    while (pos < text.length && text[pos] !== '}') {
+      const key = readString();
+      skip();
+      if (text[pos] === '{') { pos++; obj[key] = parseObj(); skip(); if (text[pos] === '}') pos++; }
+      else { obj[key] = readString(); }
+      skip();
+    }
+    return obj;
+  };
+  skip();
+  const rootKey = readString();
+  skip(); pos++; // opening {
+  const root = parseObj();
+  return { [rootKey]: root };
+}
+
+function extractCategoriesFromVdf(parsed) {
+  try {
+    // Path: UserRoamingConfigStore.Software.Valve.Steam.Apps
+    const apps = parsed?.UserRoamingConfigStore?.Software?.Valve?.Steam?.Apps;
+    if (!apps) return {};
+    const result = {};
+    for (const [appid, data] of Object.entries(apps)) {
+      const tags = data?.tags;
+      if (tags && typeof tags === 'object') {
+        result[String(appid)] = Object.values(tags).filter(v => typeof v === 'string');
+      }
+    }
+    return result;
+  } catch { return {}; }
+}
+
 /**
  * Single row in the Steam category mapping table.
  * Pattern can include "(N)" to indicate the number in parentheses is a rating.
@@ -329,7 +394,7 @@ function MappingRow({ mapping, onChange, onDelete }) {
  * Status is pre-filled based on playtime (>0 → Played, 0 → Backlog).
  * The "(N)" pattern in the user's mapping list is used to auto-fill ratings.
  */
-function SteamLibrarySection({ library, steamMappings, myList, onImport, onRefresh }) {
+function SteamLibrarySection({ library, steamMappings, steamCategories, myList, onImport, onRefresh }) {
   const [filter, setFilter]           = useState("new");  // "new" | "all"
   const [selections, setSelections]   = useState({});
   const [importing, setImporting]     = useState(false);
@@ -341,40 +406,35 @@ function SteamLibrarySection({ library, steamMappings, myList, onImport, onRefre
     return m ? parseFloat(m[1]) : null;
   };
 
-  // Initialise selections whenever the library or mappings change.
-  // Played games are ranked by playtime and distributed proportionally across
-  // rated mappings (highest playtime → top mapping). This ensures every tier,
-  // including Favourites, always gets coverage regardless of absolute hours.
+  // Initialise selections using actual VDF category data when available,
+  // otherwise fall back to playtime-based defaults.
   useEffect(() => {
     if (!library) return;
-    const ratedMappings = (steamMappings || [])
-      .filter(m => !m.skip && resolveRating(m) !== null)
-      .sort((a, b) => resolveRating(b) - resolveRating(a)); // highest first
-
     const init = {};
 
-    if (ratedMappings.length) {
-      // Sort new played games by playtime descending to assign tiers
-      const playedNew = library.games
-        .filter(g => !g.gamilist_id && g.playtime_forever > 0)
-        .sort((a, b) => b.playtime_forever - a.playtime_forever);
-
-      playedNew.forEach((g, rank) => {
-        const pct = rank / playedNew.length; // 0 = most played, approaches 1
-        const idx = Math.min(Math.floor(pct * ratedMappings.length), ratedMappings.length - 1);
-        const mapping = ratedMappings[idx];
-        init[g.appid] = { checked: true, status: mapping.status, rating: resolveRating(mapping) };
-      });
-    }
-
-    // Unplayed or no mappings defined
     for (const g of library.games) {
-      if (g.gamilist_id || init[g.appid]) continue;
-      init[g.appid] = { checked: true, status: g.playtime_forever > 0 ? 1 : 3, rating: null };
+      if (g.gamilist_id) continue;
+
+      // Match game's Steam categories (from VDF) against mapping patterns
+      const gameCategories = (steamCategories || {})[String(g.appid)] || [];
+      let matched = null;
+      for (const cat of gameCategories) {
+        const m = (steamMappings || []).find(
+          m => m.pattern.trim().toLowerCase() === cat.trim().toLowerCase()
+        );
+        if (m) { matched = m; break; }
+      }
+
+      if (matched) {
+        init[g.appid] = { checked: !matched.skip, status: matched.status, rating: resolveRating(matched) };
+      } else {
+        // No category data or no matching mapping — use playtime as fallback
+        init[g.appid] = { checked: true, status: g.playtime_forever > 0 ? 1 : 3, rating: null };
+      }
     }
 
     setSelections(init);
-  }, [library, steamMappings]);
+  }, [library, steamMappings, steamCategories]);
 
   if (!library) return null;
 
@@ -522,12 +582,14 @@ export default function App() {
   const [glow2Color,   setGlow2Color]     = useState("#C0C0C0");
   const [glow3Enabled, setGlow3Enabled]   = useState(true);
   const [glow3Color,   setGlow3Color]     = useState("#CD7F32");
-  const [steamApiKey, setSteamApiKey]     = useState("");
-  const [steamId, setSteamId]             = useState("");
-  const [steamMappings, setSteamMappings] = useState([]);
-  const [steamLibrary, setSteamLibrary]   = useState(null);
-  const [steamSyncing, setSteamSyncing]   = useState(false);
-  const [steamError, setSteamError]       = useState(null);
+  const [steamApiKey, setSteamApiKey]         = useState("");
+  const [steamId, setSteamId]                 = useState("");
+  const [steamMappings, setSteamMappings]     = useState([]);
+  const [steamCategories, setSteamCategories] = useState({});
+  const [steamVdfName, setSteamVdfName]       = useState(null);
+  const [steamLibrary, setSteamLibrary]       = useState(null);
+  const [steamSyncing, setSteamSyncing]       = useState(false);
+  const [steamError, setSteamError]           = useState(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [saving, setSaving]               = useState(false);
   const [toast, setToast]                 = useState(null);
@@ -692,6 +754,23 @@ export default function App() {
       const msg = e.message.includes("400") ? "Check your Steam API Key and Steam ID / Vanity URL." : e.message.includes("404") ? "No games found — make sure your Steam profile and game details are set to Public." : "Failed to fetch Steam library.";
       setSteamError(msg);
     } finally { setSteamSyncing(false); }
+  }, []);
+
+  const loadVdf = useCallback((file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const parsed = parseVdf(e.target.result);
+        const cats = extractCategoriesFromVdf(parsed);
+        setSteamCategories(cats);
+        setSteamVdfName(file.name);
+        setToast({ msg: `Loaded ${Object.keys(cats).length} game categories from VDF`, ok: true });
+      } catch {
+        setToast({ msg: "Failed to parse VDF file — make sure it's sharedconfig.vdf", ok: false });
+      }
+    };
+    reader.readAsText(file);
   }, []);
 
   /** Import selected Steam games as list entries using Steam header art. */
@@ -1014,8 +1093,25 @@ export default function App() {
                     <input type="text" value={steamId} onChange={e => updateSteamId(e.target.value)} placeholder="e.g. 76561198000000000 or username"
                       style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "7px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }} />
                   </div>
+                  {/* VDF upload for category matching */}
+                  <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+                    <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Category Data (VDF)</div>
+                    <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.6 }}>
+                      Upload your <code style={{ background: "#0a0a14", padding: "1px 5px", borderRadius: 3, color: "#a78bfa" }}>sharedconfig.vdf</code> to enable accurate category matching.<br />
+                      Found at: <span style={{ color: "#555" }}>~/Library/Application Support/Steam/userdata/&lt;id&gt;/7/remote/</span>
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                      <input type="file" accept=".vdf" style={{ display: "none" }} onChange={e => loadVdf(e.target.files[0])} />
+                      <span style={{ padding: "6px 14px", background: "#0a0a14", border: "1px solid #2a2a40", borderRadius: 7, color: steamVdfName ? "#4caf80" : "#7c6ef7", fontSize: 12, userSelect: "none" }}>
+                        {steamVdfName ? `✓ ${steamVdfName}` : "Upload sharedconfig.vdf"}
+                      </span>
+                      {steamVdfName && (
+                        <span style={{ fontSize: 11, color: "#444" }}>{Object.keys(steamCategories).length} games with categories</span>
+                      )}
+                    </label>
+                  </div>
                   {credentialsReady && (
-                    <div style={{ marginTop: 20 }}>
+                    <div style={{ marginTop: 16 }}>
                       <button onClick={syncSteam} disabled={steamSyncing}
                         style={{ width: "100%", padding: "9px 0", background: steamSyncing ? "#1a1a2e" : "#1db954", border: "none", borderRadius: 8, color: steamSyncing ? "#444" : "#fff", fontWeight: 700, fontSize: 13, cursor: steamSyncing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                         {steamSyncing ? "Fetching library…" : "Sync Steam Library"}
@@ -1076,6 +1172,7 @@ export default function App() {
                 <SteamLibrarySection
                   library={steamLibrary}
                   steamMappings={steamMappings}
+                  steamCategories={steamCategories}
                   myList={myList}
                   onImport={importSteamGames}
                   onRefresh={syncSteam}
