@@ -367,6 +367,19 @@ function SteamLibrarySection({ library, steamMappings, myList, onImport, onRefre
     });
   };
 
+  const applyMapping = (mapping) => {
+    const ratingMatch = mapping.pattern.match(/\((\d+(?:\.\d+)?)\)/);
+    const rating = ratingMatch ? parseFloat(ratingMatch[1]) : null;
+    setSelections(prev => {
+      const next = { ...prev };
+      for (const k of Object.keys(next)) {
+        next[k] = { ...next[k], status: mapping.status };
+        if (rating !== null) next[k] = { ...next[k], rating };
+      }
+      return next;
+    });
+  };
+
   const formatHours = (mins) => {
     if (!mins) return "0h";
     const h = Math.round(mins / 60);
@@ -403,6 +416,15 @@ function SteamLibrarySection({ library, steamMappings, myList, onImport, onRefre
             <option value="" disabled>Set status for all…</option>
             {STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
           </select>
+          {steamMappings.filter(m => !m.skip).length > 0 && (
+            <select defaultValue="" onChange={e => { const i = parseInt(e.target.value); if (!isNaN(i)) applyMapping(steamMappings[i]); e.target.value = ""; }}
+              style={{ background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "5px 8px", color: "#e0e0f0", fontSize: 12, fontFamily: "inherit", outline: "none" }}>
+              <option value="" disabled>Apply mapping…</option>
+              {steamMappings.map((m, i) => !m.skip && (
+                <option key={i} value={i}>{m.pattern} → {STATUSES[m.status]?.label}</option>
+              ))}
+            </select>
+          )}
           <button onClick={handleImport} disabled={importing || checkedCount === 0}
             style={{ marginLeft: "auto", padding: "6px 18px", background: checkedCount > 0 ? "#7c6ef7" : "#1a1a2e", border: "none", borderRadius: 7, color: checkedCount > 0 ? "#fff" : "#444", fontWeight: 700, fontSize: 12, cursor: checkedCount > 0 ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
             {importing ? "Importing…" : `Import ${checkedCount}`}
