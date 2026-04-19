@@ -16,7 +16,9 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
 // Base API URL — set VITE_API_URL at build time for production.
 // Falls back to localhost:5001 for running the frontend locally with `npm run dev`.
-const API = (import.meta.env.VITE_API_URL || "http://localhost:5001") + "/api";
+// VITE_API_URL="" means "use relative paths" (production/k8s via ingress).
+// Falls back to localhost:5001 only when the env var is not set at all (local dev).
+const API = (import.meta.env.VITE_API_URL ?? "http://localhost:5001") + "/api";
 
 /**
  * Game list status definitions.
