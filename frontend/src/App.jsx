@@ -850,7 +850,19 @@ export default function App() {
   const credentialsReady = steamApiKey.trim() && steamId.trim();
 
   // Helpers for mapping table
+  const DEFAULT_MAPPINGS = [
+    { pattern: "Favourites",       status: 1, skip: false, defaultRating: 10  },
+    { pattern: "(10) Masterpiece", status: 1, skip: false, defaultRating: 10  },
+    { pattern: "(9) Excellent",    status: 1, skip: false, defaultRating: 9   },
+    { pattern: "(8) Great",        status: 1, skip: false, defaultRating: 8   },
+    { pattern: "(7) Good",         status: 1, skip: false, defaultRating: 7   },
+    { pattern: "(6) Fine",         status: 1, skip: false, defaultRating: 6   },
+    { pattern: "(5) Average",      status: 1, skip: false, defaultRating: 5   },
+    { pattern: "(1-2) Dropped",    status: 6, skip: false, defaultRating: 5   },
+  ].map((m, i) => ({ ...m, id: i + 1 }));
+
   const addMapping = () => updateMappings([...steamMappings, { id: Date.now(), pattern: "", status: 3, skip: false, defaultRating: null }]);
+  const loadDefaultMappings = () => updateMappings(DEFAULT_MAPPINGS);
   const updateMapping = (idx, val) => updateMappings(steamMappings.map((m, i) => i === idx ? val : m));
   const deleteMapping = (idx) => updateMappings(steamMappings.filter((_, i) => i !== idx));
 
@@ -1070,19 +1082,33 @@ export default function App() {
                       {steamError && <div style={{ marginTop: 10, fontSize: 12, color: "#ff8080", lineHeight: 1.5 }}>{steamError}</div>}
                     </div>
                   )}
-                  <div style={{ marginTop: 20, borderTop: "1px solid #1a1a2e", paddingTop: 16 }}>
-                    <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Load Category Data</div>
-                    <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.6 }}>
-                      Load your <strong style={{ color: "#888" }}>sharedconfig.vdf</strong> file so categories auto-populate during import.
-                      On macOS: <code style={{ color: "#7c6ef7", fontSize: 10 }}>~/Library/Application Support/Steam/userdata/&lt;id&gt;/7/remote/sharedconfig.vdf</code>
-                    </div>
-                    <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                      <input type="file" accept=".vdf" style={{ display: "none" }} onChange={e => e.target.files[0] && loadVdf(e.target.files[0])} />
-                      <span style={{ padding: "6px 14px", background: vdfLoaded ? "#0a2a0a" : "#12121e", border: `1px solid ${vdfLoaded ? "#4caf8055" : "#2a2a40"}`, borderRadius: 7, fontSize: 12, color: vdfLoaded ? "#4caf80" : "#888", fontFamily: "inherit" }}>
-                        {vdfLoaded ? `✓ Categories loaded (${Object.keys(steamTagsByAppid || {}).length} games tagged)` : "Choose sharedconfig.vdf…"}
-                      </span>
-                    </label>
-                  </div>
+                  {(() => {
+                    const id32 = steamId.match(/^\d{17}$/) ? String(BigInt(steamId) - 76561197960265728n) : null;
+                    const vdfPath = id32 ? `~/Library/Application Support/Steam/userdata/${id32}/7/remote/sharedconfig.vdf` : null;
+                    return (
+                      <div style={{ marginTop: 20, borderTop: "1px solid #1a1a2e", paddingTop: 16 }}>
+                        <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Load Category Data</div>
+                        <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.6 }}>
+                          Load once — your Steam categories auto-populate every game's status and rating during import.
+                        </div>
+                        {vdfPath && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px" }}>
+                            <code style={{ flex: 1, fontSize: 10, color: "#7c6ef7", wordBreak: "break-all" }}>{vdfPath}</code>
+                            <button onClick={() => navigator.clipboard.writeText(vdfPath)}
+                              style={{ flexShrink: 0, padding: "3px 8px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 4, color: "#555", cursor: "pointer", fontSize: 10, fontFamily: "inherit" }}>
+                              Copy
+                            </button>
+                          </div>
+                        )}
+                        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                          <input type="file" accept=".vdf" style={{ display: "none" }} onChange={e => e.target.files[0] && loadVdf(e.target.files[0])} />
+                          <span style={{ padding: "6px 14px", background: vdfLoaded ? "#0a2a0a" : "#12121e", border: `1px solid ${vdfLoaded ? "#4caf8055" : "#2a2a40"}`, borderRadius: 7, fontSize: 12, color: vdfLoaded ? "#4caf80" : "#888", fontFamily: "inherit" }}>
+                            {vdfLoaded ? `✓ Categories loaded (${Object.keys(steamTagsByAppid || {}).length} games tagged)` : "Choose sharedconfig.vdf…"}
+                          </span>
+                        </label>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Category Mappings */}
@@ -1106,10 +1132,18 @@ export default function App() {
                       ))}
                     </div>
                   )}
-                  <button onClick={addMapping}
-                    style={{ padding: "6px 14px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 7, color: "#7c6ef7", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-                    + Add Mapping
-                  </button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={addMapping}
+                      style={{ padding: "6px 14px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 7, color: "#7c6ef7", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                      + Add Mapping
+                    </button>
+                    {steamMappings.length === 0 && (
+                      <button onClick={loadDefaultMappings}
+                        style={{ padding: "6px 14px", background: "#1a1a2e", border: "1px solid #7c6ef744", borderRadius: 7, color: "#a78bfa", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                        Load defaults
+                      </button>
+                    )}
+                  </div>
                 </div>
 
               </div>
