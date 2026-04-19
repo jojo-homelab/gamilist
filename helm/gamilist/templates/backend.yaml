@@ -23,9 +23,14 @@ spec:
           env:
             - name: DATABASE_URL
               value: "postgresql://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@postgres:{{ .Values.postgres.port }}/{{ .Values.postgres.database }}"
+            - name: RAWG_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gamilist-secrets
+                  key: RAWG_API_KEY
           readinessProbe:
             httpGet:
-              path: /api/games/popular
+              path: /api/health
               port: {{ .Values.backend.port }}
             initialDelaySeconds: 10
             periodSeconds: 10

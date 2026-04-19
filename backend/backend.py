@@ -221,6 +221,20 @@ def put_settings():
 
 
 # ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+@app.route("/api/health")
+def health():
+    """
+    Lightweight liveness/readiness probe used by the Kubernetes deployment.
+    Returns 200 immediately without touching external APIs or the database,
+    so a missing RAWG key or slow DB startup never blocks pod readiness.
+    """
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
 # RAWG API helpers
 # ---------------------------------------------------------------------------
 
