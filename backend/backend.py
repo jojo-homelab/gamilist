@@ -111,6 +111,12 @@ def init_db():
             # Migrate existing rows that pre-date newer columns
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS card_count      INTEGER NOT NULL DEFAULT 0")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS upload_btn_text TEXT    NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow1_enabled  BOOLEAN NOT NULL DEFAULT TRUE")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow1_color    TEXT    NOT NULL DEFAULT '#FFD700'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow2_enabled  BOOLEAN NOT NULL DEFAULT TRUE")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow2_color    TEXT    NOT NULL DEFAULT '#C0C0C0'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow3_enabled  BOOLEAN NOT NULL DEFAULT TRUE")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS glow3_color    TEXT    NOT NULL DEFAULT '#CD7F32'")
 
 
 init_db()
@@ -164,9 +170,20 @@ def get_settings():
             "uploadBtnMult": row["upload_btn_mult"],
             "cardCount":     row["card_count"],
             "uploadBtnText": row["upload_btn_text"],
+            "glow1Enabled":  row["glow1_enabled"],
+            "glow1Color":    row["glow1_color"],
+            "glow2Enabled":  row["glow2_enabled"],
+            "glow2Color":    row["glow2_color"],
+            "glow3Enabled":  row["glow3_enabled"],
+            "glow3Color":    row["glow3_color"],
         })
     # No row yet — return defaults so the frontend has something to work with
-    return jsonify({"cardWMult": 1.5, "cardHMult": 1.5, "uploadBtnMult": 1.0, "cardCount": 0, "uploadBtnText": ""})
+    return jsonify({
+        "cardWMult": 1.5, "cardHMult": 1.5, "uploadBtnMult": 1.0, "cardCount": 0, "uploadBtnText": "",
+        "glow1Enabled": True,  "glow1Color": "#FFD700",
+        "glow2Enabled": True,  "glow2Color": "#C0C0C0",
+        "glow3Enabled": True,  "glow3Color": "#CD7F32",
+    })
 
 
 @app.route("/api/settings", methods=["PUT"])
@@ -190,26 +207,42 @@ def put_settings():
     card_h_mult     = body.get("cardHMult")
     upload_btn_mult = body.get("uploadBtnMult")
     card_count      = body.get("cardCount")
-    upload_btn_text = body.get("uploadBtnText")  # None means "don't change"
+    upload_btn_text = body.get("uploadBtnText")
+    glow1_enabled   = body.get("glow1Enabled")
+    glow1_color     = body.get("glow1Color")
+    glow2_enabled   = body.get("glow2Enabled")
+    glow2_color     = body.get("glow2Color")
+    glow3_enabled   = body.get("glow3Enabled")
+    glow3_color     = body.get("glow3Color")
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
-                INSERT INTO settings (id, card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text)
+                INSERT INTO settings (
+                    id, card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
+                    glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color
+                )
                 VALUES (1,
-                    COALESCE(%s, 1.5),
-                    COALESCE(%s, 1.5),
-                    COALESCE(%s, 1.0),
-                    COALESCE(%s, 0),
-                    COALESCE(%s, ''))
+                    COALESCE(%s, 1.5), COALESCE(%s, 1.5), COALESCE(%s, 1.0),
+                    COALESCE(%s, 0),   COALESCE(%s, ''),
+                    COALESCE(%s, TRUE),  COALESCE(%s, '#FFD700'),
+                    COALESCE(%s, TRUE),  COALESCE(%s, '#C0C0C0'),
+                    COALESCE(%s, TRUE),  COALESCE(%s, '#CD7F32'))
                 ON CONFLICT (id) DO UPDATE SET
                     card_w_mult     = COALESCE(EXCLUDED.card_w_mult,     settings.card_w_mult),
                     card_h_mult     = COALESCE(EXCLUDED.card_h_mult,     settings.card_h_mult),
                     upload_btn_mult = COALESCE(EXCLUDED.upload_btn_mult, settings.upload_btn_mult),
                     card_count      = COALESCE(EXCLUDED.card_count,      settings.card_count),
-                    upload_btn_text = COALESCE(EXCLUDED.upload_btn_text, settings.upload_btn_text)
+                    upload_btn_text = COALESCE(EXCLUDED.upload_btn_text, settings.upload_btn_text),
+                    glow1_enabled   = COALESCE(EXCLUDED.glow1_enabled,   settings.glow1_enabled),
+                    glow1_color     = COALESCE(EXCLUDED.glow1_color,     settings.glow1_color),
+                    glow2_enabled   = COALESCE(EXCLUDED.glow2_enabled,   settings.glow2_enabled),
+                    glow2_color     = COALESCE(EXCLUDED.glow2_color,     settings.glow2_color),
+                    glow3_enabled   = COALESCE(EXCLUDED.glow3_enabled,   settings.glow3_enabled),
+                    glow3_color     = COALESCE(EXCLUDED.glow3_color,     settings.glow3_color)
                 RETURNING *
-            """, (card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text))
+            """, (card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
+                  glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color))
             row = cur.fetchone()
     return jsonify({
         "cardWMult":     row["card_w_mult"],
@@ -217,6 +250,12 @@ def put_settings():
         "uploadBtnMult": row["upload_btn_mult"],
         "cardCount":     row["card_count"],
         "uploadBtnText": row["upload_btn_text"],
+        "glow1Enabled":  row["glow1_enabled"],
+        "glow1Color":    row["glow1_color"],
+        "glow2Enabled":  row["glow2_enabled"],
+        "glow2Color":    row["glow2_color"],
+        "glow3Enabled":  row["glow3_enabled"],
+        "glow3Color":    row["glow3_color"],
     })
 
 

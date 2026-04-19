@@ -6,13 +6,13 @@
  * baked into the static bundle at Docker build time (see Dockerfile).
  *
  * Tabs:
- *   My List   — games the user has added, filterable by status
- *   Favourites — starred games
- *   Search    — RAWG-powered game search
- *   Settings  — card size, column count, and upload button size sliders (persisted in the database via Save button)
+ *   My List    — games the user has added, filterable by status
+ *   Favourites — starred games, drag-and-drop orderable, top-3 glow effects
+ *   Search     — RAWG-powered game search
+ *   Settings   — card size, columns, upload button, glow config (persisted in DB)
  */
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
 // Base API URL — set VITE_API_URL at build time for production.
 // Falls back to localhost:5001 for running the frontend locally with `npm run dev`.
@@ -86,12 +86,10 @@ function RatingInput({ value, onChange }) {
   const [input, setInput]     = useState("");
   const ref = useRef();
 
-  // Auto-focus the input when entering edit mode
   useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
 
   const commit = () => {
     const v = parseFloat(input);
-    // Clamp to [0, 10] and round to 1 decimal place; null if invalid
     onChange(!isNaN(v) ? Math.min(10, Math.max(0, Math.round(v * 10) / 10)) : null);
     setEditing(false);
   };
@@ -100,7 +98,7 @@ function RatingInput({ value, onChange }) {
     <input ref={ref} value={input} onChange={e => setInput(e.target.value)}
       onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
       placeholder="0–10"
-      style={{ width: 52, background: "#0a0a14", border: "1px solid #7c6ef7", borderRadius: 4, color: "#e0e0f0", fontSize: 12, padding: "2px 5px", outline: "none" }} />
+      style={{ width: 52, background: "#0a0a14", border: "1px solid #7c6ef7", borderRadius: 4, color: "#e0e0f0", fontSize: 12, padding: "2px 5px", outline: "none", fontFamily: "inherit" }} />
   );
 
   return (
@@ -117,10 +115,10 @@ function RatingInput({ value, onChange }) {
  * After a successful upload, calls onUploaded() so the parent can refresh the cover.
  *
  * Props:
- *   gameId   — ID of the game entry to attach the cover to
+ *   gameId     — ID of the game entry to attach the cover to
  *   onUploaded — callback fired after a successful upload
- *   sizeMult — multiplier controlling the button's font size and padding (default 1)
- *   btnText  — optional custom label; shows "" emoji when empty
+ *   sizeMult   — multiplier controlling the button's font size and padding (default 1)
+ *   btnText    — optional custom label; shows 📷 when empty
  */
 function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
   const ref = useRef();
@@ -137,7 +135,7 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
       onUploaded();
     } finally {
       setUploading(false);
-      e.target.value = ""; // reset so the same file can be re-uploaded
+      e.target.value = "";
     }
   };
 
@@ -151,8 +149,9 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
           padding: `${3 * sizeMult}px ${8 * sizeMult}px`,
           color: uploading ? "#555" : "#aaa", cursor: "pointer",
           fontSize: Math.round(10 * sizeMult),
+          fontFamily: "inherit",
         }}>
-        {uploading ? "…" : (btnText || "")}
+        {uploading ? "…" : (btnText || "📷")}
       </button>
     </>
   );
@@ -160,15 +159,6 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
 
 /**
  * Single game card displayed in a grid.
- *
- * Shows:
- *   - Cover image (custom upload takes priority over RAWG artwork)
- *   - Favourite star toggle (top-left, only when in list)
- *   - Status badge (top-right, only when in list)
- *   - Game title, RAWG community rating, release year, genres
- *   - Personal rating input (only when in list)
- *   - Status dropdown / "Add to list" button
- *   - Cover upload button (only when in list)
  *
  * Props:
  *   game            — RAWG game object
@@ -181,13 +171,12 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
  *   cardH           — card image height in pixels
  *   uploadBtnMult   — size multiplier forwarded to CoverUpload
  *   uploadBtnText   — optional label text forwarded to CoverUpload
+ *   glowColor       — hex color string for the glow effect, or null for no glow
  */
-function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, cardH = 255, uploadBtnMult = 1, uploadBtnText = "" }) {
+function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null }) {
   const [hover, setHover]       = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [imgErr, setImgErr]     = useState(false);
-
-  // Incremented after a cover upload to bust the browser's image cache
   const [coverKey, setCoverKey] = useState(0);
 
   const menuRef = useRef();
@@ -195,7 +184,6 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
   const isFav    = listEntry?.favourite || false;
   const hasCover = listEntry?.hasCover || false;
 
-  // Close the status dropdown when clicking outside the card
   useEffect(() => {
     if (!showMenu) return;
     const h = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false); };
@@ -203,19 +191,35 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
     return () => document.removeEventListener("mousedown", h);
   }, [showMenu]);
 
-  // Prefer custom cover; fall back to RAWG image proxied through the backend
   const cover = hasCover
     ? `${coverSrc(game.id)}?v=${coverKey}`
     : rawgImgSrc(game.background_image);
 
   const handleCoverUploaded = () => {
-    setCoverKey(k => k + 1); // force img re-fetch
+    setCoverKey(k => k + 1);
     onCoverUploaded(game.id);
+  };
+
+  // Glow: glowing border + soft background tint + outer glow shadow
+  const glowStyle = glowColor ? {
+    border:     `1px solid ${glowColor}99`,
+    boxShadow:  `0 0 14px ${glowColor}88, 0 0 32px ${glowColor}44${hover ? ", 0 8px 30px rgba(0,0,0,0.5)" : ""}`,
+    background: `linear-gradient(160deg, #10101e 60%, ${glowColor}18)`,
+  } : {
+    border:    `1px solid ${hover ? "#2e2e50" : "#1a1a2e"}`,
+    boxShadow: hover ? "0 8px 30px rgba(0,0,0,0.5)" : "none",
+    background: "#10101e",
   };
 
   return (
     <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ borderRadius: 12, overflow: "visible", background: "#10101e", border: `1px solid ${hover ? "#2e2e50" : "#1a1a2e"}`, transition: "transform 0.15s, box-shadow 0.15s", transform: hover ? "translateY(-4px)" : "none", boxShadow: hover ? "0 8px 30px rgba(0,0,0,0.5)" : "none", position: "relative" }}>
+      style={{
+        borderRadius: 12, overflow: "visible",
+        transition: "transform 0.15s, box-shadow 0.15s, border-color 0.15s",
+        transform: hover ? "translateY(-4px)" : "none",
+        position: "relative",
+        ...glowStyle,
+      }}>
 
       {/* Cover image area */}
       <div style={{ height: cardH, borderRadius: "12px 12px 0 0", overflow: "hidden", background: "#080814", position: "relative" }}>
@@ -227,7 +231,6 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
             </div>
         }
 
-        {/* Favourite star — only visible for games in the list */}
         {listEntry && (
           <button onClick={e => { e.stopPropagation(); onToggleFav(game.id); }}
             style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.65)", border: "none", borderRadius: 6, width: 30, height: 30, cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", color: isFav ? "#e6a63a" : "#666" }}>
@@ -235,22 +238,19 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
           </button>
         )}
 
-        {/* Status badge — top-right corner */}
         {status !== null && (
           <div style={{ position: "absolute", top: 8, right: 8, background: STATUSES[status].color + "dd", borderRadius: 6, padding: "3px 9px", fontSize: 10, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>
             {STATUSES[status].label}
           </div>
         )}
 
-        {/* Cover upload button — bottom-right corner, only for listed games */}
         {listEntry && <CoverUpload gameId={game.id} onUploaded={handleCoverUploaded} sizeMult={uploadBtnMult} btnText={uploadBtnText} />}
       </div>
 
       {/* Card body */}
       <div style={{ padding: "12px 14px 14px" }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "#eeeeff", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={game.name}>{game.name}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#eeeeff", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={game.name}>{game.name}</div>
 
-        {/* RAWG community rating + release year */}
         {(game.rating > 0 || game.released) && (
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
             {game.rating > 0 && <>
@@ -261,43 +261,38 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
           </div>
         )}
 
-        {/* Genre tags — capped at 2 to keep the card compact */}
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
           {game.genres?.slice(0,2).map((g,i) => (
             <span key={i} style={{ fontSize: 10, background: "#161628", color: "#5555aa", borderRadius: 4, padding: "2px 7px" }}>{g.name}</span>
           ))}
         </div>
 
-        {/* Personal rating input — only visible for listed games */}
         {listEntry && (
           <div style={{ marginBottom: 10 }}>
             <RatingInput value={listEntry.userRating ?? null} onChange={v => onRate(game.id, v)} />
           </div>
         )}
 
-        {/* Status dropdown — doubles as "Add to list" button for unlisted games */}
         <div ref={menuRef} style={{ position: "relative" }}>
           <button onClick={() => setShowMenu(v => !v)}
-            style={{ width: "100%", padding: "7px 11px", borderRadius: 8, border: `1px solid ${status !== null ? STATUSES[status].color + "44" : "#1e1e35"}`, background: status !== null ? STATUSES[status].bg : "#0a0a14", color: status !== null ? STATUSES[status].color : "#555", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            style={{ width: "100%", padding: "7px 11px", borderRadius: 8, border: `1px solid ${status !== null ? STATUSES[status].color + "44" : "#1e1e35"}`, background: status !== null ? STATUSES[status].bg : "#0a0a14", color: status !== null ? STATUSES[status].color : "#555", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "inherit" }}>
             <span>{status !== null ? STATUSES[status].label : "＋ Add to list"}</span>
             <span style={{ opacity: 0.6, fontSize: 9 }}>▾</span>
           </button>
 
-          {/* Status menu — opens upward to avoid clipping at the bottom of the viewport */}
           {showMenu && (
             <div style={{ position: "absolute", bottom: "calc(100% + 5px)", left: 0, right: 0, background: "#10101e", border: "1px solid #2a2a40", borderRadius: 10, overflow: "hidden", zIndex: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}>
               {STATUSES.map(s => (
                 <button key={s.id} onClick={() => { onAdd(game, s.id); setShowMenu(false); }}
-                  style={{ width: "100%", padding: "8px 14px", border: "none", background: status === s.id ? s.bg : "transparent", color: s.color, cursor: "pointer", fontSize: 12, textAlign: "left", fontWeight: status === s.id ? 700 : 400, display: "flex", alignItems: "center", gap: 8 }}>
+                  style={{ width: "100%", padding: "8px 14px", border: "none", background: status === s.id ? s.bg : "transparent", color: s.color, cursor: "pointer", fontSize: 12, textAlign: "left", fontWeight: status === s.id ? 700 : 400, display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit" }}>
                   <span style={{ fontSize: 10, opacity: status === s.id ? 1 : 0 }}>✓</span>{s.label}
                 </button>
               ))}
 
-              {/* Remove from list option — only shown when the game is already listed */}
               {status !== null && <>
                 <div style={{ height: 1, background: "#1a1a30" }} />
                 <button onClick={() => { onRemove(game.id); setShowMenu(false); }}
-                  style={{ width: "100%", padding: "8px 14px", border: "none", background: "transparent", color: "#ff6060", cursor: "pointer", fontSize: 12, textAlign: "left" }}>
+                  style={{ width: "100%", padding: "8px 14px", border: "none", background: "transparent", color: "#ff6060", cursor: "pointer", fontSize: 12, textAlign: "left", fontFamily: "inherit" }}>
                   Remove from list
                 </button>
               </>}
@@ -322,15 +317,13 @@ function Spinner({ text = "Loading…" }) {
 
 /**
  * Responsive grid of GameCards.
- * Renders an empty-state message when the games array is empty.
- *
  * cardCount === 0 → auto-fill columns based on cardW (responsive)
- * cardCount  >  0 → fixed number of columns regardless of viewport width
+ * cardCount  >  0 → fixed column count, capped at what physically fits the viewport
  */
-function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, emptyMsg, cardW, cardH, uploadBtnMult, uploadBtnText, cardCount }) {
+function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, emptyMsg, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount }) {
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
-  const cols = cardCount > 0
-    ? `repeat(${cardCount}, 1fr)`
+  const cols = effectiveCardCount > 0
+    ? `repeat(${effectiveCardCount}, 1fr)`
     : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   return (
     <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
@@ -343,13 +336,65 @@ function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUplo
 }
 
 /**
- * Fixed-position toast notification that auto-dismisses.
- * Appears top-right with a green (success) or red (error) style.
+ * Favourites grid with HTML5 drag-and-drop reordering.
+ * The first three cards receive a glowing border/background if enabled in settings.
  *
  * Props:
- *   msg  — message string to display
- *   ok   — true = success style, false = error style
- *   onDone — callback fired when the animation ends, used to clear the toast from state
+ *   entries         — ordered array of list entries (already sorted)
+ *   glowConfig      — array of 3 { enabled, color } objects for ranks 1–3
+ *   onReorder       — (fromId, toId) => void — called when a card is dropped onto another
+ *   effectiveCardCount — capped column count (0 = auto-fill)
+ */
+function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount, onReorder }) {
+  const [dragOverId, setDragOverId] = useState(null);
+  const dragId = useRef(null);
+
+  if (!entries.length) return (
+    <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>
+      No favourites yet. Add games to your list and star them!
+    </div>
+  );
+
+  const cols = effectiveCardCount > 0
+    ? `repeat(${effectiveCardCount}, 1fr)`
+    : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
+      {entries.map((e, i) => {
+        const glow = i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null;
+        const isDragTarget = dragOverId === e.game.id;
+        return (
+          <div key={e.game.id}
+            draggable
+            onDragStart={() => { dragId.current = e.game.id; }}
+            onDragEnd={() => { dragId.current = null; setDragOverId(null); }}
+            onDragOver={ev => { ev.preventDefault(); if (dragId.current !== e.game.id) setDragOverId(e.game.id); }}
+            onDragLeave={() => setDragOverId(null)}
+            onDrop={() => {
+              setDragOverId(null);
+              if (dragId.current != null && dragId.current !== e.game.id) onReorder(dragId.current, e.game.id);
+            }}
+            style={{
+              opacity:    isDragTarget ? 0.5 : 1,
+              outline:    isDragTarget ? "2px dashed #7c6ef755" : "none",
+              borderRadius: 12,
+              cursor:     "grab",
+              transition: "opacity 0.15s",
+            }}>
+            <GameCard game={e.game} listEntry={e} cardH={cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
+              glowColor={glow}
+              onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Fixed-position toast notification that auto-dismisses.
+ * Appears top-right with a green (success) or red (error) style.
  */
 function Toast({ msg, ok, onDone }) {
   return (
@@ -359,9 +404,10 @@ function Toast({ msg, ok, onDone }) {
       border: `1px solid ${ok ? "#4caf8066" : "#ff606066"}`,
       color: ok ? "#4caf80" : "#ff8080",
       borderRadius: 10, padding: "12px 20px",
-      fontSize: 13, fontWeight: 600,
+      fontSize: 13, fontWeight: 700,
       boxShadow: "0 4px 24px rgba(0,0,0,0.6)",
       animation: "toastIn 0.2s ease, toastOut 0.3s ease 2.5s forwards",
+      fontFamily: "inherit",
     }}>
       <style>{`
         @keyframes toastIn  { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
@@ -372,27 +418,54 @@ function Toast({ msg, ok, onDone }) {
   );
 }
 
+/**
+ * A single row in the Glow Settings panel.
+ * Shows rank badge, label, a color picker, and an enable/disable toggle.
+ */
+function GlowRow({ rank, label, enabled, color, onToggle, onColor }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+      {/* Rank badge */}
+      <div style={{
+        width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
+        background: enabled ? `${color}22` : "#1a1a2e",
+        border: `2px solid ${enabled ? color : "#333"}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 11, fontWeight: 800, color: enabled ? color : "#444",
+        transition: "all 0.2s",
+      }}>{rank}</div>
+
+      <span style={{ fontSize: 12, color: "#888", flex: 1 }}>{label}</span>
+
+      {/* Native color picker */}
+      <input type="color" value={color} onChange={e => onColor(e.target.value)}
+        title="Pick glow color"
+        style={{ width: 34, height: 26, border: "1px solid #2a2a40", borderRadius: 5, cursor: "pointer", background: "none", padding: 2 }} />
+
+      {/* Toggle switch */}
+      <button onClick={onToggle} title={enabled ? "Disable glow" : "Enable glow"}
+        style={{
+          width: 38, height: 22, borderRadius: 11, border: "none",
+          background: enabled ? "#7c6ef7" : "#2a2a3a",
+          cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0,
+        }}>
+        <div style={{
+          width: 16, height: 16, borderRadius: "50%", background: "#fff",
+          position: "absolute", top: 3,
+          left: enabled ? 19 : 3,
+          transition: "left 0.2s",
+        }} />
+      </button>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Root App component
 // ---------------------------------------------------------------------------
 
 /**
  * Root component — owns all state and orchestrates API calls.
- *
- * State:
- *   tab           — active tab ("mylist" | "favs" | "search" | "settings")
- *   cardWMult     — card width multiplier (persisted in DB via /api/settings)
- *   cardHMult     — card height multiplier (persisted in DB via /api/settings)
- *   uploadBtnMult — cover upload button size multiplier (persisted in DB)
- *   uploadBtnText — optional custom label on the upload button (persisted in DB, cached in state)
- *   cardCount     — fixed column count; 0 = auto-fill (persisted in DB)
- *   settingsDirty — true when any setting has been changed but not yet saved
- *   toast         — { msg, ok } for the save feedback popup, or null
- *   statusFilter  — integer status ID to filter My List, or null for all
- *   query         — current search input value
- *   searchResults — array of RAWG game objects from the last search
- *   myList        — object keyed by game_id, values are list entries from the API
- *   backendOk     — null (loading) | true | false — drives the warning banner
  */
 export default function App() {
   const [tab, setTab]                     = useState("mylist");
@@ -401,12 +474,39 @@ export default function App() {
   const [uploadBtnMult, setUploadBtnMult] = useState(1.0);
   const [uploadBtnText, setUploadBtnText] = useState("");
   const [cardCount, setCardCount]         = useState(0);
+  const [glow1Enabled, setGlow1Enabled]   = useState(true);
+  const [glow1Color,   setGlow1Color]     = useState("#FFD700");
+  const [glow2Enabled, setGlow2Enabled]   = useState(true);
+  const [glow2Color,   setGlow2Color]     = useState("#C0C0C0");
+  const [glow3Enabled, setGlow3Enabled]   = useState(true);
+  const [glow3Color,   setGlow3Color]     = useState("#CD7F32");
   const [settingsDirty, setSettingsDirty] = useState(false);
-  const [toast, setToast]                 = useState(null);  // { msg, ok }
+  const [saving, setSaving]               = useState(false);
+  const [toast, setToast]                 = useState(null);
   const [statusFilter, setStatusFilter]   = useState(null);
 
+  // Track window width so we can cap column count to what actually fits
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  useEffect(() => {
+    const handler = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+
+  // Drag-and-drop order for favourites tab (persisted in localStorage)
+  const [favOrder, setFavOrder] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("gamilist-fav-order") || "[]"); }
+    catch { return []; }
+  });
+
   // Tracks the last-saved DB state so Cancel can revert to it
-  const dbSettings = useRef({ cardWMult: 1.5, cardHMult: 1.5, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0 });
+  const dbSettings = useRef({
+    cardWMult: 1.5, cardHMult: 1.5, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
+    glow1Enabled: true, glow1Color: "#FFD700",
+    glow2Enabled: true, glow2Color: "#C0C0C0",
+    glow3Enabled: true, glow3Color: "#CD7F32",
+  });
+
   const [query, setQuery]               = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -426,15 +526,27 @@ export default function App() {
           uploadBtnMult: s.uploadBtnMult ?? 1.0,
           uploadBtnText: s.uploadBtnText ?? "",
           cardCount:     s.cardCount     ?? 0,
+          glow1Enabled:  s.glow1Enabled  ?? true,
+          glow1Color:    s.glow1Color    ?? "#FFD700",
+          glow2Enabled:  s.glow2Enabled  ?? true,
+          glow2Color:    s.glow2Color    ?? "#C0C0C0",
+          glow3Enabled:  s.glow3Enabled  ?? true,
+          glow3Color:    s.glow3Color    ?? "#CD7F32",
         };
         setCardWMult(loaded.cardWMult);
         setCardHMult(loaded.cardHMult);
         setUploadBtnMult(loaded.uploadBtnMult);
         setUploadBtnText(loaded.uploadBtnText);
         setCardCount(loaded.cardCount);
-        dbSettings.current = loaded; // seed the cancel baseline
+        setGlow1Enabled(loaded.glow1Enabled);
+        setGlow1Color(loaded.glow1Color);
+        setGlow2Enabled(loaded.glow2Enabled);
+        setGlow2Color(loaded.glow2Color);
+        setGlow3Enabled(loaded.glow3Enabled);
+        setGlow3Color(loaded.glow3Color);
+        dbSettings.current = loaded;
       })
-      .catch(() => {}); // non-fatal — defaults already in state
+      .catch(() => {});
 
     apiFetch("/list")
       .then(data => { setMyList(data); setBackendOk(true); })
@@ -444,28 +556,32 @@ export default function App() {
 
   /**
    * Persist all current settings to the database.
-   * Shows a toast on success or failure; updates the cancel baseline on success.
+   * Shows a progress bar while saving; button greys out on success.
    */
-  const saveSettings = useCallback(async (w, h, btn, btnText, count) => {
+  const saveSettings = useCallback(async (w, h, btn, btnText, count, g1e, g1c, g2e, g2c, g3e, g3c) => {
+    setSaving(true);
     try {
       await apiFetch("/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cardWMult: w, cardHMult: h, uploadBtnMult: btn, uploadBtnText: btnText, cardCount: count }),
+        body: JSON.stringify({
+          cardWMult: w, cardHMult: h, uploadBtnMult: btn, uploadBtnText: btnText, cardCount: count,
+          glow1Enabled: g1e, glow1Color: g1c,
+          glow2Enabled: g2e, glow2Color: g2c,
+          glow3Enabled: g3e, glow3Color: g3c,
+        }),
       });
-      dbSettings.current = { cardWMult: w, cardHMult: h, uploadBtnMult: btn, uploadBtnText: btnText, cardCount: count };
+      dbSettings.current = { cardWMult: w, cardHMult: h, uploadBtnMult: btn, uploadBtnText: btnText, cardCount: count, glow1Enabled: g1e, glow1Color: g1c, glow2Enabled: g2e, glow2Color: g2c, glow3Enabled: g3e, glow3Color: g3c };
       setSettingsDirty(false);
-      setToast({ msg: "Settings saved", ok: true });
     } catch (e) {
       console.error("Failed to save settings", e);
       setToast({ msg: "Failed to save settings", ok: false });
+    } finally {
+      setSaving(false);
     }
   }, []);
 
-  /**
-   * Revert all settings state to the last-saved DB values.
-   * Clears the dirty flag without touching the database.
-   */
+  /** Revert all settings state to the last-saved DB values. */
   const cancelSettings = useCallback(() => {
     const s = dbSettings.current;
     setCardWMult(s.cardWMult);
@@ -473,14 +589,15 @@ export default function App() {
     setUploadBtnMult(s.uploadBtnMult);
     setUploadBtnText(s.uploadBtnText);
     setCardCount(s.cardCount);
+    setGlow1Enabled(s.glow1Enabled);
+    setGlow1Color(s.glow1Color);
+    setGlow2Enabled(s.glow2Enabled);
+    setGlow2Color(s.glow2Color);
+    setGlow3Enabled(s.glow3Enabled);
+    setGlow3Color(s.glow3Color);
     setSettingsDirty(false);
   }, []);
 
-  /**
-   * Persist a list entry to the database and merge the returned row back into
-   * local state. Wrapped in useCallback so it can be passed to child components
-   * without causing unnecessary re-renders.
-   */
   const persist = useCallback(async (gameId, entry) => {
     try {
       const updated = await apiFetch(`/list/${gameId}`, {
@@ -494,63 +611,43 @@ export default function App() {
     }
   }, []);
 
-  /** Add a game to the list with the given status, or change its status. */
   const addToList = (game, status) => {
     const existing = myList[game.id] || {};
     const next = { ...existing, game, status };
-    setMyList(p => ({ ...p, [game.id]: next })); // optimistic update
+    setMyList(p => ({ ...p, [game.id]: next }));
     persist(game.id, next);
   };
 
-  /** Remove a game from the list (optimistic delete, then API call). */
   const removeFromList = async (id) => {
     setMyList(p => { const n = { ...p }; delete n[id]; return n; });
     await apiFetch(`/list/${id}`, { method: "DELETE" });
   };
 
-  /**
-   * Toggle the favourite flag on a list entry.
-   * When starring (not un-starring):
-   *   - Status is automatically set to Played (1) since favouriting implies completion.
-   *   - Rating is set to 10 if none exists yet, as a convenience default.
-   */
   const toggleFav = (id) => {
     const entry = myList[id];
     if (!entry) return;
-    const wasFav = entry.favourite;
-    const starring = !wasFav;
+    const starring = !entry.favourite;
     const next = {
       ...entry,
-      favourite: starring,
-      status:    starring ? 1 : entry.status,           // auto-Played when starring
+      favourite:  starring,
+      status:     starring ? 1 : entry.status,
       userRating: starring && entry.userRating == null ? 10 : entry.userRating,
     };
     setMyList(p => ({ ...p, [id]: next }));
     persist(id, next);
   };
 
-  /**
-   * Update the user's personal rating for a listed game.
-   * Setting any non-null rating automatically marks the game as Played (1),
-   * since rating implies the user has experience with the game.
-   */
   const rateGame = (id, v) => {
     const entry = myList[id];
-    const next = {
-      ...entry,
-      userRating: v,
-      status: v != null ? 1 : entry.status,  // auto-Played when a rating is set
-    };
+    const next = { ...entry, userRating: v, status: v != null ? 1 : entry.status };
     setMyList(p => ({ ...p, [id]: next }));
     persist(id, next);
   };
 
-  /** Called by CoverUpload after a successful upload to flip hasCover to true in local state. */
   const handleCoverUploaded = (id) => {
     setMyList(p => ({ ...p, [id]: { ...p[id], hasCover: true } }));
   };
 
-  /** Execute a RAWG game search and switch to the Search tab. */
   const doSearch = async () => {
     if (!query.trim()) return;
     setTab("search");
@@ -574,6 +671,33 @@ export default function App() {
   const favEntries  = allEntries.filter(e => e.favourite);
   const listEntries = statusFilter === null ? allEntries : allEntries.filter(e => e.status === statusFilter);
 
+  /**
+   * Favourites entries in drag-and-drop order.
+   * IDs in favOrder that are still favourites come first (in order),
+   * then any newly starred entries appended at the end.
+   */
+  const orderedFavEntries = useMemo(() => {
+    if (!favOrder.length) return favEntries;
+    const favMap = Object.fromEntries(favEntries.map(e => [String(e.game.id), e]));
+    const ordered  = favOrder.map(id => favMap[String(id)]).filter(Boolean);
+    const orderedIds = new Set(favOrder.map(String));
+    const extras   = favEntries.filter(e => !orderedIds.has(String(e.game.id)));
+    return [...ordered, ...extras];
+  }, [favEntries, favOrder]);
+
+  /** Called by FavGrid when a card is dragged onto another — reorders the list. */
+  const reorderFavs = (fromId, toId) => {
+    const allIds = orderedFavEntries.map(e => String(e.game.id));
+    const from   = allIds.indexOf(String(fromId));
+    const to     = allIds.indexOf(String(toId));
+    if (from === -1 || to === -1 || from === to) return;
+    const next = [...allIds];
+    next.splice(from, 1);
+    next.splice(to, 0, String(fromId));
+    localStorage.setItem("gamilist-fav-order", JSON.stringify(next));
+    setFavOrder(next);
+  };
+
   const TABS = [
     { id: "mylist",   label: `My List${allEntries.length ? ` (${allEntries.length})` : ""}` },
     { id: "favs",     label: `Favourites${favEntries.length ? ` (${favEntries.length})` : ""}` },
@@ -585,33 +709,71 @@ export default function App() {
   const cardW = Math.round(210 * cardWMult);
   const cardH = Math.round(170 * cardHMult);
 
-  // Settings updaters — apply change live and mark dirty for Save button
-  const updateW       = (v) => { setCardWMult(v);       setSettingsDirty(true); };
-  const updateH       = (v) => { setCardHMult(v);       setSettingsDirty(true); };
-  const updateBtn     = (v) => { setUploadBtnMult(v);   setSettingsDirty(true); };
-  const updateCount   = (v) => { setCardCount(v);       setSettingsDirty(true); };
-  const updateBtnText = (v) => { setUploadBtnText(v);   setSettingsDirty(true); };
+  /**
+   * Maximum columns that physically fit given the current card width and viewport.
+   * Formula: floor((containerWidth + gap) / (cardW + gap))
+   * Container = windowWidth - 56px padding. Gap = 20px.
+   */
+  const maxFitCols = Math.max(1, Math.floor((windowWidth - 56 + 20) / (cardW + 20)));
 
-  // Shared props passed to every Grid to avoid prop drilling
-  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, cardW, cardH, uploadBtnMult, uploadBtnText, cardCount };
+  /**
+   * Effective column count used in grids.
+   * When cardCount is set to a number higher than fits, silently cap it so cards
+   * remain equal-width rather than overflowing or shrinking below the card width.
+   */
+  const effectiveCardCount = cardCount > 0 ? Math.min(cardCount, maxFitCols) : 0;
 
-  // Games used in the Settings preview — favourites first, fill with all entries
-  const previewGames = favEntries.length ? favEntries : allEntries;
+  // Settings updaters — apply change live and mark dirty
+  const updateW          = (v) => { setCardWMult(v);       setSettingsDirty(true); };
+  const updateH          = (v) => { setCardHMult(v);       setSettingsDirty(true); };
+  const updateBtn        = (v) => { setUploadBtnMult(v);   setSettingsDirty(true); };
+  const updateCount      = (v) => { setCardCount(v);       setSettingsDirty(true); };
+  const updateBtnText    = (v) => { setUploadBtnText(v);   setSettingsDirty(true); };
+  const updateGlow1E     = (v) => { setGlow1Enabled(v);    setSettingsDirty(true); };
+  const updateGlow1C     = (v) => { setGlow1Color(v);      setSettingsDirty(true); };
+  const updateGlow2E     = (v) => { setGlow2Enabled(v);    setSettingsDirty(true); };
+  const updateGlow2C     = (v) => { setGlow2Color(v);      setSettingsDirty(true); };
+  const updateGlow3E     = (v) => { setGlow3Enabled(v);    setSettingsDirty(true); };
+  const updateGlow3C     = (v) => { setGlow3Color(v);      setSettingsDirty(true); };
+
+  // Glow config array passed to FavGrid — index 0 = 1st place, etc.
+  const glowConfig = [
+    { enabled: glow1Enabled, color: glow1Color },
+    { enabled: glow2Enabled, color: glow2Color },
+    { enabled: glow3Enabled, color: glow3Color },
+  ];
+
+  // Shared props passed to every Grid / FavGrid
+  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount };
+
+  // Games used in the Settings preview — favourites first, fall back to all entries
+  const previewEntries = orderedFavEntries.length ? orderedFavEntries : allEntries;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#080814", color: "#e0e0f0", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: "#080814", color: "#e0e0f0", fontFamily: "'Nunito', 'system-ui', sans-serif" }}>
 
-      {/* ── Toast notification ── */}
+      {/* Global styles */}
+      <style>{`
+        @keyframes progressFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes toastIn  { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+        @keyframes toastOut { from { opacity: 1; } to { opacity: 0; } }
+        * { box-sizing: border-box; }
+        input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type=color]::-webkit-color-swatch { border: none; border-radius: 3px; }
+      `}</style>
+
+      {/* ── Toast notification (errors only now) ── */}
       {toast && <Toast msg={toast.msg} ok={toast.ok} onDone={() => setToast(null)} />}
 
-      {/* ── Sticky header with nav tabs and search bar ── */}
+      {/* ── Sticky header ── */}
       <div style={{ background: "#0c0c1c", borderBottom: "1px solid #16162a", padding: "0 28px", position: "sticky", top: 0, zIndex: 50 }}>
         <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", alignItems: "center", height: 62, gap: 20 }}>
           <span style={{ fontFamily: "'Gloria Hallelujah', cursive", fontSize: 20, color: "#7c6ef7", whiteSpace: "nowrap" }}>GamiList</span>
           <div style={{ display: "flex", gap: 2 }}>
             {TABS.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
-                style={{ padding: "7px 16px", borderRadius: 7, border: "none", background: tab===t.id ? "#7c6ef722" : "transparent", color: tab===t.id ? "#7c6ef7" : "#555", cursor: "pointer", fontWeight: tab===t.id ? 600 : 400, fontSize: 13, whiteSpace: "nowrap" }}>
+                style={{ padding: "7px 16px", borderRadius: 7, border: "none", background: tab===t.id ? "#7c6ef722" : "transparent", color: tab===t.id ? "#7c6ef7" : "#555", cursor: "pointer", fontWeight: tab===t.id ? 700 : 400, fontSize: 13, whiteSpace: "nowrap", fontFamily: "inherit" }}>
                 {t.label}
               </button>
             ))}
@@ -619,9 +781,9 @@ export default function App() {
           <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
             <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && doSearch()}
               placeholder="Search any game…"
-              style={{ width: 230, background: "#12121e", border: "1px solid #1e1e35", borderRadius: 8, padding: "8px 14px", color: "#e0e0f0", fontSize: 13, outline: "none" }} />
+              style={{ width: 230, background: "#12121e", border: "1px solid #1e1e35", borderRadius: 8, padding: "8px 14px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
             <button onClick={doSearch} disabled={searchLoading}
-              style={{ padding: "8px 18px", background: "#7c6ef7", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: searchLoading ? "not-allowed" : "pointer", opacity: searchLoading ? 0.6 : 1, whiteSpace: "nowrap" }}>
+              style={{ padding: "8px 18px", background: "#7c6ef7", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: searchLoading ? "not-allowed" : "pointer", opacity: searchLoading ? 0.6 : 1, whiteSpace: "nowrap", fontFamily: "inherit" }}>
               Search
             </button>
           </div>
@@ -640,9 +802,8 @@ export default function App() {
         {/* ── My List tab ── */}
         {tab === "mylist" && (
           <>
-            <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", marginBottom: 20 }}>My List</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 20 }}>My List</div>
 
-            {/* Status filter cards — click to filter the grid, click again to clear */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, marginBottom: 28 }}>
               {STATUSES.map(s => {
                 const cnt    = allEntries.filter(e => e.status === s.id).length;
@@ -659,8 +820,8 @@ export default function App() {
 
             {statusFilter !== null && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-                <span style={{ fontSize: 13, color: STATUSES[statusFilter].color, fontWeight: 600 }}>Filtering: {STATUSES[statusFilter].label}</span>
-                <button onClick={() => setStatusFilter(null)} style={{ fontSize: 11, color: "#555", background: "transparent", border: "1px solid #1e1e30", borderRadius: 5, padding: "3px 9px", cursor: "pointer" }}>Clear</button>
+                <span style={{ fontSize: 13, color: STATUSES[statusFilter].color, fontWeight: 700 }}>Filtering: {STATUSES[statusFilter].label}</span>
+                <button onClick={() => setStatusFilter(null)} style={{ fontSize: 11, color: "#555", background: "transparent", border: "1px solid #1e1e30", borderRadius: 5, padding: "3px 9px", cursor: "pointer", fontFamily: "inherit" }}>Clear</button>
               </div>
             )}
 
@@ -674,99 +835,117 @@ export default function App() {
         {/* ── Favourites tab ── */}
         {tab === "favs" && (
           <>
-            <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", marginBottom: 6 }}>Favourites</div>
-            <div style={{ fontSize: 13, color: "#444", marginBottom: 28 }}>Star ★ any game from your list to add it here.</div>
-            <Grid games={favEntries.map(e => e.game)} {...gridProps} emptyMsg="No favourites yet. Add games to your list and star them!" />
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 4 }}>Favourites</div>
+            <div style={{ fontSize: 13, color: "#444", marginBottom: 28 }}>
+              Star ★ any game from your list to add it here. Drag cards to reorder them.
+            </div>
+            <FavGrid entries={orderedFavEntries} glowConfig={glowConfig} {...gridProps} onReorder={reorderFavs} />
           </>
         )}
 
         {/* ── Settings tab ── */}
         {tab === "settings" && (
           <>
-            {/* Header row with title, save, and cancel buttons */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff" }}>Settings</div>
+            {/* Header row: title + save/cancel buttons */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: saving ? 8 : 28, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff" }}>Settings</div>
 
               <button
-                onClick={() => saveSettings(cardWMult, cardHMult, uploadBtnMult, uploadBtnText, cardCount)}
-                disabled={!settingsDirty}
+                onClick={() => saveSettings(cardWMult, cardHMult, uploadBtnMult, uploadBtnText, cardCount, glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color)}
+                disabled={!settingsDirty || saving}
                 style={{
                   padding: "8px 20px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 13,
-                  cursor: settingsDirty ? "pointer" : "not-allowed",
-                  background: settingsDirty ? "#7c6ef7" : "#1a1a2e",
-                  color:      settingsDirty ? "#fff"    : "#333",
+                  cursor: settingsDirty && !saving ? "pointer" : "not-allowed",
+                  background: settingsDirty && !saving ? "#7c6ef7" : "#1a1a2e",
+                  color:      settingsDirty && !saving ? "#fff"    : "#444",
                   transition: "background 0.2s, color 0.2s",
+                  fontFamily: "inherit",
                 }}>
-                Save Settings
+                {saving ? "Saving…" : "Save Settings"}
               </button>
 
-              {settingsDirty && (
+              {settingsDirty && !saving && (
                 <button onClick={cancelSettings}
-                  style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                  style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>
                   Cancel
                 </button>
               )}
 
-              {settingsDirty && (
+              {settingsDirty && !saving && (
                 <span style={{ fontSize: 12, color: "#444" }}>Unsaved changes</span>
               )}
             </div>
+
+            {/* Progress bar — shown while the save API call is in flight */}
+            {saving && (
+              <div style={{ height: 3, background: "#1a1a2e", borderRadius: 2, marginBottom: 28, overflow: "hidden" }}>
+                <div style={{
+                  height: "100%", width: "100%",
+                  background: "linear-gradient(90deg, #7c6ef7, #a78bfa)",
+                  transformOrigin: "left",
+                  animation: "progressFill 0.5s ease-out forwards",
+                }} />
+              </div>
+            )}
 
             {/* Settings panels row */}
             <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 40 }}>
 
               {/* ── Card Settings panel ── */}
               <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#eeeeff", marginBottom: 6 }}>Card Settings</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Card Settings</div>
                 <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
                   Control card dimensions and grid layout. Width and Height scale each card from a
-                  base size. Columns sets a fixed column count — set to Auto to let the grid fill
-                  based on card width.
+                  base size. Columns sets a fixed column count — set to Auto to fill based on width.
+                  The column limit adjusts automatically to fit your screen.
                 </div>
 
                 {[
-                  { label: "Width",  value: cardWMult, onChange: updateW, color: "#7c6ef7", marks: ["0.25×","1×","2×","3×","5×"] },
-                  { label: "Height", value: cardHMult, onChange: updateH, color: "#38bdf8", marks: ["0.25×","1×","2×","3×","5×"] },
-                ].map(({ label, value, onChange, color, marks }) => (
+                  { label: "Width",  value: cardWMult, onChange: updateW, color: "#7c6ef7" },
+                  { label: "Height", value: cardHMult, onChange: updateH, color: "#38bdf8" },
+                ].map(({ label, value, onChange, color }) => (
                   <div key={label} style={{ marginBottom: 24 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={{ fontSize: 12, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>{label}</span>
+                      <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>{label}</span>
                       <span style={{ fontSize: 12, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
                     </div>
                     <input type="range" min="0.25" max="5" step="0.05" value={value}
                       onChange={e => onChange(parseFloat(e.target.value))}
                       style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
-                      {marks.map(m => <span key={m}>{m}</span>)}
+                      {["0.25×","1×","2×","3×","5×"].map(m => <span key={m}>{m}</span>)}
                     </div>
                   </div>
                 ))}
 
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Columns</span>
-                    <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700 }}>{cardCount === 0 ? "Auto" : cardCount}</span>
+                    <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Columns</span>
+                    <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700 }}>
+                      {cardCount === 0 ? "Auto" : `${effectiveCardCount}${effectiveCardCount < cardCount ? ` (max ${maxFitCols})` : ""}`}
+                    </span>
                   </div>
-                  <input type="range" min="0" max="8" step="1" value={cardCount}
+                  <input type="range" min="0" max={maxFitCols} step="1" value={Math.min(cardCount, maxFitCols)}
                     onChange={e => updateCount(parseInt(e.target.value))}
                     style={{ width: "100%", accentColor: "#a78bfa", cursor: "pointer" }} />
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
-                    <span>Auto</span><span>2</span><span>4</span><span>6</span><span>8</span>
+                    <span>Auto</span>
+                    <span style={{ marginLeft: "auto" }}>Max {maxFitCols}</span>
                   </div>
                 </div>
               </div>
 
               {/* ── Cover Upload Button panel ── */}
               <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#eeeeff", marginBottom: 6 }}>Cover Upload Button</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Cover Upload Button</div>
                 <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-                  Adjusts the size and label of the upload button that appears on the bottom-right
-                  of each game card. Leave the label empty to show the default camera emoji.
+                  Adjusts the size and label of the upload button on the bottom-right of each card.
+                  Leave the label field empty to show the default 📷 icon.
                 </div>
 
                 <div style={{ marginBottom: 24 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Size</span>
+                    <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Size</span>
                     <span style={{ fontSize: 12, color: "#e6a63a", fontWeight: 700 }}>{uploadBtnMult.toFixed(1)}×</span>
                   </div>
                   <input type="range" min="0.5" max="4" step="0.05" value={uploadBtnMult}
@@ -778,15 +957,43 @@ export default function App() {
                 </div>
 
                 <div>
-                  <div style={{ fontSize: 12, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Button Label</div>
+                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Button Label</div>
                   <input
                     type="text"
                     value={uploadBtnText}
                     onChange={e => updateBtnText(e.target.value)}
-                    placeholder="Leave empty for  emoji"
+                    placeholder="Leave empty to show 📷 icon"
                     maxLength={24}
-                    style={{ width: "100%", boxSizing: "border-box", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "7px 10px", color: "#e0e0f0", fontSize: 12, outline: "none" }}
+                    style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "7px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }}
                   />
+                </div>
+              </div>
+
+              {/* ── Glow Settings panel ── */}
+              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Top Favourites Glow</div>
+                <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
+                  The first three cards in your Favourites list get a glowing border and background.
+                  Pick a color and toggle each rank on or off independently.
+                </div>
+
+                <GlowRow rank="1" label="1st place"
+                  enabled={glow1Enabled} color={glow1Color}
+                  onToggle={() => updateGlow1E(!glow1Enabled)}
+                  onColor={updateGlow1C} />
+                <GlowRow rank="2" label="2nd place"
+                  enabled={glow2Enabled} color={glow2Color}
+                  onToggle={() => updateGlow2E(!glow2Enabled)}
+                  onColor={updateGlow2C} />
+                <GlowRow rank="3" label="3rd place"
+                  enabled={glow3Enabled} color={glow3Color}
+                  onToggle={() => updateGlow3E(!glow3Enabled)}
+                  onColor={updateGlow3C} />
+
+                <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 14, marginTop: 2 }}>
+                  <div style={{ fontSize: 11, color: "#333", lineHeight: 1.6 }}>
+                    Reorder Favourites by dragging cards on the Favourites tab.
+                  </div>
                 </div>
               </div>
 
@@ -794,20 +1001,20 @@ export default function App() {
 
             {/* ── Full-width preview at the bottom ── */}
             <div style={{ borderTop: "1px solid #16162a", paddingTop: 28 }}>
-              <div style={{ fontSize: 12, color: "#555", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>
-                Preview {cardCount > 0 ? `— ${cardCount} column${cardCount > 1 ? "s" : ""}` : "— Auto columns"}
+              <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>
+                Preview {effectiveCardCount > 0 ? `— ${effectiveCardCount} column${effectiveCardCount > 1 ? "s" : ""}` : "— Auto columns"}
               </div>
-              {previewGames.length > 0
+              {previewEntries.length > 0
                 ? (() => {
-                    // Fill preview: use enough entries to demonstrate the column count
-                    const count = cardCount > 0 ? cardCount : 4;
-                    const games = Array.from({ length: count }, (_, i) => previewGames[i % previewGames.length]);
-                    const cols  = cardCount > 0 ? `repeat(${cardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
+                    const count = effectiveCardCount > 0 ? effectiveCardCount : Math.min(4, maxFitCols);
+                    const entries = Array.from({ length: count }, (_, i) => previewEntries[i % previewEntries.length]);
+                    const cols    = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
                     return (
                       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
-                        {games.map((e, i) => (
+                        {entries.map((e, i) => (
                           <GameCard key={i} game={e.game} listEntry={e} cardH={cardH}
                             uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
+                            glowColor={i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null}
                             onAdd={addToList} onRemove={removeFromList} onToggleFav={toggleFav}
                             onRate={rateGame} onCoverUploaded={handleCoverUploaded} />
                         ))}
@@ -825,7 +1032,7 @@ export default function App() {
         {/* ── Search tab ── */}
         {tab === "search" && (
           <>
-            <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", marginBottom: 6 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>
               {searched ? `Results for "${query}"` : "Search Games"}
             </div>
             <div style={{ fontSize: 13, color: "#444", marginBottom: 28 }}>
