@@ -454,6 +454,20 @@ function SteamLibrarySection({ library, steamMappings, myList, onImport, onRefre
                   <span style={{ fontSize: 11, color: "#444", whiteSpace: "nowrap", minWidth: 36, textAlign: "right" }}>{formatHours(g.playtime_forever)}</span>
                   {!inList && (
                     <>
+                      {steamMappings.filter(m => !m.skip).length > 0 && (
+                        <select defaultValue="" onChange={e => {
+                          const i = parseInt(e.target.value);
+                          if (isNaN(i)) return;
+                          const m = steamMappings[i];
+                          const rm = m.pattern.match(/\((\d+(?:\.\d+)?)\)/);
+                          const rating = rm ? parseFloat(rm[1]) : undefined;
+                          setSelections(p => ({ ...p, [g.appid]: { ...p[g.appid], status: m.status, ...(rating !== undefined ? { rating } : {}) } }));
+                          e.target.value = "";
+                        }} style={{ background: "#0a0a14", border: "1px solid #2a2a50", borderRadius: 5, padding: "3px 6px", color: "#7c6ef7", fontSize: 11, fontFamily: "inherit", outline: "none" }}>
+                          <option value="" disabled>Category…</option>
+                          {steamMappings.map((m, i) => !m.skip && <option key={i} value={i}>{m.pattern}</option>)}
+                        </select>
+                      )}
                       <select value={sel.status ?? 1}
                         onChange={e => setSelections(p => ({ ...p, [g.appid]: { ...p[g.appid], status: parseInt(e.target.value) } }))}
                         style={{ background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 5, padding: "3px 6px", color: STATUSES[sel.status ?? 1]?.color || "#e0e0f0", fontSize: 11, fontFamily: "inherit", outline: "none" }}>
