@@ -149,7 +149,8 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
  * status dropdown is always at the same vertical position in every card
  * regardless of how many optional fields (rating bar, genres, score) are present.
  */
-function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, platformIconMode = true, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null }) {
+function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null }) {
+  const statusProps = (id) => getStatusProps ? getStatusProps(id) : (STATUSES[id] || STATUSES[6]);
   const [hover, setHover]           = useState(false);
   const [showMenu, setShowMenu]     = useState(false);
   const [imgErr, setImgErr]         = useState(false);
@@ -235,7 +236,7 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
           </button>
         )}
         {status !== null && (
-          <div style={{ position: "absolute", top: 8, right: 8, background: STATUSES[status].color + "dd", borderRadius: 6, padding: "3px 9px", fontSize: 10, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>
+          <div style={{ position: "absolute", top: 8, right: 8, background: statusProps(status).color + "dd", borderRadius: 6, padding: "3px 9px", fontSize: 10, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>
             {STATUSES[status].label}
           </div>
         )}
@@ -256,21 +257,17 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
                 const slug = p.platform.slug;
                 const active = played.includes(slug) || (isDefault && game.platforms[0].platform.slug === slug);
                 const pc = getPlatformColor ? getPlatformColor(slug) : "#7c6ef7";
-                const icon = platformIconMode ? <PlatformIcon slug={slug} color={active ? pc : "#444"} size={11} /> : null;
-                const hasIcon = icon !== null;
                 return (
                   <span key={slug} title={p.platform.name}
                     onClick={e => { e.stopPropagation(); if (listEntry && onTogglePlatform) onTogglePlatform(game.id, slug); }}
                     style={{ fontSize: 9, fontWeight: 700,
-                      padding: hasIcon ? "2px 5px" : "2px 5px",
+                      padding: "2px 5px",
                       borderRadius: 3,
                       background: active ? pc + "28" : "#141420",
                       border: `1px solid ${active ? pc + "77" : "#222238"}`,
                       color: active ? pc : "#444",
-                      cursor: listEntry ? "pointer" : "default", userSelect: "none", whiteSpace: "nowrap",
-                      display: "inline-flex", alignItems: "center", gap: 3 }}>
-                    {hasIcon ? icon : null}
-                    {!hasIcon && (PLATFORM_SHORT[slug] || p.platform.name.slice(0, 4))}
+                      cursor: listEntry ? "pointer" : "default", userSelect: "none", whiteSpace: "nowrap" }}>
+                    {PLATFORM_SHORT[slug] || p.platform.name.slice(0, 4)}
                   </span>
                 );
               })}
@@ -288,18 +285,21 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
 
         <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
           <button onClick={e => { e.stopPropagation(); setShowMenu(v => !v); }}
-            style={{ width: "100%", padding: "7px 11px", borderRadius: 8, border: `1px solid ${status !== null ? STATUSES[status].color + "44" : "#1e1e35"}`, background: status !== null ? STATUSES[status].bg : "#0a0a14", color: status !== null ? STATUSES[status].color : "#555", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "inherit" }}>
+            style={{ width: "100%", padding: "7px 11px", borderRadius: 8, border: `1px solid ${status !== null ? statusProps(status).color + "44" : "#1e1e35"}`, background: status !== null ? statusProps(status).bg : "#0a0a14", color: status !== null ? statusProps(status).color : "#555", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "inherit" }}>
             <span>{status !== null ? STATUSES[status].label : "＋ Add to list"}</span>
             <span style={{ opacity: 0.6, fontSize: 9 }}>▾</span>
           </button>
           {showMenu && (
             <div style={{ position: "absolute", bottom: "calc(100% + 5px)", left: 0, right: 0, background: "#10101e", border: "1px solid #2a2a40", borderRadius: 10, overflow: "hidden", zIndex: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}>
-              {STATUSES.map(s => (
-                <button key={s.id} onClick={e => { e.stopPropagation(); onAdd(game, s.id); setShowMenu(false); }}
-                  style={{ width: "100%", padding: "8px 14px", border: "none", background: status === s.id ? s.bg : "transparent", color: s.color, cursor: "pointer", fontSize: 12, textAlign: "left", fontWeight: status === s.id ? 700 : 400, display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit" }}>
-                  <span style={{ fontSize: 10, opacity: status === s.id ? 1 : 0 }}>✓</span>{s.label}
-                </button>
-              ))}
+              {STATUSES.map(s => {
+                const sp = statusProps(s.id);
+                return (
+                  <button key={s.id} onClick={e => { e.stopPropagation(); onAdd(game, s.id); setShowMenu(false); }}
+                    style={{ width: "100%", padding: "8px 14px", border: "none", background: status === s.id ? sp.bg : "transparent", color: sp.color, cursor: "pointer", fontSize: 12, textAlign: "left", fontWeight: status === s.id ? 700 : 400, display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit" }}>
+                    <span style={{ fontSize: 10, opacity: status === s.id ? 1 : 0 }}>✓</span>{s.label}
+                  </button>
+                );
+              })}
               {status !== null && <>
                 <div style={{ height: 1, background: "#1a1a30" }} />
                 <button onClick={e => { e.stopPropagation(); onRemove(game.id); setShowMenu(false); }}
@@ -324,7 +324,7 @@ function Spinner({ text = "Loading…" }) {
   );
 }
 
-function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, platformIconMode, emptyMsg, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount }) {
+function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount }) {
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   return (
@@ -332,13 +332,13 @@ function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUplo
       {games.map(g => (
         <GameCard key={g.id} game={g} listEntry={myList[g.id] || null} cardH={cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
           onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
-          onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} platformIconMode={platformIconMode} />
+          onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} />
       ))}
     </div>
   );
 }
 
-function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, platformIconMode, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount, onReorder }) {
+function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount, onReorder }) {
   const [dragOverId, setDragOverId] = useState(null);
   const dragId = useRef(null);
   if (!entries.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>No favourites yet. Add games to your list and star them!</div>;
@@ -357,7 +357,7 @@ function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, on
             style={{ opacity: dragOverId === e.game.id ? 0.5 : 1, outline: dragOverId === e.game.id ? "2px dashed #7c6ef755" : "none", borderRadius: 12, cursor: "grab", transition: "opacity 0.15s" }}>
             <GameCard game={e.game} listEntry={e} cardH={cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText} glowColor={glow}
               onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
-              onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} platformIconMode={platformIconMode} />
+              onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} />
           </div>
         );
       })}
@@ -386,51 +386,6 @@ function GlowRow({ rank, label, enabled, color, onToggle, onColor }) {
       </button>
     </div>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Platform icon — SVG icon for known platforms, null for unknown
-// ---------------------------------------------------------------------------
-
-// Slugs that share an icon family
-const PLATFORM_ICON_FAMILY = {
-  playstation4: "playstation", playstation3: "playstation", playstation2: "playstation", playstation: "playstation",
-  "xbox-one": "xbox", xbox360: "xbox", "xbox-old": "xbox",
-  "wii-u": "nintendo", wii: "nintendo", gamecube: "nintendo", "nintendo-64": "nintendo",
-  "super-nintendo": "nintendo", nes: "nintendo",
-  "game-boy-advance": "nintendo-handheld", "game-boy-color": "nintendo-handheld",
-  "game-boy": "nintendo-handheld", "nintendo-3ds": "nintendo-handheld", "nintendo-ds": "nintendo-handheld",
-  ios: "apple",
-};
-
-function PlatformIcon({ slug, color = "#888", size = 13 }) {
-  const family = PLATFORM_ICON_FAMILY[slug] || slug;
-  const v = "0 0 16 16";
-  const bg = "#080814";
-  switch (family) {
-    case "pc":
-      return <svg width={size} height={size} viewBox={v} fill={color}><path d="M0 0h7v7H0zm9 0h7v7H9zM0 9h7v7H0zm9 0h7v7H9z"/></svg>;
-    case "playstation5":
-    case "playstation":
-      return <svg width={size} height={size} viewBox={v} fill={color}><path d="M10 2.5C9 2 7.5 2.2 7.5 3.5V13l2 .7V4c0-.5.6-.7 1.1-.4.5.3.4.8.4 1.1v1.8l2 .7V4.8C13 3.5 11.5 3 10 2.5z"/><path d="M6.5 12L2 13.3 1 14v1.5L5 14v1.5l1.5-.5z"/></svg>;
-    case "xbox-series-x":
-    case "xbox":
-      return <svg width={size} height={size} viewBox={v} fill="none"><circle cx="8" cy="8" r="7" stroke={color} strokeWidth="1.5"/><path d="M5 5l3 3 3-3M11 11L8 8 5 11" stroke={color} strokeWidth="1.5" strokeLinecap="round"/></svg>;
-    case "nintendo-switch":
-    case "nintendo":
-      return <svg width={size} height={size} viewBox={v} fill={color}><rect x="0" y="3" width="4.5" height="10" rx="2.2"/><circle cx="2.2" cy="5.5" r="1.1" fill={bg}/><rect x="11.5" y="3" width="4.5" height="10" rx="2.2"/><circle cx="13.8" cy="10.5" r="1.1" fill={bg}/><rect x="4" y="4" width="8" height="8" rx="1"/></svg>;
-    case "nintendo-handheld":
-      return <svg width={size} height={size} viewBox={v} fill={color}><rect x="2" y="1" width="12" height="14" rx="2"/><rect x="4" y="3" width="8" height="7" rx="1" fill={bg}/><circle cx="11" cy="12" r="1.2" fill={bg}/><path d="M4 12h2M5 11v2" stroke={bg} strokeWidth="1" strokeLinecap="round"/></svg>;
-    case "macos":
-    case "apple":
-      return <svg width={size} height={size} viewBox={v} fill={color}><path d="M8 2C6.2 2 4.8 4 4.8 4S3.8 2 2.3 2.5C.8 3 .8 5.5 1.3 7.5 2.3 11 4.8 15 8 15s5.7-4 6.7-7.5C15.2 5.5 15.2 3 13.7 2.5 12.2 2 11.2 4 11.2 4S9.8 2 8 2z"/><path d="M7 1.5h2v2H7z"/></svg>;
-    case "linux":
-      return <svg width={size} height={size} viewBox={v} fill={color}><ellipse cx="8" cy="5.5" rx="3.5" ry="4"/><circle cx="6.5" cy="5" r=".9" fill={bg}/><circle cx="9.5" cy="5" r=".9" fill={bg}/><path d="M6.5 7c.4.7 2.6.7 3 0" stroke={bg} strokeWidth=".6" fill="none"/><path d="M5.5 9c-1.2.5-2.5 2-2 4 .5 1.5 1.5 2 2.5 1.5L8 14l2 .5c1 .5 2-.5 2.5-2 .5-2-.8-3.5-2-4-1-.5-4-.5-5 0z"/></svg>;
-    case "android":
-      return <svg width={size} height={size} viewBox={v} fill={color}><path d="M3 7A5 5 0 0 1 8 3.5 5 5 0 0 1 13 7v5a.5.5 0 0 1-.5.5h-9A.5.5 0 0 1 3 12zm-2 0h1.5v4.5H1zm12.5 0H15v4.5h-1.5zM5 13h1.5v3H5zm4.5 0H11v3H9.5z"/><circle cx="6" cy="9" r=".8" fill={bg}/><circle cx="10" cy="9" r=".8" fill={bg}/><path d="M4.5 2L6 4M11.5 2L10 4" stroke={color} strokeWidth="1.2" fill="none" strokeLinecap="round"/></svg>;
-    default:
-      return null;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -813,9 +768,9 @@ export default function App() {
   const [metadataGameId, setMetadataGameId]               = useState(null);
   const [platformDefaultColor, setPlatformDefaultColor]   = useState("#7c6ef7");
   const [platformColors, setPlatformColors]               = useState({ pc: "#ffffff" });
-  const [platformIconMode, setPlatformIconMode]           = useState(true);
+  const [statusColors, setStatusColors]                   = useState({});
+  const [showMorePlatformColors, setShowMorePlatformColors] = useState(false);
   const [syncingAllPlaytime, setSyncingAllPlaytime]       = useState(false);
-  const [ratingFilter, setRatingFilter]                   = useState(null);
   const [platformFilterSlugs, setPlatformFilterSlugs]     = useState([]);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [saving, setSaving]               = useState(false);
@@ -832,7 +787,7 @@ export default function App() {
   const dbSettings = useRef({
     cardWMult: 1.5, cardHMult: 1.5, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
-    steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, platformIconMode: true,
+    steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {},
   });
 
   const [query, setQuery]               = useState("");
@@ -873,8 +828,8 @@ export default function App() {
       setSteamApiKey(loaded.steamApiKey); setSteamId(loaded.steamId);
       setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
       setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
-      setPlatformIconMode(s.platformIconMode ?? true);
-      dbSettings.current = { ...loaded, platformHighlightColor: s.platformHighlightColor ?? "#7c6ef7", platformColors: { pc: "#ffffff", ...(s.platformColors || {}) }, platformIconMode: s.platformIconMode ?? true };
+      setStatusColors(s.statusColors || {});
+      dbSettings.current = { ...loaded, platformHighlightColor: s.platformHighlightColor ?? "#7c6ef7", platformColors: { pc: "#ffffff", ...(s.platformColors || {}) }, statusColors: s.statusColors || {} };
     }).catch(() => {});
 
     apiFetch("/list")
@@ -912,7 +867,7 @@ export default function App() {
     setSteamApiKey(s.steamApiKey); setSteamId(s.steamId);
     setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
     setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
-    setPlatformIconMode(s.platformIconMode ?? true);
+    setStatusColors(s.statusColors || {});
     setSettingsDirty(false);
   }, []);
 
@@ -920,7 +875,7 @@ export default function App() {
     cardWMult, cardHMult, uploadBtnMult, uploadBtnText, cardCount,
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
     steamApiKey, steamId, platformHighlightColor: platformDefaultColor,
-    platformColors, platformIconMode,
+    platformColors, statusColors,
   });
 
   const persist = useCallback(async (gameId, entry) => {
@@ -1084,7 +1039,6 @@ export default function App() {
 
   const listEntries = useMemo(() => {
     let filtered = statusFilter === null ? allEntries : allEntries.filter(e => e.status === statusFilter);
-    if (ratingFilter !== null) filtered = filtered.filter(e => e.userRating != null && e.userRating >= ratingFilter);
     if (platformFilterSlugs.length > 0) {
       filtered = filtered.filter(e => {
         const gameSlugs = (e.game?.platforms || []).map(p => p.platform.slug);
@@ -1118,7 +1072,7 @@ export default function App() {
       });
     }
     return copy;
-  }, [allEntries, statusFilter, sortBy, ratingFilter, platformFilterSlugs]);
+  }, [allEntries, statusFilter, sortBy, platformFilterSlugs]);
 
   const orderedFavEntries = useMemo(() => {
     if (!favOrder.length) return favEntries;
@@ -1165,10 +1119,15 @@ export default function App() {
   const updateSteamKey          = markDirty(setSteamApiKey);
   const updateSteamId           = markDirty(setSteamId);
   const updatePlatformDefault   = markDirty(setPlatformDefaultColor);
-  const updatePlatformIconMode  = markDirty(setPlatformIconMode);
   const setPlatformColorDirty   = (slug, color) => { setPlatformColors(p => ({ ...p, [slug]: color })); setSettingsDirty(true); };
+  const setStatusColorDirty     = (id, field, color) => { setStatusColors(p => ({ ...p, [id]: { ...p[id], [field]: color } })); setSettingsDirty(true); };
+  const resetStatusColor        = (id) => { setStatusColors(p => { const n = { ...p }; delete n[id]; return n; }); setSettingsDirty(true); };
 
   const getPlatformColor = useCallback((slug) => platformColors[slug] ?? platformDefaultColor, [platformColors, platformDefaultColor]);
+  const getStatusProps   = useCallback((id) => ({
+    color: statusColors[id]?.color || STATUSES[id]?.color || "#888",
+    bg:    statusColors[id]?.bg    || STATUSES[id]?.bg    || "#141414",
+  }), [statusColors]);
 
   const glowConfig = [
     { enabled: glow1Enabled, color: glow1Color },
@@ -1176,7 +1135,7 @@ export default function App() {
     { enabled: glow3Enabled, color: glow3Color },
   ];
 
-  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: setMetadataGameId, onTogglePlatform: togglePlatform, getPlatformColor, platformIconMode, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount };
+  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: setMetadataGameId, onTogglePlatform: togglePlatform, getPlatformColor, getStatusProps, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount };
   const previewEntries = orderedFavEntries.length ? orderedFavEntries : allEntries;
 
   const credentialsReady = steamApiKey.trim() && steamId.trim();
@@ -1244,11 +1203,12 @@ export default function App() {
               {STATUSES.map(s => {
                 const cnt = allEntries.filter(e => e.status === s.id).length;
                 const active = statusFilter === s.id;
+                const sp = getStatusProps(s.id);
                 return (
                   <div key={s.id} onClick={() => setStatusFilter(active ? null : s.id)}
-                    style={{ background: active ? s.bg : "#0c0c1c", border: `1px solid ${active ? s.color + "66" : "#1a1a2e"}`, borderRadius: 10, padding: "12px 16px", cursor: "pointer", transition: "all 0.15s", userSelect: "none" }}>
-                    <div style={{ fontSize: 10, color: s.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>{s.label}</div>
-                    <div style={{ fontSize: 26, fontWeight: 800, color: s.color }}>{cnt}</div>
+                    style={{ background: active ? sp.bg : "#0c0c1c", border: `1px solid ${active ? sp.color + "66" : "#1a1a2e"}`, borderRadius: 10, padding: "12px 16px", cursor: "pointer", transition: "all 0.15s", userSelect: "none" }}>
+                    <div style={{ fontSize: 10, color: sp.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>{s.label}</div>
+                    <div style={{ fontSize: 26, fontWeight: 800, color: sp.color }}>{cnt}</div>
                   </div>
                 );
               })}
@@ -1259,7 +1219,7 @@ export default function App() {
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 {statusFilter !== null && (
                   <>
-                    <span style={{ fontSize: 12, color: STATUSES[statusFilter].color, fontWeight: 700 }}>{STATUSES[statusFilter].label}</span>
+                    <span style={{ fontSize: 12, color: getStatusProps(statusFilter).color, fontWeight: 700 }}>{STATUSES[statusFilter].label}</span>
                     <button onClick={() => setStatusFilter(null)} style={{ fontSize: 10, color: "#555", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "2px 7px", cursor: "pointer", fontFamily: "inherit" }}>×</button>
                     <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
                   </>
@@ -1276,36 +1236,21 @@ export default function App() {
                 <span style={{ fontSize: 11, color: "#333", marginLeft: "auto" }}>{listEntries.length} / {allEntries.length} games</span>
               </div>
 
-              {/* Row 2: Rating filter */}
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 11, color: "#444", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, minWidth: 48 }}>Rating</span>
-                {[null, 5, 6, 7, 8, 9, 10].map(v => (
-                  <button key={v ?? "any"} onClick={() => setRatingFilter(ratingFilter === v ? null : v)}
-                    style={{ fontSize: 11, padding: "3px 9px", borderRadius: 5, border: "none", fontFamily: "inherit", cursor: "pointer",
-                      background: ratingFilter === v ? "#e6a63a22" : "transparent",
-                      color: ratingFilter === v ? "#e6a63a" : "#444",
-                      outline: ratingFilter === v ? "1px solid #e6a63a55" : "none" }}>
-                    {v === null ? "Any" : `${v}+`}
-                  </button>
-                ))}
-              </div>
-
-              {/* Row 3: Platform filter (only show platforms present in list) */}
+              {/* Row 2: Platform filter (only show platforms present in list) */}
               {activePlatformSlugs.length > 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 11, color: "#444", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, minWidth: 48 }}>Platform</span>
                   {activePlatformSlugs.map(slug => {
                     const pInfo = ALL_PLATFORMS.find(p => p.slug === slug);
                     const active = platformFilterSlugs.includes(slug);
                     const pc = getPlatformColor(slug);
-                    const icon = platformIconMode ? <PlatformIcon slug={slug} color={active ? pc : "#555"} size={11} /> : null;
                     return (
                       <button key={slug} onClick={() => setPlatformFilterSlugs(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug])}
                         title={pInfo?.name || slug}
                         style={{ fontSize: 10, padding: "3px 7px", borderRadius: 4, border: `1px solid ${active ? pc + "66" : "#1e1e30"}`,
                           background: active ? pc + "18" : "transparent", color: active ? pc : "#555",
-                          cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 3 }}>
-                        {icon || (pInfo?.short || slug.slice(0, 4))}
+                          cursor: "pointer", fontFamily: "inherit" }}>
+                        {pInfo?.name || pInfo?.short || slug}
                       </button>
                     );
                   })}
@@ -1431,9 +1376,8 @@ export default function App() {
 
               {/* Platform Settings */}
               {(() => {
-                const [showMoreColors, setShowMoreColors] = useState(false);
                 const featuredSlugs = ["pc","playstation5","xbox-series-x","nintendo-switch","macos","linux","ios","android"];
-                const colorRows = showMoreColors ? ALL_PLATFORMS : ALL_PLATFORMS.filter(p => featuredSlugs.includes(p.slug));
+                const colorRows = showMorePlatformColors ? ALL_PLATFORMS : ALL_PLATFORMS.filter(p => featuredSlugs.includes(p.slug));
                 return (
                   <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
                     <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Platform Display</div>
@@ -1441,22 +1385,9 @@ export default function App() {
                       Platform badges show from RAWG data. Click a badge on a card to mark which platform you played on.
                     </div>
 
-                    {/* Icon / Text toggle */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-                      <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, flex: 1 }}>Display Mode</span>
-                      {["Icons", "Text"].map(mode => (
-                        <button key={mode} onClick={() => updatePlatformIconMode(mode === "Icons")}
-                          style={{ padding: "4px 12px", borderRadius: 6, border: "none", fontSize: 11, fontFamily: "inherit", cursor: "pointer",
-                            background: (mode === "Icons") === platformIconMode ? "#7c6ef733" : "transparent",
-                            color: (mode === "Icons") === platformIconMode ? "#7c6ef7" : "#555" }}>
-                          {mode}
-                        </button>
-                      ))}
-                    </div>
-
                     {/* Default colour */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid #1a1a2e" }}>
-                      <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, flex: 1 }}>Default</span>
+                      <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, flex: 1 }}>Default Color</span>
                       <input type="color" value={platformDefaultColor} onChange={e => updatePlatformDefault(e.target.value)}
                         style={{ width: 30, height: 22, border: "1px solid #2a2a40", borderRadius: 4, cursor: "pointer", background: "none", padding: 1 }} />
                       <span style={{ fontSize: 11, color: platformDefaultColor, fontWeight: 700 }}>{platformDefaultColor}</span>
@@ -1467,10 +1398,9 @@ export default function App() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {colorRows.map(p => {
                         const c = platformColors[p.slug] ?? platformDefaultColor;
-                        const icon = <PlatformIcon slug={p.slug} color={c} size={12} />;
                         return (
                           <div key={p.slug} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 20 }}>{icon || <span style={{ fontSize: 9, color: c }}>{p.short}</span>}</span>
+                            <span style={{ fontSize: 9, fontWeight: 700, color: c, minWidth: 28 }}>{p.short}</span>
                             <span style={{ fontSize: 11, color: "#666", flex: 1 }}>{p.name}</span>
                             <input type="color" value={c} onChange={e => setPlatformColorDirty(p.slug, e.target.value)}
                               style={{ width: 26, height: 20, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
@@ -1482,13 +1412,50 @@ export default function App() {
                         );
                       })}
                     </div>
-                    <button onClick={() => setShowMoreColors(v => !v)}
+                    <button onClick={() => setShowMorePlatformColors(v => !v)}
                       style={{ marginTop: 10, fontSize: 11, color: "#555", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
-                      {showMoreColors ? "▲ Show less" : `▼ More platforms (${ALL_PLATFORMS.length - featuredSlugs.length})`}
+                      {showMorePlatformColors ? "▲ Show less" : `▼ More platforms (${ALL_PLATFORMS.length - featuredSlugs.length})`}
                     </button>
                   </div>
                 );
               })()}
+
+              {/* Status Colors */}
+              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Status Colors</div>
+                <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
+                  Customize the label color and background for each status category. Click ↺ to reset to default.
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {STATUSES.map(s => {
+                    const sp = getStatusProps(s.id);
+                    const hasOverride = !!statusColors[s.id];
+                    return (
+                      <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: sp.color, flex: 1,
+                          background: sp.bg, border: `1px solid ${sp.color}44`, borderRadius: 4,
+                          padding: "3px 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {s.label}
+                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <span style={{ fontSize: 9, color: "#444" }}>Label</span>
+                          <input type="color" value={sp.color} onChange={e => setStatusColorDirty(s.id, "color", e.target.value)}
+                            style={{ width: 24, height: 18, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <span style={{ fontSize: 9, color: "#444" }}>BG</span>
+                          <input type="color" value={sp.bg} onChange={e => setStatusColorDirty(s.id, "bg", e.target.value)}
+                            style={{ width: 24, height: 18, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
+                        </div>
+                        {hasOverride && (
+                          <button onClick={() => resetStatusColor(s.id)}
+                            style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset to default">↺</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
             </div>
 
