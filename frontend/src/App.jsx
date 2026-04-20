@@ -78,6 +78,12 @@ async function apiFetch(path, opts) {
   return res.json();
 }
 
+function formatPlaytime(mins) {
+  if (!mins || mins <= 0) return null;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
@@ -188,6 +194,13 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
     }
   };
 
+  // Auto-cycle through images while hovered
+  useEffect(() => {
+    if (!hover || allImages.length <= 1) return;
+    const timer = setInterval(() => setImgIndex(i => (i + 1) % allImages.length), 2200);
+    return () => clearInterval(timer);
+  }, [hover, allImages.length]);
+
   const glowStyle = glowColor ? {
     border:     `1px solid ${glowColor}99`,
     boxShadow:  `0 0 14px ${glowColor}88, 0 0 32px ${glowColor}44${hover ? ", 0 8px 30px rgba(0,0,0,0.5)" : ""}`,
@@ -276,8 +289,13 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
         })()}
 
         {listEntry && (
-          <div style={{ marginBottom: 10 }} onClick={e => e.stopPropagation()}>
+          <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
             <RatingInput value={listEntry.userRating ?? null} onChange={v => onRate(game.id, v)} />
+            {formatPlaytime(listEntry.playtimeMinutes) && (
+              <span style={{ fontSize: 11, color: "#555", whiteSpace: "nowrap" }}>
+                ⏱ {formatPlaytime(listEntry.playtimeMinutes)}
+              </span>
+            )}
           </div>
         )}
 
@@ -392,12 +410,16 @@ function GlowRow({ rank, label, enabled, color, onToggle, onColor }) {
 // Activity graph — GitHub-style contribution heatmap
 // ---------------------------------------------------------------------------
 
-function ActivityGraph({ activityLog }) {
+function ActivityGraph({ activityLog, colors = {} }) {
+  const emptyColor = colors.empty || "#0d0d1a";
+  const lowColor   = colors.low   || "#2d1f6b";
+  const midColor   = colors.mid   || "#5040a0";
+  const highColor  = colors.high  || "#7c6ef7";
+
   const counts = {};
   for (const d of activityLog || []) counts[d] = (counts[d] || 0) + 1;
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  // Start on the Sunday 52 weeks ago
   const start = new Date(today);
   start.setDate(start.getDate() - 363);
   start.setDate(start.getDate() - start.getDay());
@@ -414,12 +436,12 @@ function ActivityGraph({ activityLog }) {
     weeks.push(week);
   }
 
-  const color = (n) => {
+  const cellColor = (n) => {
     if (n < 0) return "transparent";
-    if (n === 0) return "#0d0d1a";
-    if (n === 1) return "#2d1f6b";
-    if (n === 2) return "#5040a0";
-    return "#7c6ef7";
+    if (n === 0) return emptyColor;
+    if (n === 1) return lowColor;
+    if (n === 2) return midColor;
+    return highColor;
   };
 
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -431,12 +453,12 @@ function ActivityGraph({ activityLog }) {
           <div key={wi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {week.map((day, di) => (
               <div key={di} title={day.count >= 0 ? `${day.iso}: ${day.count} edit${day.count !== 1 ? "s" : ""}` : ""}
-                style={{ width: 10, height: 10, borderRadius: 2, background: color(day.count), flexShrink: 0 }} />
+                style={{ width: 10, height: 10, borderRadius: 2, background: cellColor(day.count), flexShrink: 0 }} />
             ))}
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 10, color: "#333", marginTop: 6 }}>{total} edit{total !== 1 ? "s" : ""} in the last year</div>
+      <div style={{ fontSize: 10, color: "#555", marginTop: 6 }}>{total} edit{total !== 1 ? "s" : ""} in the last year</div>
     </div>
   );
 }
@@ -447,7 +469,6 @@ function ActivityGraph({ activityLog }) {
 
 function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor = "#7c6ef7" }) {
   const game = entry?.game;
-  const [playtime, setPlaytime]         = useState(entry?.playtimeMinutes != null ? Math.round(entry.playtimeMinutes / 60 * 10) / 10 : "");
   const [replayCount, setReplayCount]   = useState(entry?.replayCount ?? 0);
   const [tags, setTags]                 = useState(entry?.tags ?? []);
   const [tagInput, setTagInput]         = useState("");
@@ -477,18 +498,11 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
       : game;
     onSave(gameId, {
       game: updatedGame,
-      playtimeMinutes: playtime !== "" ? Math.round(parseFloat(playtime) * 60) : null,
       replayCount,
       tags,
       platformsPlayed: platforms,
     });
     onClose();
-  };
-
-  const formatPlaytime = (mins) => {
-    if (!mins) return null;
-    const h = Math.floor(mins / 60), m = mins % 60;
-    return m > 0 ? `${h}h ${m}m` : `${h}h`;
   };
 
   return (
@@ -503,11 +517,11 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
           {/* Year + Metacritic row */}
-          <div style={{ display: "flex", gap: 16, alignItems: "flex-end" }}>
+          <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
             <div>
               <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Release Year</div>
               {origYear
-                ? <span style={{ fontSize: 14, color: "#666" }}>{origYear}</span>
+                ? <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 6, background: "#161622", border: "1px solid #2a2a40", color: "#888", fontSize: 14, fontWeight: 700 }}>{origYear}</span>
                 : <input type="number" min="1970" max="2030" value={yearInput} onChange={e => setYearInput(e.target.value)}
                     placeholder="e.g. 2023"
                     style={{ width: 90, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "5px 8px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
@@ -523,14 +537,8 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
             )}
           </div>
 
-          {/* Playtime + Replays row */}
+          {/* Replays row */}
           <div style={{ display: "flex", gap: 16 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Playtime (hours)</div>
-              <input type="number" min="0" step="0.1" value={playtime} onChange={e => setPlaytime(e.target.value)} placeholder="e.g. 24.5"
-                style={{ width: "100%", background: "#080814", border: "1px solid #1e1e35", borderRadius: 7, padding: "7px 10px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
-              {entry.playtimeMinutes != null && <div style={{ fontSize: 10, color: "#333", marginTop: 4 }}>Stored: {formatPlaytime(entry.playtimeMinutes)}</div>}
-            </div>
             <div>
               <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Replays</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -570,31 +578,29 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
             </div>
           </div>
 
-          {/* Platforms */}
-          <div>
-            <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Platforms Played On</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-              {ALL_PLATFORMS.map(p => {
-                const active = platforms.includes(p.slug);
-                return (
-                  <span key={p.slug} onClick={() => togglePlatform(p.slug)} title={p.name}
-                    style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
-                      background: active ? platformHighlightColor + "25" : "#0e0e1e",
-                      border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
-                      color: active ? platformHighlightColor : "#444",
-                      cursor: "pointer", userSelect: "none" }}>
-                    {p.short}
-                  </span>
-                );
-              })}
+          {/* Platforms — only show platforms this game is on */}
+          {(game.platforms || []).length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Platforms Played On</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {game.platforms.map(gp => {
+                  const slug = gp.platform.slug;
+                  const pInfo = ALL_PLATFORMS.find(ap => ap.slug === slug) || { short: slug.slice(0, 4), name: gp.platform.name };
+                  const active = platforms.includes(slug);
+                  return (
+                    <span key={slug} onClick={() => togglePlatform(slug)} title={pInfo.name}
+                      style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
+                        background: active ? platformHighlightColor + "25" : "#0e0e1e",
+                        border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
+                        color: active ? platformHighlightColor : "#444",
+                        cursor: "pointer", userSelect: "none" }}>
+                      {pInfo.short}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-
-          {/* Activity */}
-          <div>
-            <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Activity</div>
-            <ActivityGraph activityLog={entry.activityLog} />
-          </div>
+          )}
 
         </div>
 
@@ -769,6 +775,7 @@ export default function App() {
   const [platformDefaultColor, setPlatformDefaultColor]   = useState("#7c6ef7");
   const [platformColors, setPlatformColors]               = useState({ pc: "#ffffff" });
   const [statusColors, setStatusColors]                   = useState({});
+  const [activityColors, setActivityColors]               = useState({});
   const [showMorePlatformColors, setShowMorePlatformColors] = useState(false);
   const [syncingAllPlaytime, setSyncingAllPlaytime]       = useState(false);
   const [platformFilterSlugs, setPlatformFilterSlugs]     = useState([]);
@@ -787,7 +794,7 @@ export default function App() {
   const dbSettings = useRef({
     cardWMult: 1.5, cardHMult: 1.5, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
-    steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {},
+    steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {},
   });
 
   const [query, setQuery]               = useState("");
@@ -829,7 +836,8 @@ export default function App() {
       setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
       setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
       setStatusColors(s.statusColors || {});
-      dbSettings.current = { ...loaded, platformHighlightColor: s.platformHighlightColor ?? "#7c6ef7", platformColors: { pc: "#ffffff", ...(s.platformColors || {}) }, statusColors: s.statusColors || {} };
+      setActivityColors(s.activityColors || {});
+      dbSettings.current = { ...loaded, platformHighlightColor: s.platformHighlightColor ?? "#7c6ef7", platformColors: { pc: "#ffffff", ...(s.platformColors || {}) }, statusColors: s.statusColors || {}, activityColors: s.activityColors || {} };
     }).catch(() => {});
 
     apiFetch("/list")
@@ -868,6 +876,7 @@ export default function App() {
     setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
     setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
     setStatusColors(s.statusColors || {});
+    setActivityColors(s.activityColors || {});
     setSettingsDirty(false);
   }, []);
 
@@ -875,7 +884,7 @@ export default function App() {
     cardWMult, cardHMult, uploadBtnMult, uploadBtnText, cardCount,
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
     steamApiKey, steamId, platformHighlightColor: platformDefaultColor,
-    platformColors, statusColors,
+    platformColors, statusColors, activityColors,
   });
 
   const persist = useCallback(async (gameId, entry) => {
@@ -1030,6 +1039,13 @@ export default function App() {
   const allEntries = Object.values(myList);
   const favEntries = allEntries.filter(e => e.favourite);
 
+  // Merge all activity logs from all entries for the global heatmap
+  const globalActivityLog = useMemo(() => {
+    const dates = [];
+    for (const e of allEntries) for (const d of e.activityLog || []) dates.push(d);
+    return dates;
+  }, [allEntries]);
+
   // Platform slugs that appear in at least one list entry (for filter UI)
   const activePlatformSlugs = useMemo(() => {
     const slugs = new Set();
@@ -1122,6 +1138,7 @@ export default function App() {
   const setPlatformColorDirty   = (slug, color) => { setPlatformColors(p => ({ ...p, [slug]: color })); setSettingsDirty(true); };
   const setStatusColorDirty     = (id, field, color) => { setStatusColors(p => ({ ...p, [id]: { ...p[id], [field]: color } })); setSettingsDirty(true); };
   const resetStatusColor        = (id) => { setStatusColors(p => { const n = { ...p }; delete n[id]; return n; }); setSettingsDirty(true); };
+  const setActivityColorDirty   = (key, color) => { setActivityColors(p => ({ ...p, [key]: color })); setSettingsDirty(true); };
 
   const getPlatformColor = useCallback((slug) => platformColors[slug] ?? platformDefaultColor, [platformColors, platformDefaultColor]);
   const getStatusProps   = useCallback((id) => ({
@@ -1260,6 +1277,13 @@ export default function App() {
                 </div>
               )}
             </div>
+            {/* Global activity heatmap */}
+            {allEntries.length > 0 && (
+              <div style={{ background: activityColors.bg || "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "14px 18px", marginBottom: 20 }}>
+                <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Activity</div>
+                <ActivityGraph activityLog={globalActivityLog} colors={activityColors} />
+              </div>
+            )}
             {listLoading ? <Spinner text="Loading your list…" /> : <Grid games={listEntries.map(e => e.game)} {...gridProps} emptyMsg="Nothing here yet — search for games to add them!" />}
           </>
         )}
@@ -1454,6 +1478,38 @@ export default function App() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Activity Graph Colors */}
+              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Activity Graph</div>
+                <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
+                  Customize the contribution heatmap colors shown on the My List tab.
+                </div>
+                {[
+                  { key: "bg",    label: "Background",  default: "#0c0c1c" },
+                  { key: "empty", label: "Empty cell",  default: "#0d0d1a" },
+                  { key: "low",   label: "Low (1 edit)", default: "#2d1f6b" },
+                  { key: "mid",   label: "Mid (2 edits)", default: "#5040a0" },
+                  { key: "high",  label: "High (3+)",   default: "#7c6ef7" },
+                ].map(({ key, label, default: def }) => {
+                  const val = activityColors[key] || def;
+                  return (
+                    <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                      <div style={{ width: 14, height: 14, borderRadius: 3, background: val, border: "1px solid #2a2a40", flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, color: "#888", flex: 1 }}>{label}</span>
+                      <input type="color" value={val} onChange={e => setActivityColorDirty(key, e.target.value)}
+                        style={{ width: 26, height: 20, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
+                      {activityColors[key] && activityColors[key] !== def && (
+                        <button onClick={() => setActivityColors(p => { const n = { ...p }; delete n[key]; return n; })}
+                          style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset">↺</button>
+                      )}
+                    </div>
+                  );
+                })}
+                <div style={{ marginTop: 14, padding: "10px", background: activityColors.bg || "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 8 }}>
+                  <ActivityGraph activityLog={globalActivityLog} colors={activityColors} />
                 </div>
               </div>
 
