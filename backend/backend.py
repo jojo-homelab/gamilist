@@ -126,7 +126,9 @@ def init_db():
             cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS tags              JSONB   NOT NULL DEFAULT '[]'")
             cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS activity_log      JSONB   NOT NULL DEFAULT '[]'")
             cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS platforms_played  JSONB   NOT NULL DEFAULT '[]'")
-            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS platform_highlight_color TEXT NOT NULL DEFAULT '#7c6ef7'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS platform_highlight_color TEXT    NOT NULL DEFAULT '#7c6ef7'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS platform_colors         JSONB   NOT NULL DEFAULT '{}'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS platform_icon_mode      BOOLEAN NOT NULL DEFAULT TRUE")
 
 
 init_db()
@@ -195,6 +197,8 @@ def get_settings():
             "steamId":                 row["steam_id"],
             "steamMappings":           row["steam_mappings"] or [],
             "platformHighlightColor":  row["platform_highlight_color"],
+            "platformColors":          row["platform_colors"] or {},
+            "platformIconMode":        row["platform_icon_mode"],
         })
     # No row yet — return defaults so the frontend has something to work with
     return jsonify({
@@ -203,7 +207,7 @@ def get_settings():
         "glow2Enabled": True,  "glow2Color": "#C0C0C0",
         "glow3Enabled": True,  "glow3Color": "#CD7F32",
         "steamApiKey": "", "steamId": "", "steamMappings": [],
-        "platformHighlightColor": "#7c6ef7",
+        "platformHighlightColor": "#7c6ef7", "platformColors": {}, "platformIconMode": True,
     })
 
 
@@ -239,7 +243,10 @@ def put_settings():
     steam_id                 = body.get("steamId")
     steam_mappings           = body.get("steamMappings")
     platform_highlight_color = body.get("platformHighlightColor")
-    steam_mappings_json = json.dumps(steam_mappings) if steam_mappings is not None else None
+    platform_colors          = body.get("platformColors")
+    platform_icon_mode       = body.get("platformIconMode")
+    steam_mappings_json      = json.dumps(steam_mappings)      if steam_mappings is not None else None
+    platform_colors_json     = json.dumps(platform_colors)     if platform_colors is not None else None
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -247,7 +254,8 @@ def put_settings():
                 INSERT INTO settings (
                     id, card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
                     glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
-                    steam_api_key, steam_id, steam_mappings, platform_highlight_color
+                    steam_api_key, steam_id, steam_mappings, platform_highlight_color,
+                    platform_colors, platform_icon_mode
                 )
                 VALUES (1,
                     COALESCE(%s, 1.5), COALESCE(%s, 1.5), COALESCE(%s, 1.0),
@@ -257,7 +265,9 @@ def put_settings():
                     COALESCE(%s, TRUE),  COALESCE(%s, '#CD7F32'),
                     COALESCE(%s, ''),    COALESCE(%s, ''),
                     COALESCE(%s::jsonb, '[]'::jsonb),
-                    COALESCE(%s, '#7c6ef7'))
+                    COALESCE(%s, '#7c6ef7'),
+                    COALESCE(%s::jsonb, '{}'::jsonb),
+                    COALESCE(%s, TRUE))
                 ON CONFLICT (id) DO UPDATE SET
                     card_w_mult              = COALESCE(EXCLUDED.card_w_mult,              settings.card_w_mult),
                     card_h_mult              = COALESCE(EXCLUDED.card_h_mult,              settings.card_h_mult),
@@ -273,11 +283,14 @@ def put_settings():
                     steam_api_key            = COALESCE(EXCLUDED.steam_api_key,            settings.steam_api_key),
                     steam_id                 = COALESCE(EXCLUDED.steam_id,                 settings.steam_id),
                     steam_mappings           = COALESCE(EXCLUDED.steam_mappings,           settings.steam_mappings),
-                    platform_highlight_color = COALESCE(EXCLUDED.platform_highlight_color, settings.platform_highlight_color)
+                    platform_highlight_color = COALESCE(EXCLUDED.platform_highlight_color, settings.platform_highlight_color),
+                    platform_colors          = COALESCE(EXCLUDED.platform_colors,          settings.platform_colors),
+                    platform_icon_mode       = COALESCE(EXCLUDED.platform_icon_mode,       settings.platform_icon_mode)
                 RETURNING *
             """, (card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
                   glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
-                  steam_api_key, steam_id, steam_mappings_json, platform_highlight_color))
+                  steam_api_key, steam_id, steam_mappings_json, platform_highlight_color,
+                  platform_colors_json, platform_icon_mode))
             row = cur.fetchone()
     return jsonify({
         "cardWMult":              row["card_w_mult"],
@@ -295,6 +308,8 @@ def put_settings():
         "steamId":                row["steam_id"],
         "steamMappings":          row["steam_mappings"] or [],
         "platformHighlightColor": row["platform_highlight_color"],
+        "platformColors":         row["platform_colors"] or {},
+        "platformIconMode":       row["platform_icon_mode"],
     })
 
 
@@ -353,6 +368,16 @@ def search():
     page_size = request.args.get("page_size", 12)
     data = rawg_get("/games", {"search": q, "page_size": page_size})
     return jsonify(data.get("results", []))
+
+
+@app.route("/api/games/<int:game_id>/screenshots")
+def game_screenshots(game_id):
+    """Return up to 8 screenshot URLs for a RAWG game (proxied through image-proxy)."""
+    try:
+        data = rawg_get(f"/games/{game_id}/screenshots", {"page_size": 8})
+        return jsonify([r["image"] for r in data.get("results", [])])
+    except Exception:
+        return jsonify([])
 
 
 @app.route("/api/games/popular")
