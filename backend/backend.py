@@ -131,6 +131,19 @@ def init_db():
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS platform_icon_mode      BOOLEAN NOT NULL DEFAULT TRUE")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS status_colors           JSONB   NOT NULL DEFAULT '{}'")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS activity_colors         JSONB   NOT NULL DEFAULT '{}'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS card_h2_mult            REAL    NOT NULL DEFAULT 1.0")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS alt_card_mode           BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS entry_images (
+                    id         SERIAL PRIMARY KEY,
+                    game_id    INTEGER NOT NULL,
+                    seq        INTEGER NOT NULL DEFAULT 0,
+                    image_data BYTEA NOT NULL,
+                    image_mime TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS custom_images_only BOOLEAN NOT NULL DEFAULT FALSE")
 
 
 init_db()
@@ -158,6 +171,8 @@ def row_to_entry(row):
         "tags":            row.get("tags") or [],
         "activityLog":      row.get("activity_log") or [],
         "platformsPlayed":  row.get("platforms_played") or [],
+        "extraImageIds":   [int(i) for i in (row.get("extra_image_ids") or [])],
+        "customImagesOnly": row.get("custom_images_only") or False,
     }
 
 
@@ -203,6 +218,8 @@ def get_settings():
             "platformIconMode":        row["platform_icon_mode"],
             "statusColors":            row["status_colors"] or {},
             "activityColors":          row["activity_colors"] or {},
+            "cardH2Mult":              row.get("card_h2_mult") or 1.0,
+            "altCardMode":             row.get("alt_card_mode") or False,
         })
     # No row yet — return defaults so the frontend has something to work with
     return jsonify({
@@ -212,6 +229,7 @@ def get_settings():
         "glow3Enabled": True,  "glow3Color": "#CD7F32",
         "steamApiKey": "", "steamId": "", "steamMappings": [],
         "platformHighlightColor": "#7c6ef7", "platformColors": {}, "platformIconMode": True, "statusColors": {}, "activityColors": {},
+        "cardH2Mult": 1.0, "altCardMode": False,
     })
 
 
@@ -251,6 +269,8 @@ def put_settings():
     platform_icon_mode       = body.get("platformIconMode")
     status_colors            = body.get("statusColors")
     activity_colors          = body.get("activityColors")
+    card_h2_mult             = body.get("cardH2Mult")
+    alt_card_mode            = body.get("altCardMode")
     steam_mappings_json      = json.dumps(steam_mappings)      if steam_mappings is not None else None
     platform_colors_json     = json.dumps(platform_colors)     if platform_colors is not None else None
     status_colors_json       = json.dumps(status_colors)       if status_colors is not None else None
@@ -263,7 +283,8 @@ def put_settings():
                     id, card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
                     glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
                     steam_api_key, steam_id, steam_mappings, platform_highlight_color,
-                    platform_colors, platform_icon_mode, status_colors, activity_colors
+                    platform_colors, platform_icon_mode, status_colors, activity_colors,
+                    card_h2_mult, alt_card_mode
                 )
                 VALUES (1,
                     COALESCE(%s, 1.5), COALESCE(%s, 1.5), COALESCE(%s, 1.0),
@@ -277,7 +298,8 @@ def put_settings():
                     COALESCE(%s::jsonb, '{}'::jsonb),
                     COALESCE(%s, TRUE),
                     COALESCE(%s::jsonb, '{}'::jsonb),
-                    COALESCE(%s::jsonb, '{}'::jsonb))
+                    COALESCE(%s::jsonb, '{}'::jsonb),
+                    COALESCE(%s, 1.0), COALESCE(%s, FALSE))
                 ON CONFLICT (id) DO UPDATE SET
                     card_w_mult              = COALESCE(EXCLUDED.card_w_mult,              settings.card_w_mult),
                     card_h_mult              = COALESCE(EXCLUDED.card_h_mult,              settings.card_h_mult),
@@ -297,12 +319,15 @@ def put_settings():
                     platform_colors          = COALESCE(EXCLUDED.platform_colors,          settings.platform_colors),
                     platform_icon_mode       = COALESCE(EXCLUDED.platform_icon_mode,       settings.platform_icon_mode),
                     status_colors            = COALESCE(EXCLUDED.status_colors,            settings.status_colors),
-                    activity_colors          = COALESCE(EXCLUDED.activity_colors,          settings.activity_colors)
+                    activity_colors          = COALESCE(EXCLUDED.activity_colors,          settings.activity_colors),
+                    card_h2_mult             = COALESCE(EXCLUDED.card_h2_mult,             settings.card_h2_mult),
+                    alt_card_mode            = COALESCE(EXCLUDED.alt_card_mode,            settings.alt_card_mode)
                 RETURNING *
             """, (card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
                   glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
                   steam_api_key, steam_id, steam_mappings_json, platform_highlight_color,
-                  platform_colors_json, platform_icon_mode, status_colors_json, activity_colors_json))
+                  platform_colors_json, platform_icon_mode, status_colors_json, activity_colors_json,
+                  card_h2_mult, alt_card_mode))
             row = cur.fetchone()
     return jsonify({
         "cardWMult":              row["card_w_mult"],
@@ -324,6 +349,8 @@ def put_settings():
         "platformIconMode":       row["platform_icon_mode"],
         "statusColors":           row["status_colors"] or {},
         "activityColors":         row["activity_colors"] or {},
+        "cardH2Mult":             row.get("card_h2_mult") or 1.0,
+        "altCardMode":            row.get("alt_card_mode") or False,
     })
 
 
@@ -447,7 +474,15 @@ def get_list():
     """
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM entries ORDER BY updated_at DESC")
+            cur.execute("""
+                SELECT e.*, COALESCE(
+                    json_agg(ei.id ORDER BY ei.seq) FILTER (WHERE ei.id IS NOT NULL), '[]'
+                ) AS extra_image_ids
+                FROM entries e
+                LEFT JOIN entry_images ei ON ei.game_id = e.game_id
+                GROUP BY e.game_id
+                ORDER BY e.updated_at DESC
+            """)
             rows = cur.fetchall()
     return jsonify({str(r["game_id"]): row_to_entry(r) for r in rows})
 
@@ -469,14 +504,15 @@ def upsert_entry(game_id):
     Returns the updated entry in the same shape as get_list().
     """
     body = request.get_json()
-    game_data        = body.get("game")
-    status           = body.get("status")
-    user_rating      = body.get("userRating")
-    favourite        = body.get("favourite", False)
-    playtime_minutes  = body.get("playtimeMinutes")
-    replay_count      = body.get("replayCount", 0)
-    tags              = body.get("tags", [])
-    platforms_played  = body.get("platformsPlayed", [])
+    game_data          = body.get("game")
+    status             = body.get("status")
+    user_rating        = body.get("userRating")
+    favourite          = body.get("favourite", False)
+    playtime_minutes   = body.get("playtimeMinutes")
+    replay_count       = body.get("replayCount", 0)
+    tags               = body.get("tags", [])
+    platforms_played   = body.get("platformsPlayed", [])
+    custom_images_only = body.get("customImagesOnly", False)
 
     today = datetime.now(timezone.utc).date().isoformat()
 
@@ -499,24 +535,30 @@ def upsert_entry(game_id):
             cur.execute("""
                 INSERT INTO entries (game_id, game_data, status, user_rating, favourite,
                                      playtime_minutes, replay_count, tags, activity_log,
-                                     platforms_played, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, NOW())
+                                     platforms_played, custom_images_only, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, NOW())
                 ON CONFLICT (game_id) DO UPDATE SET
-                    game_data        = EXCLUDED.game_data,
-                    status           = EXCLUDED.status,
-                    user_rating      = EXCLUDED.user_rating,
-                    favourite        = EXCLUDED.favourite,
-                    playtime_minutes = EXCLUDED.playtime_minutes,
-                    replay_count     = EXCLUDED.replay_count,
-                    tags             = EXCLUDED.tags,
-                    activity_log     = EXCLUDED.activity_log,
-                    platforms_played = EXCLUDED.platforms_played,
-                    updated_at       = NOW()
+                    game_data          = EXCLUDED.game_data,
+                    status             = EXCLUDED.status,
+                    user_rating        = EXCLUDED.user_rating,
+                    favourite          = EXCLUDED.favourite,
+                    playtime_minutes   = EXCLUDED.playtime_minutes,
+                    replay_count       = EXCLUDED.replay_count,
+                    tags               = EXCLUDED.tags,
+                    activity_log       = EXCLUDED.activity_log,
+                    platforms_played   = EXCLUDED.platforms_played,
+                    custom_images_only = EXCLUDED.custom_images_only,
+                    updated_at         = NOW()
                 RETURNING *
             """, (game_id, json.dumps(game_data), status, user_rating, favourite,
                   playtime_minutes, replay_count, json.dumps(tags), json.dumps(log),
-                  json.dumps(platforms_played)))
+                  json.dumps(platforms_played), custom_images_only))
             row = cur.fetchone()
+            # Also fetch extra image IDs for the returned entry
+            cur.execute("SELECT json_agg(id ORDER BY seq) AS extra_image_ids FROM entry_images WHERE game_id = %s", (game_id,))
+            img_row = cur.fetchone()
+            row = dict(row)
+            row["extra_image_ids"] = img_row["extra_image_ids"] or []
     return jsonify(row_to_entry(row))
 
 
@@ -719,6 +761,109 @@ def steam_sync_all_playtime():
                     updated += cur.rowcount
 
     return jsonify({"updated": updated, "total": len(games)})
+
+
+# ---------------------------------------------------------------------------
+# Extra image routes
+# ---------------------------------------------------------------------------
+
+@app.route("/api/list/<int:game_id>/images", methods=["POST"])
+def upload_extra_image(game_id):
+    """Upload an extra image for a game entry (multi-image support)."""
+    if "image" not in request.files:
+        return jsonify({"error": "No file"}), 400
+    f = request.files["image"]
+    mime = f.mimetype or "image/jpeg"
+    data = f.read()
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT MAX(seq) FROM entry_images WHERE game_id=%s", (game_id,))
+            row = cur.fetchone()
+            next_seq = (row[0] or -1) + 1
+            cur.execute(
+                "INSERT INTO entry_images (game_id, seq, image_data, image_mime) VALUES (%s,%s,%s,%s) RETURNING id",
+                (game_id, next_seq, psycopg2.Binary(data), mime)
+            )
+            img_id = cur.fetchone()[0]
+    return jsonify({"id": img_id})
+
+
+@app.route("/api/images/<int:img_id>", methods=["GET"])
+def get_extra_image(img_id):
+    """Serve an extra image by its ID."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT image_data, image_mime FROM entry_images WHERE id=%s", (img_id,))
+            row = cur.fetchone()
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+    return Response(bytes(row[0]), content_type=row[1] or "image/jpeg")
+
+
+@app.route("/api/images/<int:img_id>", methods=["DELETE"])
+def delete_extra_image(img_id):
+    """Delete an extra image by its ID."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM entry_images WHERE id=%s", (img_id,))
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Admin / maintenance routes
+# ---------------------------------------------------------------------------
+
+@app.route("/api/admin/resync-platforms", methods=["POST"])
+def resync_platforms():
+    """
+    Fill entries that have no platform data.
+    If rawg=true query param AND the game has a valid RAWG ID (slug doesn't start with 'steam-'),
+    fetch updated platforms from RAWG. Otherwise, default to PC.
+    """
+    use_rawg = request.args.get("rawg", "false").lower() == "true"
+
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT game_id, game_data FROM entries")
+            all_entries = cur.fetchall()
+
+    updated = 0
+    rawg_updated = 0
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            for entry in all_entries:
+                gd = entry["game_data"] or {}
+                platforms = gd.get("platforms") or []
+                if platforms:
+                    continue  # already has platform data
+
+                game_id = entry["game_id"]
+                slug = gd.get("slug") or ""
+                is_steam = slug.startswith("steam-")
+
+                new_platforms = None
+                if use_rawg and not is_steam and RAWG_KEY:
+                    try:
+                        rawg_data = rawg_get(f"/games/{game_id}")
+                        new_platforms = rawg_data.get("platforms") or []
+                        if new_platforms:
+                            rawg_updated += 1
+                    except Exception:
+                        new_platforms = None
+
+                if not new_platforms:
+                    new_platforms = [{"platform": {"id": 4, "slug": "pc", "name": "PC"}}]
+
+                updated_gd = dict(gd)
+                updated_gd["platforms"] = new_platforms
+                cur.execute(
+                    "UPDATE entries SET game_data = %s::jsonb, updated_at = NOW() WHERE game_id = %s",
+                    (json.dumps(updated_gd), game_id)
+                )
+                updated += 1
+
+    return jsonify({"updated": updated, "rawg_updated": rawg_updated})
 
 
 if __name__ == "__main__":

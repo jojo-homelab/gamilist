@@ -175,12 +175,22 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
     return () => document.removeEventListener("mousedown", h);
   }, [showMenu]);
 
-  const cover = hasCover ? `${coverSrc(game.id)}?v=${coverKey}` : rawgImgSrc(game.background_image);
   const handleCoverUploaded = () => { setCoverKey(k => k + 1); onCoverUploaded(game.id); };
 
-  // Build image list: [cover, ...screenshots]
-  const allImages = [cover, ...(screenshots || []).map(u => rawgImgSrc(u))].filter(Boolean);
-  const displayImg = allImages[imgIndex] || cover;
+  // Build image list with extra images and customImagesOnly support
+  const customImagesOnly = listEntry?.customImagesOnly || false;
+  const extraImageUrls = (listEntry?.extraImageIds || []).map(id => `${API}/images/${id}`);
+  const coverUrl = hasCover ? `${coverSrc(game.id)}?v=${coverKey}` : null;
+  const rawgCover = rawgImgSrc(game.background_image);
+
+  let baseImages;
+  if (customImagesOnly && (hasCover || extraImageUrls.length > 0)) {
+    baseImages = [coverUrl, ...extraImageUrls].filter(Boolean);
+  } else {
+    baseImages = [coverUrl || rawgCover, ...extraImageUrls].filter(Boolean);
+  }
+  const allImages = [...baseImages, ...(screenshots || []).map(u => rawgImgSrc(u))].filter(Boolean);
+  const displayImg = allImages[imgIndex] || coverUrl || rawgCover;
 
   const handleMouseEnter = async () => {
     setHover(true);
@@ -253,7 +263,7 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
             {STATUSES[status].label}
           </div>
         )}
-        {listEntry && <CoverUpload gameId={game.id} onUploaded={handleCoverUploaded} sizeMult={uploadBtnMult} btnText={uploadBtnText} />}
+        {/* CoverUpload moved to MetadataModal */}
       </div>
 
       {/* Card body */}
@@ -342,13 +352,13 @@ function Spinner({ text = "Loading…" }) {
   );
 }
 
-function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount }) {
+function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount }) {
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   return (
     <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
-      {games.map(g => (
-        <GameCard key={g.id} game={g} listEntry={myList[g.id] || null} cardH={cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
+      {games.map((g, i) => (
+        <GameCard key={g.id} game={g} listEntry={myList[g.id] || null} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
           onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
           onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} />
       ))}
@@ -356,7 +366,7 @@ function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUplo
   );
 }
 
-function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount, onReorder }) {
+function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, onReorder }) {
   const [dragOverId, setDragOverId] = useState(null);
   const dragId = useRef(null);
   if (!entries.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>No favourites yet. Add games to your list and star them!</div>;
@@ -373,7 +383,7 @@ function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, on
             onDragLeave={() => setDragOverId(null)}
             onDrop={() => { setDragOverId(null); if (dragId.current != null && dragId.current !== e.game.id) onReorder(dragId.current, e.game.id); }}
             style={{ opacity: dragOverId === e.game.id ? 0.5 : 1, outline: dragOverId === e.game.id ? "2px dashed #7c6ef755" : "none", borderRadius: 12, cursor: "grab", transition: "opacity 0.15s" }}>
-            <GameCard game={e.game} listEntry={e} cardH={cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText} glowColor={glow}
+            <GameCard game={e.game} listEntry={e} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText} glowColor={glow}
               onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
               onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} />
           </div>
@@ -419,25 +429,24 @@ function ActivityGraph({ activityLog, colors = {} }) {
   const counts = {};
   for (const d of activityLog || []) counts[d] = (counts[d] || 0) + 1;
 
+  // AniList layout: 52 columns × 7 rows, today at top-right (col 51, row 0)
+  // col 0 = oldest, col 51 = most recent; row 0 = most recent day of that week
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const start = new Date(today);
-  start.setDate(start.getDate() - 363);
-  start.setDate(start.getDate() - start.getDay());
 
   const weeks = [];
-  const cur = new Date(start);
-  while (cur <= today) {
+  for (let col = 0; col < 52; col++) {
     const week = [];
-    for (let d = 0; d < 7; d++) {
-      const iso = cur.toISOString().slice(0, 10);
-      week.push({ iso, count: cur > today ? -1 : (counts[iso] || 0) });
-      cur.setDate(cur.getDate() + 1);
+    for (let row = 0; row < 7; row++) {
+      const daysBack = (51 - col) * 7 + row;
+      const d = new Date(today);
+      d.setDate(d.getDate() - daysBack);
+      const iso = d.toISOString().slice(0, 10);
+      week.push({ iso, count: counts[iso] || 0 });
     }
     weeks.push(week);
   }
 
   const cellColor = (n) => {
-    if (n < 0) return "transparent";
     if (n === 0) return emptyColor;
     if (n === 1) return lowColor;
     if (n === 2) return midColor;
@@ -452,7 +461,7 @@ function ActivityGraph({ activityLog, colors = {} }) {
         {weeks.map((week, wi) => (
           <div key={wi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {week.map((day, di) => (
-              <div key={di} title={day.count >= 0 ? `${day.iso}: ${day.count} edit${day.count !== 1 ? "s" : ""}` : ""}
+              <div key={di} title={`${day.iso}: ${day.count} edit${day.count !== 1 ? "s" : ""}`}
                 style={{ width: 10, height: 10, borderRadius: 2, background: cellColor(day.count), flexShrink: 0 }} />
             ))}
           </div>
@@ -475,6 +484,19 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
   const [platforms, setPlatforms]       = useState(entry?.platformsPlayed ?? []);
   const origYear = game?.released ? game.released.slice(0, 4) : "";
   const [yearInput, setYearInput]       = useState(origYear);
+  const [playtime, setPlaytime]         = useState(entry?.playtimeMinutes != null ? Math.round(entry.playtimeMinutes / 60 * 10) / 10 : "");
+  const [customImagesOnly, setCustomImagesOnly] = useState(entry?.customImagesOnly || false);
+  const [extraImageIds, setExtraImageIds]       = useState(entry?.extraImageIds || []);
+  const [uploadingImg, setUploadingImg]         = useState(false);
+  const imageUploadRef = useRef();
+
+  // Extra platforms: slugs user added manually not in game.platforms
+  const gamePlatformSlugs = (game?.platforms || []).map(gp => gp.platform.slug);
+  const [extraPlatformSlugs, setExtraPlatformSlugs] = useState(() => {
+    // Any slug in platformsPlayed not present in game.platforms
+    return (entry?.platformsPlayed ?? []).filter(s => !gamePlatformSlugs.includes(s));
+  });
+  const [selectedAddPlatform, setSelectedAddPlatform] = useState("");
 
   if (!entry || !game) return null;
 
@@ -492,6 +514,44 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
   const togglePlatform = (slug) =>
     setPlatforms(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]);
 
+  const addExtraPlatform = () => {
+    if (!selectedAddPlatform) return;
+    if (!extraPlatformSlugs.includes(selectedAddPlatform)) {
+      setExtraPlatformSlugs(prev => [...prev, selectedAddPlatform]);
+      setPlatforms(prev => prev.includes(selectedAddPlatform) ? prev : [...prev, selectedAddPlatform]);
+    }
+    setSelectedAddPlatform("");
+  };
+
+  const removeExtraPlatform = (slug) => {
+    setExtraPlatformSlugs(prev => prev.filter(s => s !== slug));
+    setPlatforms(prev => prev.filter(s => s !== slug));
+  };
+
+  // Platforms available to add (not already shown)
+  const allShownSlugs = [...gamePlatformSlugs, ...extraPlatformSlugs];
+  const addablePlatforms = ALL_PLATFORMS.filter(p => !allShownSlugs.includes(p.slug));
+
+  const handleImageUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploadingImg(true);
+    try {
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append("image", file);
+        const result = await fetch(`${API}/list/${gameId}/images`, { method: "POST", body: fd });
+        const data = await result.json();
+        if (data.id) setExtraImageIds(prev => [...prev, data.id]);
+      }
+    } finally { setUploadingImg(false); e.target.value = ""; }
+  };
+
+  const deleteExtraImage = async (imgId) => {
+    await fetch(`${API}/images/${imgId}`, { method: "DELETE" });
+    setExtraImageIds(prev => prev.filter(id => id !== imgId));
+  };
+
   const handleSave = () => {
     const updatedGame = yearInput !== origYear
       ? { ...game, released: yearInput ? `${yearInput}-01-01` : null }
@@ -501,6 +561,8 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
       replayCount,
       tags,
       platformsPlayed: platforms,
+      playtimeMinutes: playtime !== "" ? Math.round(parseFloat(playtime) * 60) : (entry.playtimeMinutes ?? null),
+      customImagesOnly,
     });
     onClose();
   };
@@ -537,8 +599,15 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
             )}
           </div>
 
-          {/* Replays row */}
+          {/* Playtime + Replays row */}
           <div style={{ display: "flex", gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Playtime (hours)</div>
+              <input type="number" min="0" step="0.1" value={playtime} onChange={e => setPlaytime(e.target.value)}
+                placeholder="e.g. 12.5"
+                style={{ width: "100%", background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "5px 8px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
+              {entry.playtimeMinutes != null && <div style={{ fontSize: 10, color: "#333", marginTop: 4 }}>Stored: {formatPlaytime(entry.playtimeMinutes)}</div>}
+            </div>
             <div>
               <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Replays</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -578,29 +647,92 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
             </div>
           </div>
 
-          {/* Platforms — only show platforms this game is on */}
-          {(game.platforms || []).length > 0 && (
-            <div>
-              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Platforms Played On</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                {game.platforms.map(gp => {
-                  const slug = gp.platform.slug;
-                  const pInfo = ALL_PLATFORMS.find(ap => ap.slug === slug) || { short: slug.slice(0, 4), name: gp.platform.name };
-                  const active = platforms.includes(slug);
-                  return (
-                    <span key={slug} onClick={() => togglePlatform(slug)} title={pInfo.name}
-                      style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
-                        background: active ? platformHighlightColor + "25" : "#0e0e1e",
-                        border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
-                        color: active ? platformHighlightColor : "#444",
-                        cursor: "pointer", userSelect: "none" }}>
-                      {pInfo.short}
-                    </span>
-                  );
-                })}
-              </div>
+          {/* Platforms — game's platforms + user-added extras */}
+          <div>
+            <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Platforms Played On</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
+              {/* Game's official platforms */}
+              {(game.platforms || []).map(gp => {
+                const slug = gp.platform.slug;
+                const pInfo = ALL_PLATFORMS.find(ap => ap.slug === slug) || { short: slug.slice(0, 4), name: gp.platform.name };
+                const active = platforms.includes(slug);
+                return (
+                  <span key={slug} onClick={() => togglePlatform(slug)} title={pInfo.name}
+                    style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
+                      background: active ? platformHighlightColor + "25" : "#0e0e1e",
+                      border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
+                      color: active ? platformHighlightColor : "#444",
+                      cursor: "pointer", userSelect: "none" }}>
+                    {pInfo.short}
+                  </span>
+                );
+              })}
+              {/* User-added extra platforms */}
+              {extraPlatformSlugs.map(slug => {
+                const pInfo = ALL_PLATFORMS.find(ap => ap.slug === slug) || { short: slug.slice(0, 4), name: slug };
+                const active = platforms.includes(slug);
+                return (
+                  <span key={slug} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
+                    background: active ? platformHighlightColor + "25" : "#0e0e1e",
+                    border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
+                    color: active ? platformHighlightColor : "#444", userSelect: "none" }}>
+                    <span onClick={() => togglePlatform(slug)} style={{ cursor: "pointer" }} title={pInfo.name}>{pInfo.short}</span>
+                    <button onClick={() => removeExtraPlatform(slug)} style={{ background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 11, padding: 0, lineHeight: 1, marginLeft: 2 }}>×</button>
+                  </span>
+                );
+              })}
             </div>
-          )}
+            {/* Add platform dropdown */}
+            {addablePlatforms.length > 0 && (
+              <div style={{ display: "flex", gap: 6 }}>
+                <select value={selectedAddPlatform} onChange={e => setSelectedAddPlatform(e.target.value)}
+                  style={{ flex: 1, background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "4px 8px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }}>
+                  <option value="">Add platform…</option>
+                  {addablePlatforms.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+                </select>
+                <button onClick={addExtraPlatform} disabled={!selectedAddPlatform}
+                  style={{ padding: "4px 12px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: selectedAddPlatform ? "#7c6ef7" : "#333", fontSize: 12, cursor: selectedAddPlatform ? "pointer" : "not-allowed", fontFamily: "inherit" }}>Add</button>
+              </div>
+            )}
+          </div>
+
+          {/* Images */}
+          <div>
+            <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Images</div>
+
+            {/* Custom images only toggle */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Custom images only (skip RAWG cover)</span>
+              <button onClick={() => setCustomImagesOnly(v => !v)}
+                style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: customImagesOnly ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: customImagesOnly ? 19 : 3, transition: "left 0.2s" }} />
+              </button>
+            </div>
+
+            {/* Thumbnails: primary cover + extra images */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+              {entry.hasCover && (
+                <div style={{ position: "relative" }}>
+                  <img src={`${coverSrc(gameId)}?v=modal`} alt="cover" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #2a2a40" }} />
+                  <div style={{ position: "absolute", top: -4, right: -4, fontSize: 9, color: "#888", background: "#0c0c1c", border: "1px solid #2a2a40", borderRadius: 3, padding: "1px 3px" }}>main</div>
+                </div>
+              )}
+              {extraImageIds.map(id => (
+                <div key={id} style={{ position: "relative" }}>
+                  <img src={`${API}/images/${id}`} alt="" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #2a2a40" }} />
+                  <button onClick={() => deleteExtraImage(id)}
+                    style={{ position: "absolute", top: -6, right: -6, width: 16, height: 16, borderRadius: "50%", background: "#2a0a0a", border: "1px solid #ff606066", color: "#ff6060", cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>×</button>
+                </div>
+              ))}
+            </div>
+
+            {/* Upload */}
+            <input ref={imageUploadRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleImageUpload} />
+            <button onClick={() => imageUploadRef.current?.click()} disabled={uploadingImg}
+              style={{ padding: "5px 14px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: uploadingImg ? "#333" : "#7c6ef7", fontSize: 12, cursor: uploadingImg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+              {uploadingImg ? "Uploading…" : "+ Upload Image(s)"}
+            </button>
+          </div>
 
         </div>
 
@@ -757,6 +889,8 @@ export default function App() {
   const [tab, setTab]                     = useState("mylist");
   const [cardWMult, setCardWMult]         = useState(1.5);
   const [cardHMult, setCardHMult]         = useState(1.5);
+  const [cardH2Mult, setCardH2Mult]       = useState(1.0);
+  const [altCardMode, setAltCardMode]     = useState(false);
   const [uploadBtnMult, setUploadBtnMult] = useState(1.0);
   const [uploadBtnText, setUploadBtnText] = useState("");
   const [cardCount, setCardCount]         = useState(0);
@@ -778,6 +912,7 @@ export default function App() {
   const [activityColors, setActivityColors]               = useState({});
   const [showMorePlatformColors, setShowMorePlatformColors] = useState(false);
   const [syncingAllPlaytime, setSyncingAllPlaytime]       = useState(false);
+  const [resyncingPlatforms, setResyncingPlatforms]       = useState(false);
   const [platformFilterSlugs, setPlatformFilterSlugs]     = useState([]);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [saving, setSaving]               = useState(false);
@@ -792,7 +927,7 @@ export default function App() {
   });
 
   const dbSettings = useRef({
-    cardWMult: 1.5, cardHMult: 1.5, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
+    cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
     steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {},
   });
@@ -817,6 +952,8 @@ export default function App() {
       const loaded = {
         cardWMult:     s.cardWMult     ?? 1.5,
         cardHMult:     s.cardHMult     ?? 1.5,
+        cardH2Mult:    s.cardH2Mult    ?? 1.0,
+        altCardMode:   s.altCardMode   ?? false,
         uploadBtnMult: s.uploadBtnMult ?? 1.0,
         uploadBtnText: s.uploadBtnText ?? "",
         cardCount:     s.cardCount     ?? 0,
@@ -827,6 +964,7 @@ export default function App() {
         steamId:       s.steamId       ?? "",
       };
       setCardWMult(loaded.cardWMult);   setCardHMult(loaded.cardHMult);
+      setCardH2Mult(loaded.cardH2Mult); setAltCardMode(loaded.altCardMode);
       setUploadBtnMult(loaded.uploadBtnMult); setUploadBtnText(loaded.uploadBtnText);
       setCardCount(loaded.cardCount);
       setGlow1Enabled(loaded.glow1Enabled); setGlow1Color(loaded.glow1Color);
@@ -867,6 +1005,7 @@ export default function App() {
   const cancelSettings = useCallback(() => {
     const s = dbSettings.current;
     setCardWMult(s.cardWMult);   setCardHMult(s.cardHMult);
+    setCardH2Mult(s.cardH2Mult ?? 1.0); setAltCardMode(s.altCardMode ?? false);
     setUploadBtnMult(s.uploadBtnMult); setUploadBtnText(s.uploadBtnText);
     setCardCount(s.cardCount);
     setGlow1Enabled(s.glow1Enabled); setGlow1Color(s.glow1Color);
@@ -881,7 +1020,7 @@ export default function App() {
   }, []);
 
   const handleSave = () => saveSettings({
-    cardWMult, cardHMult, uploadBtnMult, uploadBtnText, cardCount,
+    cardWMult, cardHMult, cardH2Mult, altCardMode, uploadBtnMult, uploadBtnText, cardCount,
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
     steamApiKey, steamId, platformHighlightColor: platformDefaultColor,
     platformColors, statusColors, activityColors,
@@ -1046,6 +1185,21 @@ export default function App() {
     return dates;
   }, [allEntries]);
 
+  // Deterministic example activity log for settings preview (seeded hash, stable)
+  const exampleActivityLog = useMemo(() => {
+    const log = [];
+    const today = new Date();
+    for (let i = 0; i < 364; i++) {
+      const h = ((i * 2654435761) >>> 0) % 100;
+      const count = h < 45 ? 0 : h < 65 ? 1 : h < 80 ? 2 : h < 93 ? 3 : 4;
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const iso = d.toISOString().slice(0, 10);
+      for (let c = 0; c < count; c++) log.push(iso);
+    }
+    return log;
+  }, []); // empty deps — computed once
+
   // Platform slugs that appear in at least one list entry (for filter UI)
   const activePlatformSlugs = useMemo(() => {
     const slugs = new Set();
@@ -1117,12 +1271,16 @@ export default function App() {
 
   const cardW = Math.round(210 * cardWMult);
   const cardH = Math.round(170 * cardHMult);
-  const maxFitCols = Math.max(1, Math.floor((windowWidth - 56 + 20) / (cardW + 20)));
+  const cardH2 = Math.round(170 * cardH2Mult);
+  const contentWidth = Math.min(windowWidth, 1280) - 56;
+  const maxFitCols = Math.max(1, Math.floor((contentWidth + 20) / (cardW + 20)));
   const effectiveCardCount = cardCount > 0 ? Math.min(cardCount, maxFitCols) : 0;
 
   const markDirty = (setter) => (v) => { setter(v); setSettingsDirty(true); };
   const updateW          = markDirty(setCardWMult);
   const updateH          = markDirty(setCardHMult);
+  const updateH2         = markDirty(setCardH2Mult);
+  const updateAltMode    = markDirty(setAltCardMode);
   const updateBtn        = markDirty(setUploadBtnMult);
   const updateCount      = markDirty(setCardCount);
   const updateBtnText    = markDirty(setUploadBtnText);
@@ -1152,7 +1310,7 @@ export default function App() {
     { enabled: glow3Enabled, color: glow3Color },
   ];
 
-  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: setMetadataGameId, onTogglePlatform: togglePlatform, getPlatformColor, getStatusProps, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount };
+  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: setMetadataGameId, onTogglePlatform: togglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount };
   const previewEntries = orderedFavEntries.length ? orderedFavEntries : allEntries;
 
   const credentialsReady = steamApiKey.trim() && steamId.trim();
@@ -1359,6 +1517,30 @@ export default function App() {
                     <span>Auto</span><span style={{ marginLeft: "auto" }}>Max {maxFitCols}</span>
                   </div>
                 </div>
+
+                {/* Alternating Heights */}
+                <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
+                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Alternating Heights</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                    <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Enable alternating card heights (even/odd)</span>
+                    <button onClick={() => updateAltMode(!altCardMode)}
+                      style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: altCardMode ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                      <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: altCardMode ? 19 : 3, transition: "left 0.2s" }} />
+                    </button>
+                  </div>
+                  {altCardMode && (
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                        <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Secondary Height</span>
+                        <span style={{ fontSize: 12, color: "#e05c7a", fontWeight: 700 }}>{cardH2Mult.toFixed(1)}×</span>
+                      </div>
+                      <input type="range" min="0.25" max="5" step="0.05" value={cardH2Mult} onChange={e => updateH2(parseFloat(e.target.value))} style={{ width: "100%", accentColor: "#e05c7a", cursor: "pointer" }} />
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
+                        {["0.25×","1×","2×","3×","5×"].map(m => <span key={m}>{m}</span>)}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Cover Upload Button */}
@@ -1509,7 +1691,7 @@ export default function App() {
                   );
                 })}
                 <div style={{ marginTop: 14, padding: "10px", background: activityColors.bg || "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 8 }}>
-                  <ActivityGraph activityLog={globalActivityLog} colors={activityColors} />
+                  <ActivityGraph activityLog={exampleActivityLog} colors={activityColors} />
                 </div>
               </div>
 
@@ -1528,7 +1710,7 @@ export default function App() {
                     return (
                       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
                         {entries.map((e, i) => (
-                          <GameCard key={i} game={e.game} listEntry={e} cardH={cardH}
+                          <GameCard key={i} game={e.game} listEntry={e} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH}
                             uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
                             glowColor={i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null}
                             onAdd={addToList} onRemove={removeFromList} onToggleFav={toggleFav}
@@ -1578,6 +1760,42 @@ export default function App() {
                       {steamError && <div style={{ fontSize: 12, color: "#ff8080", lineHeight: 1.5 }}>{steamError}</div>}
                     </div>
                   )}
+                </div>
+
+                {/* Platform Data resync */}
+                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Platform Data</div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
+                    Fill entries with no platform data. Blank entries (Steam imports) default to PC.
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <button onClick={async () => {
+                      setResyncingPlatforms(true);
+                      try {
+                        const r = await apiFetch("/admin/resync-platforms", { method: "POST" });
+                        setToast({ msg: `Filled platforms for ${r.updated} game${r.updated !== 1 ? "s" : ""}`, ok: true });
+                        const data = await apiFetch("/list");
+                        setMyList(data);
+                      } catch { setToast({ msg: "Failed to fill platforms", ok: false }); }
+                      finally { setResyncingPlatforms(false); }
+                    }} disabled={resyncingPlatforms}
+                      style={{ width: "100%", padding: "9px 0", background: resyncingPlatforms ? "#1a1a2e" : "#0a1a2a", border: "1px solid #38bdf844", borderRadius: 8, color: resyncingPlatforms ? "#444" : "#38bdf8", fontWeight: 700, fontSize: 13, cursor: resyncingPlatforms ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {resyncingPlatforms ? "Filling…" : "Fill Missing Platforms"}
+                    </button>
+                    <button onClick={async () => {
+                      setResyncingPlatforms(true);
+                      try {
+                        const r = await apiFetch("/admin/resync-platforms?rawg=true", { method: "POST" });
+                        setToast({ msg: `Updated ${r.rawg_updated} from RAWG, filled ${r.updated - r.rawg_updated} as PC`, ok: true });
+                        const data = await apiFetch("/list");
+                        setMyList(data);
+                      } catch { setToast({ msg: "Failed to re-sync from RAWG", ok: false }); }
+                      finally { setResyncingPlatforms(false); }
+                    }} disabled={resyncingPlatforms}
+                      style={{ width: "100%", padding: "9px 0", background: resyncingPlatforms ? "#1a1a2e" : "#0a1a14", border: "1px solid #4caf8044", borderRadius: 8, color: resyncingPlatforms ? "#444" : "#4caf80", fontWeight: 700, fontSize: 13, cursor: resyncingPlatforms ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {resyncingPlatforms ? "Syncing…" : "Re-sync from RAWG"}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Steam library — shown inline once synced */}
