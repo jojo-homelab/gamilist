@@ -23,6 +23,7 @@ import psycopg2
 import psycopg2.extras
 import json
 import os
+from datetime import datetime, timezone
 
 app = Flask(__name__)
 
@@ -120,6 +121,10 @@ def init_db():
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS steam_api_key   TEXT    NOT NULL DEFAULT ''")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS steam_id        TEXT    NOT NULL DEFAULT ''")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS steam_mappings  JSONB   NOT NULL DEFAULT '[]'")
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS playtime_minutes INTEGER")
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS replay_count     INTEGER NOT NULL DEFAULT 0")
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS tags             JSONB   NOT NULL DEFAULT '[]'")
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS activity_log     JSONB   NOT NULL DEFAULT '[]'")
 
 
 init_db()
@@ -137,11 +142,15 @@ def row_to_entry(row):
       hasCover   — boolean (true when a custom cover binary exists in the DB)
     """
     return {
-        "game":       row["game_data"],
-        "status":     row["status"],
-        "userRating": row["user_rating"],
-        "favourite":  row["favourite"],
-        "hasCover":   row["cover_image"] is not None,
+        "game":            row["game_data"],
+        "status":          row["status"],
+        "userRating":      row["user_rating"],
+        "favourite":       row["favourite"],
+        "hasCover":        row["cover_image"] is not None,
+        "playtimeMinutes": row.get("playtime_minutes"),
+        "replayCount":     row.get("replay_count") or 0,
+        "tags":            row.get("tags") or [],
+        "activityLog":     row.get("activity_log") or [],
     }
 
 
@@ -412,24 +421,49 @@ def upsert_entry(game_id):
     Returns the updated entry in the same shape as get_list().
     """
     body = request.get_json()
-    game_data   = body.get("game")
-    status      = body.get("status")
-    user_rating = body.get("userRating")
-    favourite   = body.get("favourite", False)
+    game_data        = body.get("game")
+    status           = body.get("status")
+    user_rating      = body.get("userRating")
+    favourite        = body.get("favourite", False)
+    playtime_minutes = body.get("playtimeMinutes")
+    replay_count     = body.get("replayCount", 0)
+    tags             = body.get("tags", [])
+
+    today = datetime.now(timezone.utc).date().isoformat()
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # Fetch existing activity log so we can append today without duplicates
+            cur.execute("SELECT activity_log, playtime_minutes FROM entries WHERE game_id = %s", (game_id,))
+            existing = cur.fetchone()
+
+            if existing:
+                log = existing["activity_log"] or []
+                if today not in log:
+                    log = log + [today]
+                # Preserve existing playtime if not explicitly provided
+                if playtime_minutes is None:
+                    playtime_minutes = existing["playtime_minutes"]
+            else:
+                log = [today]
+
             cur.execute("""
-                INSERT INTO entries (game_id, game_data, status, user_rating, favourite, updated_at)
-                VALUES (%s, %s, %s, %s, %s, NOW())
+                INSERT INTO entries (game_id, game_data, status, user_rating, favourite,
+                                     playtime_minutes, replay_count, tags, activity_log, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, NOW())
                 ON CONFLICT (game_id) DO UPDATE SET
-                    game_data   = EXCLUDED.game_data,
-                    status      = EXCLUDED.status,
-                    user_rating = EXCLUDED.user_rating,
-                    favourite   = EXCLUDED.favourite,
-                    updated_at  = NOW()
+                    game_data        = EXCLUDED.game_data,
+                    status           = EXCLUDED.status,
+                    user_rating      = EXCLUDED.user_rating,
+                    favourite        = EXCLUDED.favourite,
+                    playtime_minutes = EXCLUDED.playtime_minutes,
+                    replay_count     = EXCLUDED.replay_count,
+                    tags             = EXCLUDED.tags,
+                    activity_log     = EXCLUDED.activity_log,
+                    updated_at       = NOW()
                 RETURNING *
-            """, (game_id, json.dumps(game_data), status, user_rating, favourite))
+            """, (game_id, json.dumps(game_data), status, user_rating, favourite,
+                  playtime_minutes, replay_count, json.dumps(tags), json.dumps(log)))
             row = cur.fetchone()
     return jsonify(row_to_entry(row))
 
@@ -446,6 +480,25 @@ def delete_entry(game_id):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM entries WHERE game_id = %s", (game_id,))
     return jsonify({"ok": True})
+
+
+@app.route("/api/list/<int:game_id>/playtime", methods=["PATCH"])
+def update_playtime(game_id):
+    """Update only the playtime_minutes field for an existing entry."""
+    body = request.get_json()
+    playtime_minutes = body.get("playtimeMinutes")
+    if playtime_minutes is None:
+        return jsonify({"error": "playtimeMinutes required"}), 400
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                UPDATE entries SET playtime_minutes = %s, updated_at = NOW()
+                WHERE game_id = %s RETURNING *
+            """, (playtime_minutes, game_id))
+            row = cur.fetchone()
+    if not row:
+        return jsonify({"error": "Entry not found"}), 404
+    return jsonify(row_to_entry(row))
 
 
 # ---------------------------------------------------------------------------
@@ -566,6 +619,8 @@ def steam_library():
 
     for g in games:
         g["gamilist_id"] = local.get(g["name"].lower())
+        # playtime_forever is in minutes from Steam API
+        g["steam_playtime_minutes"] = g.get("playtime_forever", 0)
 
     games.sort(key=lambda g: g["name"].lower())
     return jsonify({"games": games, "total": len(games)})

@@ -103,7 +103,7 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
  * status dropdown is always at the same vertical position in every card
  * regardless of how many optional fields (rating bar, genres, score) are present.
  */
-function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null }) {
+function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null }) {
   const [hover, setHover]       = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [imgErr, setImgErr]     = useState(false);
@@ -176,12 +176,6 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
-          {game.genres?.slice(0,2).map((g,i) => (
-            <span key={i} style={{ fontSize: 10, background: "#161628", color: "#5555aa", borderRadius: 4, padding: "2px 7px" }}>{g.name}</span>
-          ))}
-        </div>
-
         {listEntry && (
           <div style={{ marginBottom: 10 }}>
             <RatingInput value={listEntry.userRating ?? null} onChange={v => onRate(game.id, v)} />
@@ -190,6 +184,13 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
 
         {/* Spacer — pushes the status dropdown to the bottom of the card body */}
         <div style={{ flex: 1 }} />
+
+        {listEntry && onOpenMetadata && (
+          <button onClick={() => onOpenMetadata(game.id)}
+            style={{ width: "100%", marginBottom: 6, padding: "5px 0", background: "transparent", border: "1px solid #1e1e35", borderRadius: 7, color: "#444", fontSize: 11, cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.3 }}>
+            Details
+          </button>
+        )}
 
         <div ref={menuRef} style={{ position: "relative" }}>
           <button onClick={() => setShowMenu(v => !v)}
@@ -242,7 +243,7 @@ function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUplo
   );
 }
 
-function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount, onReorder }) {
+function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount, onReorder }) {
   const [dragOverId, setDragOverId] = useState(null);
   const dragId = useRef(null);
   if (!entries.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>No favourites yet. Add games to your list and star them!</div>;
@@ -260,7 +261,7 @@ function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, on
             onDrop={() => { setDragOverId(null); if (dragId.current != null && dragId.current !== e.game.id) onReorder(dragId.current, e.game.id); }}
             style={{ opacity: dragOverId === e.game.id ? 0.5 : 1, outline: dragOverId === e.game.id ? "2px dashed #7c6ef755" : "none", borderRadius: 12, cursor: "grab", transition: "opacity 0.15s" }}>
             <GameCard game={e.game} listEntry={e} cardH={cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText} glowColor={glow}
-              onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded} />
+              onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded} onOpenMetadata={onOpenMetadata} />
           </div>
         );
       })}
@@ -291,16 +292,196 @@ function GlowRow({ rank, label, enabled, color, onToggle, onColor }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Activity graph — GitHub-style contribution heatmap
+// ---------------------------------------------------------------------------
+
+function ActivityGraph({ activityLog }) {
+  const counts = {};
+  for (const d of activityLog || []) counts[d] = (counts[d] || 0) + 1;
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // Start on the Sunday 52 weeks ago
+  const start = new Date(today);
+  start.setDate(start.getDate() - 363);
+  start.setDate(start.getDate() - start.getDay());
+
+  const weeks = [];
+  const cur = new Date(start);
+  while (cur <= today) {
+    const week = [];
+    for (let d = 0; d < 7; d++) {
+      const iso = cur.toISOString().slice(0, 10);
+      week.push({ iso, count: cur > today ? -1 : (counts[iso] || 0) });
+      cur.setDate(cur.getDate() + 1);
+    }
+    weeks.push(week);
+  }
+
+  const color = (n) => {
+    if (n < 0) return "transparent";
+    if (n === 0) return "#0d0d1a";
+    if (n === 1) return "#2d1f6b";
+    if (n === 2) return "#5040a0";
+    return "#7c6ef7";
+  };
+
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 2, overflowX: "auto" }}>
+        {weeks.map((week, wi) => (
+          <div key={wi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {week.map((day, di) => (
+              <div key={di} title={day.count >= 0 ? `${day.iso}: ${day.count} edit${day.count !== 1 ? "s" : ""}` : ""}
+                style={{ width: 10, height: 10, borderRadius: 2, background: color(day.count), flexShrink: 0 }} />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 10, color: "#333", marginTop: 6 }}>{total} edit{total !== 1 ? "s" : ""} in the last year</div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Metadata modal — playtime, replays, tags, metacritic, activity
+// ---------------------------------------------------------------------------
+
+function MetadataModal({ gameId, entry, onClose, onSave }) {
+  const game = entry?.game;
+  const [playtime, setPlaytime]       = useState(entry?.playtimeMinutes != null ? Math.round(entry.playtimeMinutes / 60 * 10) / 10 : "");
+  const [replayCount, setReplayCount] = useState(entry?.replayCount ?? 0);
+  const [tags, setTags]               = useState(entry?.tags ?? []);
+  const [tagInput, setTagInput]       = useState("");
+
+  if (!entry || !game) return null;
+
+  const addTag = (t) => {
+    const trimmed = t.trim();
+    if (trimmed && !tags.includes(trimmed)) setTags(prev => [...prev, trimmed]);
+    setTagInput("");
+  };
+  const removeTag = (t) => setTags(prev => prev.filter(x => x !== t));
+  const importGenres = () => {
+    const genres = (game.genres || []).map(g => g.name);
+    setTags(prev => [...new Set([...prev, ...genres])]);
+  };
+
+  const handleSave = () => {
+    onSave(gameId, {
+      playtimeMinutes: playtime !== "" ? Math.round(parseFloat(playtime) * 60) : null,
+      replayCount,
+      tags,
+    });
+    onClose();
+  };
+
+  const formatPlaytime = (mins) => {
+    if (!mins) return null;
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: "#0c0c1c", border: "1px solid #1e1e35", borderRadius: 16, width: "100%", maxWidth: 600, maxHeight: "90vh", overflowY: "auto", padding: 28, position: "relative" }}>
+
+        {/* Header */}
+        <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#444", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 4, paddingRight: 24 }}>{game.name}</div>
+        {game.released && <div style={{ fontSize: 11, color: "#444", marginBottom: 20 }}>{game.released.slice(0, 4)}</div>}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+          {/* Playtime + Replays row */}
+          <div style={{ display: "flex", gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Playtime (hours)</div>
+              <input type="number" min="0" step="0.1" value={playtime} onChange={e => setPlaytime(e.target.value)} placeholder="e.g. 24.5"
+                style={{ width: "100%", background: "#080814", border: "1px solid #1e1e35", borderRadius: 7, padding: "7px 10px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
+              {entry.playtimeMinutes != null && <div style={{ fontSize: 10, color: "#333", marginTop: 4 }}>Stored: {formatPlaytime(entry.playtimeMinutes)}</div>}
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Replays</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button onClick={() => setReplayCount(c => Math.max(0, c - 1))}
+                  style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                <span style={{ fontSize: 18, fontWeight: 800, color: "#eeeeff", minWidth: 24, textAlign: "center" }}>{replayCount}</span>
+                <button onClick={() => setReplayCount(c => c + 1)}
+                  style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+              </div>
+            </div>
+          </div>
+
+          {/* Metacritic */}
+          {game.metacritic > 0 && (
+            <div>
+              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Metacritic</div>
+              <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 6, background: game.metacritic >= 75 ? "#1a3a1a" : game.metacritic >= 50 ? "#2a2a0a" : "#2a1010", border: `1px solid ${game.metacritic >= 75 ? "#4caf8066" : game.metacritic >= 50 ? "#e6a63a66" : "#ff606066"}`, color: game.metacritic >= 75 ? "#4caf80" : game.metacritic >= 50 ? "#e6a63a" : "#ff8080", fontSize: 14, fontWeight: 800 }}>
+                {game.metacritic}
+              </span>
+            </div>
+          )}
+
+          {/* Tags */}
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Tags</span>
+              {(game.genres || []).length > 0 && (
+                <button onClick={importGenres} style={{ fontSize: 10, color: "#7c6ef7", background: "transparent", border: "1px solid #7c6ef744", borderRadius: 4, padding: "2px 7px", cursor: "pointer", fontFamily: "inherit" }}>
+                  + from genres
+                </button>
+              )}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+              {tags.map(t => (
+                <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#161628", border: "1px solid #2a2a50", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#a0a0cc" }}>
+                  {t}
+                  <button onClick={() => removeTag(t)} style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 12, padding: 0, lineHeight: 1 }}>×</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input value={tagInput} onChange={e => setTagInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(tagInput); } }}
+                placeholder="Add tag…"
+                style={{ flex: 1, background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "5px 9px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }} />
+              <button onClick={() => addTag(tagInput)} style={{ padding: "5px 12px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#7c6ef7", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Add</button>
+            </div>
+          </div>
+
+          {/* Activity */}
+          <div>
+            <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Activity</div>
+            <ActivityGraph activityLog={entry.activityLog} />
+          </div>
+
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 24, paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+          <button onClick={onClose} style={{ padding: "7px 16px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 8, color: "#666", cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>Cancel</button>
+          <button onClick={handleSave} style={{ padding: "7px 20px", background: "#7c6ef7", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Steam library import panel.
  * Shows owned Steam games not yet in GamiList.
  * Status is pre-filled by playtime: >0 → Played, 0 → Backlog.
  * Ratings are left blank — user sets them manually after import.
  */
-function SteamLibrarySection({ library, myList, onImport, onRefresh }) {
+function SteamLibrarySection({ library, myList, onImport, onSyncPlaytime, onRefresh }) {
   const [filter, setFilter]         = useState("new");  // "new" | "all"
   const [selections, setSelections] = useState({});
   const [importing, setImporting]   = useState(false);
+  const [syncing, setSyncing]       = useState({});  // appid → true while syncing
 
   useEffect(() => {
     if (!library) return;
@@ -311,6 +492,12 @@ function SteamLibrarySection({ library, myList, onImport, onRefresh }) {
     }
     setSelections(init);
   }, [library]);
+
+  const handleSyncPlaytime = async (g) => {
+    setSyncing(p => ({ ...p, [g.appid]: true }));
+    await onSyncPlaytime(g.appid, g.steam_playtime_minutes);
+    setSyncing(p => ({ ...p, [g.appid]: false }));
+  };
 
   if (!library) return null;
 
@@ -404,6 +591,12 @@ function SteamLibrarySection({ library, myList, onImport, onRefresh }) {
                       {STATUSES[sel.status ?? 3]?.label ?? "—"}
                     </span>
                   )}
+                  {inList && g.steam_playtime_minutes > 0 && (
+                    <button onClick={() => handleSyncPlaytime(g)} disabled={syncing[g.appid]}
+                      style={{ fontSize: 10, padding: "2px 8px", background: "transparent", border: "1px solid #2a3a2a", borderRadius: 4, color: syncing[g.appid] ? "#333" : "#4caf8088", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>
+                      {syncing[g.appid] ? "…" : "Sync playtime"}
+                    </button>
+                  )}
                 </div>
               );
             })
@@ -435,6 +628,7 @@ export default function App() {
   const [steamLibrary, setSteamLibrary] = useState(null);
   const [steamSyncing, setSteamSyncing] = useState(false);
   const [steamError, setSteamError]   = useState(null);
+  const [metadataGameId, setMetadataGameId] = useState(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [saving, setSaving]               = useState(false);
   const [toast, setToast]                 = useState(null);
@@ -538,7 +732,15 @@ export default function App() {
       const updated = await apiFetch(`/list/${gameId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(entry),
+        body: JSON.stringify({
+          game:            entry.game,
+          status:          entry.status,
+          userRating:      entry.userRating,
+          favourite:       entry.favourite,
+          playtimeMinutes: entry.playtimeMinutes ?? null,
+          replayCount:     entry.replayCount ?? 0,
+          tags:            entry.tags ?? [],
+        }),
       });
       setMyList(p => ({ ...p, [gameId]: { ...p[gameId], ...updated } }));
     } catch (e) { console.error("Failed to save entry", e); }
@@ -546,7 +748,13 @@ export default function App() {
 
   const addToList = (game, status, userRating = undefined) => {
     const existing = myList[game.id] || {};
-    const next = { ...existing, game, status, userRating: userRating !== undefined ? userRating : (existing.userRating ?? null) };
+    const next = {
+      ...existing, game, status,
+      userRating:      userRating !== undefined ? userRating : (existing.userRating ?? null),
+      playtimeMinutes: existing.playtimeMinutes ?? null,
+      replayCount:     existing.replayCount ?? 0,
+      tags:            existing.tags?.length ? existing.tags : (game.genres?.map(g => g.name) || []),
+    };
     setMyList(p => ({ ...p, [game.id]: next }));
     persist(game.id, next);
   };
@@ -610,7 +818,11 @@ export default function App() {
         released:         null,
         slug:             `steam-${g.appid}`,
       };
-      const entry = { game: gameData, status: g.status, userRating: g.rating ?? null, favourite: false };
+      const entry = {
+        game: gameData, status: g.status, userRating: g.rating ?? null, favourite: false,
+        playtimeMinutes: g.playtime_forever > 0 ? g.playtime_forever : null,
+        replayCount: 0, tags: [],
+      };
       setMyList(p => ({ ...p, [g.appid]: entry }));
       await apiFetch(`/list/${g.appid}`, {
         method: "PUT",
@@ -618,6 +830,26 @@ export default function App() {
         body: JSON.stringify(entry),
       });
     }
+  }, []);
+
+  const saveMetadata = useCallback((gameId, updates) => {
+    const entry = myList[gameId];
+    if (!entry) return;
+    const next = { ...entry, ...updates };
+    setMyList(p => ({ ...p, [gameId]: next }));
+    persist(gameId, next);
+  }, [myList, persist]);
+
+  const syncPlaytime = useCallback(async (appid, playtimeMinutes) => {
+    try {
+      const updated = await apiFetch(`/list/${appid}/playtime`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playtimeMinutes }),
+      });
+      setMyList(p => ({ ...p, [appid]: { ...p[appid], ...updated } }));
+      setToast({ msg: "Playtime synced", ok: true });
+    } catch { setToast({ msg: "Failed to sync playtime", ok: false }); }
   }, []);
 
   // Derived views
@@ -676,7 +908,7 @@ export default function App() {
     { enabled: glow3Enabled, color: glow3Color },
   ];
 
-  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount };
+  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: setMetadataGameId, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount };
   const previewEntries = orderedFavEntries.length ? orderedFavEntries : allEntries;
 
   const credentialsReady = steamApiKey.trim() && steamId.trim();
@@ -695,6 +927,14 @@ export default function App() {
       `}</style>
 
       {toast && <Toast msg={toast.msg} ok={toast.ok} onDone={() => setToast(null)} />}
+      {metadataGameId != null && (
+        <MetadataModal
+          gameId={metadataGameId}
+          entry={myList[metadataGameId]}
+          onClose={() => setMetadataGameId(null)}
+          onSave={saveMetadata}
+        />
+      )}
 
       {/* ── Sticky header ── */}
       <div style={{ background: "#0c0c1c", borderBottom: "1px solid #16162a", padding: "0 28px", position: "sticky", top: 0, zIndex: 50 }}>
@@ -905,6 +1145,7 @@ export default function App() {
                     library={steamLibrary}
                     myList={myList}
                     onImport={importSteamGames}
+                    onSyncPlaytime={syncPlaytime}
                     onRefresh={syncSteam}
                   />
                 )}
