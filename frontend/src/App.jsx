@@ -22,7 +22,52 @@ const STATUSES = [
   { id: 4, label: "Replaying",      color: "#38bdf8", bg: "#0a1e2a" },
   { id: 5, label: "Plan to Replay", color: "#a78bfa", bg: "#1a1430" },
   { id: 6, label: "Dropped",        color: "#888",    bg: "#141414" },
+  { id: 7, label: "Demo",           color: "#20b2aa", bg: "#0a1e1e" },
 ];
+
+// Comprehensive platform list — slug matches RAWG API platform slugs
+const ALL_PLATFORMS = [
+  { slug: "pc",              name: "PC",                short: "PC"   },
+  { slug: "playstation5",    name: "PlayStation 5",     short: "PS5"  },
+  { slug: "playstation4",    name: "PlayStation 4",     short: "PS4"  },
+  { slug: "playstation3",    name: "PlayStation 3",     short: "PS3"  },
+  { slug: "playstation2",    name: "PlayStation 2",     short: "PS2"  },
+  { slug: "playstation",     name: "PlayStation",       short: "PS1"  },
+  { slug: "xbox-series-x",   name: "Xbox Series X/S",   short: "XSX"  },
+  { slug: "xbox-one",        name: "Xbox One",           short: "XB1"  },
+  { slug: "xbox360",         name: "Xbox 360",           short: "360"  },
+  { slug: "xbox-old",        name: "Xbox (original)",    short: "XBX"  },
+  { slug: "nintendo-switch", name: "Nintendo Switch",    short: "NSW"  },
+  { slug: "wii-u",           name: "Wii U",              short: "WIU"  },
+  { slug: "wii",             name: "Wii",                short: "Wii"  },
+  { slug: "gamecube",        name: "GameCube",           short: "GCN"  },
+  { slug: "nintendo-64",     name: "Nintendo 64",        short: "N64"  },
+  { slug: "super-nintendo",  name: "Super Nintendo",     short: "SNES" },
+  { slug: "nes",             name: "NES",                short: "NES"  },
+  { slug: "game-boy-advance",name: "Game Boy Advance",   short: "GBA"  },
+  { slug: "game-boy-color",  name: "Game Boy Color",     short: "GBC"  },
+  { slug: "game-boy",        name: "Game Boy",           short: "GBY"  },
+  { slug: "nintendo-3ds",    name: "Nintendo 3DS",       short: "3DS"  },
+  { slug: "nintendo-ds",     name: "Nintendo DS",        short: "NDS"  },
+  { slug: "psp",             name: "PSP",                short: "PSP"  },
+  { slug: "ps-vita",         name: "PS Vita",            short: "PSV"  },
+  { slug: "ios",             name: "iOS",                short: "iOS"  },
+  { slug: "android",         name: "Android",            short: "AND"  },
+  { slug: "macos",           name: "macOS",              short: "Mac"  },
+  { slug: "linux",           name: "Linux",              short: "Lin"  },
+  { slug: "sega-genesis",    name: "Sega Genesis/MD",    short: "GEN"  },
+  { slug: "sega-saturn",     name: "Sega Saturn",        short: "SAT"  },
+  { slug: "sega-dreamcast",  name: "Dreamcast",          short: "DC"   },
+  { slug: "game-gear",       name: "Game Gear",          short: "GGR"  },
+  { slug: "sega-master-system", name: "Sega Master System", short: "SMS" },
+  { slug: "atari-2600",      name: "Atari 2600",         short: "2600" },
+  { slug: "atari-7800",      name: "Atari 7800",         short: "7800" },
+  { slug: "jaguar",          name: "Atari Jaguar",       short: "JAG"  },
+  { slug: "3do",             name: "3DO",                short: "3DO"  },
+  { slug: "neo-geo",         name: "Neo Geo",            short: "NEO"  },
+];
+
+const PLATFORM_SHORT = Object.fromEntries(ALL_PLATFORMS.map(p => [p.slug, p.short]));
 
 const rawgImgSrc = (url) => url ? `${API}/image-proxy?url=${encodeURIComponent(url)}` : null;
 const coverSrc   = (id)  => `${API}/list/${id}/cover`;
@@ -104,7 +149,7 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
  * status dropdown is always at the same vertical position in every card
  * regardless of how many optional fields (rating bar, genres, score) are present.
  */
-function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null }) {
+function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, platformHighlightColor = "#7c6ef7", cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null }) {
   const [hover, setHover]       = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [imgErr, setImgErr]     = useState(false);
@@ -151,7 +196,7 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
       {/* Cover image — fixed height, objectFit contain so full image is visible */}
       <div style={{ height: cardH, borderRadius: "12px 12px 0 0", overflow: "hidden", background: "#080814", position: "relative", flexShrink: 0 }}>
         {cover && !imgErr
-          ? <img src={cover} alt={game.name} onError={() => setImgErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+          ? <img src={cover} alt={game.name} onError={() => setImgErr(true)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           : <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <span style={{ fontSize: 36 }}>🎮</span>
               <span style={{ fontSize: 11, color: "#333", textAlign: "center", padding: "0 12px", lineHeight: 1.4 }}>{game.name}</span>
@@ -172,7 +217,32 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
 
       {/* Card body */}
       <div style={{ padding: "12px 14px 14px", display: "flex", flexDirection: "column", flex: 1 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#eeeeff", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={game.name}>{game.name}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#eeeeff", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={game.name}>{game.name}</div>
+
+        {/* Platform badges */}
+        {(game.platforms || []).length > 0 && (() => {
+          const played = listEntry?.platformsPlayed || [];
+          const isDefault = played.length === 0 && game.platforms.length === 1;
+          return (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 6 }} onClick={e => e.stopPropagation()}>
+              {game.platforms.map(p => {
+                const slug = p.platform.slug;
+                const active = played.includes(slug) || (isDefault && game.platforms[0].platform.slug === slug);
+                return (
+                  <span key={slug} title={p.platform.name}
+                    onClick={e => { e.stopPropagation(); if (listEntry && onTogglePlatform) onTogglePlatform(game.id, slug); }}
+                    style={{ fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 3,
+                      background: active ? platformHighlightColor + "30" : "#141420",
+                      border: `1px solid ${active ? platformHighlightColor + "88" : "#222238"}`,
+                      color: active ? platformHighlightColor : "#444",
+                      cursor: listEntry ? "pointer" : "default", userSelect: "none", whiteSpace: "nowrap" }}>
+                    {PLATFORM_SHORT[slug] || p.platform.name.slice(0, 4)}
+                  </span>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {listEntry && (
           <div style={{ marginBottom: 10 }} onClick={e => e.stopPropagation()}>
@@ -220,20 +290,21 @@ function Spinner({ text = "Loading…" }) {
   );
 }
 
-function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, emptyMsg, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount }) {
+function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, platformHighlightColor, emptyMsg, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount }) {
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   return (
     <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
       {games.map(g => (
         <GameCard key={g.id} game={g} listEntry={myList[g.id] || null} cardH={cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
-          onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded} onOpenMetadata={onOpenMetadata} />
+          onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
+          onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} platformHighlightColor={platformHighlightColor} />
       ))}
     </div>
   );
 }
 
-function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount, onReorder }) {
+function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, platformHighlightColor, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount, onReorder }) {
   const [dragOverId, setDragOverId] = useState(null);
   const dragId = useRef(null);
   if (!entries.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>No favourites yet. Add games to your list and star them!</div>;
@@ -251,7 +322,8 @@ function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, on
             onDrop={() => { setDragOverId(null); if (dragId.current != null && dragId.current !== e.game.id) onReorder(dragId.current, e.game.id); }}
             style={{ opacity: dragOverId === e.game.id ? 0.5 : 1, outline: dragOverId === e.game.id ? "2px dashed #7c6ef755" : "none", borderRadius: 12, cursor: "grab", transition: "opacity 0.15s" }}>
             <GameCard game={e.game} listEntry={e} cardH={cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText} glowColor={glow}
-              onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded} onOpenMetadata={onOpenMetadata} />
+              onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
+              onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} platformHighlightColor={platformHighlightColor} />
           </div>
         );
       })}
@@ -339,14 +411,15 @@ function ActivityGraph({ activityLog }) {
 // Metadata modal — playtime, replays, tags, metacritic, activity
 // ---------------------------------------------------------------------------
 
-function MetadataModal({ gameId, entry, onClose, onSave }) {
+function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor = "#7c6ef7" }) {
   const game = entry?.game;
-  const [playtime, setPlaytime]       = useState(entry?.playtimeMinutes != null ? Math.round(entry.playtimeMinutes / 60 * 10) / 10 : "");
-  const [replayCount, setReplayCount] = useState(entry?.replayCount ?? 0);
-  const [tags, setTags]               = useState(entry?.tags ?? []);
-  const [tagInput, setTagInput]       = useState("");
+  const [playtime, setPlaytime]         = useState(entry?.playtimeMinutes != null ? Math.round(entry.playtimeMinutes / 60 * 10) / 10 : "");
+  const [replayCount, setReplayCount]   = useState(entry?.replayCount ?? 0);
+  const [tags, setTags]                 = useState(entry?.tags ?? []);
+  const [tagInput, setTagInput]         = useState("");
+  const [platforms, setPlatforms]       = useState(entry?.platformsPlayed ?? []);
   const origYear = game?.released ? game.released.slice(0, 4) : "";
-  const [yearInput, setYearInput]     = useState(origYear);
+  const [yearInput, setYearInput]       = useState(origYear);
 
   if (!entry || !game) return null;
 
@@ -361,6 +434,9 @@ function MetadataModal({ gameId, entry, onClose, onSave }) {
     setTags(prev => [...new Set([...prev, ...genres])]);
   };
 
+  const togglePlatform = (slug) =>
+    setPlatforms(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]);
+
   const handleSave = () => {
     const updatedGame = yearInput !== origYear
       ? { ...game, released: yearInput ? `${yearInput}-01-01` : null }
@@ -370,6 +446,7 @@ function MetadataModal({ gameId, entry, onClose, onSave }) {
       playtimeMinutes: playtime !== "" ? Math.round(parseFloat(playtime) * 60) : null,
       replayCount,
       tags,
+      platformsPlayed: platforms,
     });
     onClose();
   };
@@ -456,6 +533,26 @@ function MetadataModal({ gameId, entry, onClose, onSave }) {
                 placeholder="Add tag…"
                 style={{ flex: 1, background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "5px 9px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }} />
               <button onClick={() => addTag(tagInput)} style={{ padding: "5px 12px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#7c6ef7", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Add</button>
+            </div>
+          </div>
+
+          {/* Platforms */}
+          <div>
+            <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Platforms Played On</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+              {ALL_PLATFORMS.map(p => {
+                const active = platforms.includes(p.slug);
+                return (
+                  <span key={p.slug} onClick={() => togglePlatform(p.slug)} title={p.name}
+                    style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
+                      background: active ? platformHighlightColor + "25" : "#0e0e1e",
+                      border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
+                      color: active ? platformHighlightColor : "#444",
+                      cursor: "pointer", userSelect: "none" }}>
+                    {p.short}
+                  </span>
+                );
+              })}
             </div>
           </div>
 
@@ -634,7 +731,9 @@ export default function App() {
   const [steamLibrary, setSteamLibrary] = useState(null);
   const [steamSyncing, setSteamSyncing] = useState(false);
   const [steamError, setSteamError]   = useState(null);
-  const [metadataGameId, setMetadataGameId] = useState(null);
+  const [metadataGameId, setMetadataGameId]             = useState(null);
+  const [platformHighlightColor, setPlatformHighlightColor] = useState("#7c6ef7");
+  const [syncingAllPlaytime, setSyncingAllPlaytime]     = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [saving, setSaving]               = useState(false);
   const [toast, setToast]                 = useState(null);
@@ -650,7 +749,7 @@ export default function App() {
   const dbSettings = useRef({
     cardWMult: 1.5, cardHMult: 1.5, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
-    steamApiKey: "", steamId: "",
+    steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7",
   });
 
   const [query, setQuery]               = useState("");
@@ -689,7 +788,8 @@ export default function App() {
       setGlow2Enabled(loaded.glow2Enabled); setGlow2Color(loaded.glow2Color);
       setGlow3Enabled(loaded.glow3Enabled); setGlow3Color(loaded.glow3Color);
       setSteamApiKey(loaded.steamApiKey); setSteamId(loaded.steamId);
-      dbSettings.current = loaded;
+      setPlatformHighlightColor(loaded.platformHighlightColor ?? "#7c6ef7");
+      dbSettings.current = { ...loaded, platformHighlightColor: loaded.platformHighlightColor ?? "#7c6ef7" };
     }).catch(() => {});
 
     apiFetch("/list")
@@ -725,13 +825,14 @@ export default function App() {
     setGlow2Enabled(s.glow2Enabled); setGlow2Color(s.glow2Color);
     setGlow3Enabled(s.glow3Enabled); setGlow3Color(s.glow3Color);
     setSteamApiKey(s.steamApiKey); setSteamId(s.steamId);
+    setPlatformHighlightColor(s.platformHighlightColor ?? "#7c6ef7");
     setSettingsDirty(false);
   }, []);
 
   const handleSave = () => saveSettings({
     cardWMult, cardHMult, uploadBtnMult, uploadBtnText, cardCount,
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
-    steamApiKey, steamId,
+    steamApiKey, steamId, platformHighlightColor,
   });
 
   const persist = useCallback(async (gameId, entry) => {
@@ -747,6 +848,7 @@ export default function App() {
           playtimeMinutes: entry.playtimeMinutes ?? null,
           replayCount:     entry.replayCount ?? 0,
           tags:            entry.tags ?? [],
+          platformsPlayed: entry.platformsPlayed ?? [],
         }),
       });
       setMyList(p => ({ ...p, [gameId]: { ...p[gameId], ...updated } }));
@@ -761,6 +863,7 @@ export default function App() {
       playtimeMinutes: existing.playtimeMinutes ?? null,
       replayCount:     existing.replayCount ?? 0,
       tags:            existing.tags?.length ? existing.tags : (game.genres?.map(g => g.name) || []),
+      platformsPlayed: existing.platformsPlayed ?? [],
     };
     setMyList(p => ({ ...p, [game.id]: next }));
     persist(game.id, next);
@@ -837,6 +940,27 @@ export default function App() {
         body: JSON.stringify(entry),
       });
     }
+  }, []);
+
+  const togglePlatform = useCallback((id, slug) => {
+    const entry = myList[id];
+    if (!entry) return;
+    const current = entry.platformsPlayed || [];
+    const next = { ...entry, platformsPlayed: current.includes(slug) ? current.filter(s => s !== slug) : [...current, slug] };
+    setMyList(p => ({ ...p, [id]: next }));
+    persist(id, next);
+  }, [myList, persist]);
+
+  const syncAllSteamPlaytime = useCallback(async () => {
+    setSyncingAllPlaytime(true);
+    try {
+      const result = await apiFetch("/steam/sync-playtime-all", { method: "POST" });
+      setToast({ msg: `Updated playtime for ${result.updated} game${result.updated !== 1 ? "s" : ""}`, ok: true });
+      // Reload list to reflect updated playtime
+      const data = await apiFetch("/list");
+      setMyList(data);
+    } catch { setToast({ msg: "Failed to sync playtime", ok: false }); }
+    finally { setSyncingAllPlaytime(false); }
   }, []);
 
   const saveMetadata = useCallback((gameId, updates) => {
@@ -930,8 +1054,9 @@ export default function App() {
   const updateGlow2C     = markDirty(setGlow2Color);
   const updateGlow3E     = markDirty(setGlow3Enabled);
   const updateGlow3C     = markDirty(setGlow3Color);
-  const updateSteamKey   = markDirty(setSteamApiKey);
-  const updateSteamId    = markDirty(setSteamId);
+  const updateSteamKey         = markDirty(setSteamApiKey);
+  const updateSteamId          = markDirty(setSteamId);
+  const updatePlatformColor    = markDirty(setPlatformHighlightColor);
 
   const glowConfig = [
     { enabled: glow1Enabled, color: glow1Color },
@@ -939,7 +1064,7 @@ export default function App() {
     { enabled: glow3Enabled, color: glow3Color },
   ];
 
-  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: setMetadataGameId, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount };
+  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: setMetadataGameId, onTogglePlatform: togglePlatform, platformHighlightColor, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount };
   const previewEntries = orderedFavEntries.length ? orderedFavEntries : allEntries;
 
   const credentialsReady = steamApiKey.trim() && steamId.trim();
@@ -964,6 +1089,7 @@ export default function App() {
           entry={myList[metadataGameId]}
           onClose={() => setMetadataGameId(null)}
           onSave={saveMetadata}
+          platformHighlightColor={platformHighlightColor}
         />
       )}
 
@@ -1074,7 +1200,7 @@ export default function App() {
             )}
 
             {/* Panels row */}
-            <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 40 }}>
+            <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap", marginBottom: 40 }}>
 
               {/* Card Settings */}
               <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
@@ -1148,6 +1274,28 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Platform Settings */}
+              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Platform Display</div>
+                <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
+                  Platform badges appear on each card (from RAWG data). Click a badge to mark which platform you played the game on. The highlight colour applies to active platforms.
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, flex: 1 }}>Highlight Colour</span>
+                  <input type="color" value={platformHighlightColor} onChange={e => updatePlatformColor(e.target.value)}
+                    style={{ width: 34, height: 26, border: "1px solid #2a2a40", borderRadius: 5, cursor: "pointer", background: "none", padding: 2 }} />
+                  <span style={{ fontSize: 12, color: platformHighlightColor, fontWeight: 700 }}>{platformHighlightColor}</span>
+                </div>
+                <div style={{ marginTop: 20, borderTop: "1px solid #1a1a2e", paddingTop: 14 }}>
+                  <div style={{ fontSize: 11, color: "#333", lineHeight: 1.6 }}>
+                    Preview:{" "}
+                    {["PC", "PS5", "NSW"].map(s => (
+                      <span key={s} style={{ display: "inline-block", fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 3, marginRight: 4, background: platformHighlightColor + "30", border: `1px solid ${platformHighlightColor}88`, color: platformHighlightColor }}>{s}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
             </div>
 
             {/* ── Full-width preview ── */}
@@ -1182,7 +1330,7 @@ export default function App() {
             <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
               <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>Steam Integration</div>
 
-              <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap" }}>
 
                 {/* Steam Credentials */}
                 <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
@@ -1201,12 +1349,16 @@ export default function App() {
                       style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "7px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }} />
                   </div>
                   {credentialsReady && (
-                    <div style={{ marginTop: 20 }}>
+                    <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
                       <button onClick={syncSteam} disabled={steamSyncing}
                         style={{ width: "100%", padding: "9px 0", background: steamSyncing ? "#1a1a2e" : "#1db954", border: "none", borderRadius: 8, color: steamSyncing ? "#444" : "#fff", fontWeight: 700, fontSize: 13, cursor: steamSyncing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                         {steamSyncing ? "Fetching library…" : "Sync Steam Library"}
                       </button>
-                      {steamError && <div style={{ marginTop: 10, fontSize: 12, color: "#ff8080", lineHeight: 1.5 }}>{steamError}</div>}
+                      <button onClick={syncAllSteamPlaytime} disabled={syncingAllPlaytime}
+                        style={{ width: "100%", padding: "9px 0", background: syncingAllPlaytime ? "#1a1a2e" : "#0a2a1a", border: "1px solid #1db95444", borderRadius: 8, color: syncingAllPlaytime ? "#444" : "#1db954", fontWeight: 700, fontSize: 13, cursor: syncingAllPlaytime ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                        {syncingAllPlaytime ? "Syncing playtime…" : "Sync All Playtime"}
+                      </button>
+                      {steamError && <div style={{ fontSize: 12, color: "#ff8080", lineHeight: 1.5 }}>{steamError}</div>}
                     </div>
                   )}
                 </div>

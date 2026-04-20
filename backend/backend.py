@@ -121,10 +121,12 @@ def init_db():
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS steam_api_key   TEXT    NOT NULL DEFAULT ''")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS steam_id        TEXT    NOT NULL DEFAULT ''")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS steam_mappings  JSONB   NOT NULL DEFAULT '[]'")
-            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS playtime_minutes INTEGER")
-            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS replay_count     INTEGER NOT NULL DEFAULT 0")
-            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS tags             JSONB   NOT NULL DEFAULT '[]'")
-            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS activity_log     JSONB   NOT NULL DEFAULT '[]'")
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS playtime_minutes  INTEGER")
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS replay_count      INTEGER NOT NULL DEFAULT 0")
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS tags              JSONB   NOT NULL DEFAULT '[]'")
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS activity_log      JSONB   NOT NULL DEFAULT '[]'")
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS platforms_played  JSONB   NOT NULL DEFAULT '[]'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS platform_highlight_color TEXT NOT NULL DEFAULT '#7c6ef7'")
 
 
 init_db()
@@ -150,7 +152,8 @@ def row_to_entry(row):
         "playtimeMinutes": row.get("playtime_minutes"),
         "replayCount":     row.get("replay_count") or 0,
         "tags":            row.get("tags") or [],
-        "activityLog":     row.get("activity_log") or [],
+        "activityLog":      row.get("activity_log") or [],
+        "platformsPlayed":  row.get("platforms_played") or [],
     }
 
 
@@ -188,9 +191,10 @@ def get_settings():
             "glow2Color":     row["glow2_color"],
             "glow3Enabled":   row["glow3_enabled"],
             "glow3Color":     row["glow3_color"],
-            "steamApiKey":    row["steam_api_key"],
-            "steamId":        row["steam_id"],
-            "steamMappings":  row["steam_mappings"] or [],
+            "steamApiKey":             row["steam_api_key"],
+            "steamId":                 row["steam_id"],
+            "steamMappings":           row["steam_mappings"] or [],
+            "platformHighlightColor":  row["platform_highlight_color"],
         })
     # No row yet — return defaults so the frontend has something to work with
     return jsonify({
@@ -199,6 +203,7 @@ def get_settings():
         "glow2Enabled": True,  "glow2Color": "#C0C0C0",
         "glow3Enabled": True,  "glow3Color": "#CD7F32",
         "steamApiKey": "", "steamId": "", "steamMappings": [],
+        "platformHighlightColor": "#7c6ef7",
     })
 
 
@@ -230,9 +235,10 @@ def put_settings():
     glow2_color     = body.get("glow2Color")
     glow3_enabled   = body.get("glow3Enabled")
     glow3_color     = body.get("glow3Color")
-    steam_api_key   = body.get("steamApiKey")
-    steam_id        = body.get("steamId")
-    steam_mappings  = body.get("steamMappings")
+    steam_api_key            = body.get("steamApiKey")
+    steam_id                 = body.get("steamId")
+    steam_mappings           = body.get("steamMappings")
+    platform_highlight_color = body.get("platformHighlightColor")
     steam_mappings_json = json.dumps(steam_mappings) if steam_mappings is not None else None
 
     with get_db() as conn:
@@ -241,7 +247,7 @@ def put_settings():
                 INSERT INTO settings (
                     id, card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
                     glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
-                    steam_api_key, steam_id, steam_mappings
+                    steam_api_key, steam_id, steam_mappings, platform_highlight_color
                 )
                 VALUES (1,
                     COALESCE(%s, 1.5), COALESCE(%s, 1.5), COALESCE(%s, 1.0),
@@ -250,42 +256,45 @@ def put_settings():
                     COALESCE(%s, TRUE),  COALESCE(%s, '#C0C0C0'),
                     COALESCE(%s, TRUE),  COALESCE(%s, '#CD7F32'),
                     COALESCE(%s, ''),    COALESCE(%s, ''),
-                    COALESCE(%s::jsonb, '[]'::jsonb))
+                    COALESCE(%s::jsonb, '[]'::jsonb),
+                    COALESCE(%s, '#7c6ef7'))
                 ON CONFLICT (id) DO UPDATE SET
-                    card_w_mult     = COALESCE(EXCLUDED.card_w_mult,     settings.card_w_mult),
-                    card_h_mult     = COALESCE(EXCLUDED.card_h_mult,     settings.card_h_mult),
-                    upload_btn_mult = COALESCE(EXCLUDED.upload_btn_mult, settings.upload_btn_mult),
-                    card_count      = COALESCE(EXCLUDED.card_count,      settings.card_count),
-                    upload_btn_text = COALESCE(EXCLUDED.upload_btn_text, settings.upload_btn_text),
-                    glow1_enabled   = COALESCE(EXCLUDED.glow1_enabled,   settings.glow1_enabled),
-                    glow1_color     = COALESCE(EXCLUDED.glow1_color,     settings.glow1_color),
-                    glow2_enabled   = COALESCE(EXCLUDED.glow2_enabled,   settings.glow2_enabled),
-                    glow2_color     = COALESCE(EXCLUDED.glow2_color,     settings.glow2_color),
-                    glow3_enabled   = COALESCE(EXCLUDED.glow3_enabled,   settings.glow3_enabled),
-                    glow3_color     = COALESCE(EXCLUDED.glow3_color,     settings.glow3_color),
-                    steam_api_key   = COALESCE(EXCLUDED.steam_api_key,   settings.steam_api_key),
-                    steam_id        = COALESCE(EXCLUDED.steam_id,        settings.steam_id),
-                    steam_mappings  = COALESCE(EXCLUDED.steam_mappings,  settings.steam_mappings)
+                    card_w_mult              = COALESCE(EXCLUDED.card_w_mult,              settings.card_w_mult),
+                    card_h_mult              = COALESCE(EXCLUDED.card_h_mult,              settings.card_h_mult),
+                    upload_btn_mult          = COALESCE(EXCLUDED.upload_btn_mult,          settings.upload_btn_mult),
+                    card_count               = COALESCE(EXCLUDED.card_count,               settings.card_count),
+                    upload_btn_text          = COALESCE(EXCLUDED.upload_btn_text,          settings.upload_btn_text),
+                    glow1_enabled            = COALESCE(EXCLUDED.glow1_enabled,            settings.glow1_enabled),
+                    glow1_color              = COALESCE(EXCLUDED.glow1_color,              settings.glow1_color),
+                    glow2_enabled            = COALESCE(EXCLUDED.glow2_enabled,            settings.glow2_enabled),
+                    glow2_color              = COALESCE(EXCLUDED.glow2_color,              settings.glow2_color),
+                    glow3_enabled            = COALESCE(EXCLUDED.glow3_enabled,            settings.glow3_enabled),
+                    glow3_color              = COALESCE(EXCLUDED.glow3_color,              settings.glow3_color),
+                    steam_api_key            = COALESCE(EXCLUDED.steam_api_key,            settings.steam_api_key),
+                    steam_id                 = COALESCE(EXCLUDED.steam_id,                 settings.steam_id),
+                    steam_mappings           = COALESCE(EXCLUDED.steam_mappings,           settings.steam_mappings),
+                    platform_highlight_color = COALESCE(EXCLUDED.platform_highlight_color, settings.platform_highlight_color)
                 RETURNING *
             """, (card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
                   glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
-                  steam_api_key, steam_id, steam_mappings_json))
+                  steam_api_key, steam_id, steam_mappings_json, platform_highlight_color))
             row = cur.fetchone()
     return jsonify({
-        "cardWMult":     row["card_w_mult"],
-        "cardHMult":     row["card_h_mult"],
-        "uploadBtnMult": row["upload_btn_mult"],
-        "cardCount":     row["card_count"],
-        "uploadBtnText": row["upload_btn_text"],
-        "glow1Enabled":  row["glow1_enabled"],
-        "glow1Color":    row["glow1_color"],
-        "glow2Enabled":  row["glow2_enabled"],
-        "glow2Color":    row["glow2_color"],
-        "glow3Enabled":  row["glow3_enabled"],
-        "glow3Color":    row["glow3_color"],
-        "steamApiKey":   row["steam_api_key"],
-        "steamId":       row["steam_id"],
-        "steamMappings": row["steam_mappings"] or [],
+        "cardWMult":              row["card_w_mult"],
+        "cardHMult":              row["card_h_mult"],
+        "uploadBtnMult":          row["upload_btn_mult"],
+        "cardCount":              row["card_count"],
+        "uploadBtnText":          row["upload_btn_text"],
+        "glow1Enabled":           row["glow1_enabled"],
+        "glow1Color":             row["glow1_color"],
+        "glow2Enabled":           row["glow2_enabled"],
+        "glow2Color":             row["glow2_color"],
+        "glow3Enabled":           row["glow3_enabled"],
+        "glow3Color":             row["glow3_color"],
+        "steamApiKey":            row["steam_api_key"],
+        "steamId":                row["steam_id"],
+        "steamMappings":          row["steam_mappings"] or [],
+        "platformHighlightColor": row["platform_highlight_color"],
     })
 
 
@@ -425,9 +434,10 @@ def upsert_entry(game_id):
     status           = body.get("status")
     user_rating      = body.get("userRating")
     favourite        = body.get("favourite", False)
-    playtime_minutes = body.get("playtimeMinutes")
-    replay_count     = body.get("replayCount", 0)
-    tags             = body.get("tags", [])
+    playtime_minutes  = body.get("playtimeMinutes")
+    replay_count      = body.get("replayCount", 0)
+    tags              = body.get("tags", [])
+    platforms_played  = body.get("platformsPlayed", [])
 
     today = datetime.now(timezone.utc).date().isoformat()
 
@@ -449,8 +459,9 @@ def upsert_entry(game_id):
 
             cur.execute("""
                 INSERT INTO entries (game_id, game_data, status, user_rating, favourite,
-                                     playtime_minutes, replay_count, tags, activity_log, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, NOW())
+                                     playtime_minutes, replay_count, tags, activity_log,
+                                     platforms_played, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, NOW())
                 ON CONFLICT (game_id) DO UPDATE SET
                     game_data        = EXCLUDED.game_data,
                     status           = EXCLUDED.status,
@@ -460,10 +471,12 @@ def upsert_entry(game_id):
                     replay_count     = EXCLUDED.replay_count,
                     tags             = EXCLUDED.tags,
                     activity_log     = EXCLUDED.activity_log,
+                    platforms_played = EXCLUDED.platforms_played,
                     updated_at       = NOW()
                 RETURNING *
             """, (game_id, json.dumps(game_data), status, user_rating, favourite,
-                  playtime_minutes, replay_count, json.dumps(tags), json.dumps(log)))
+                  playtime_minutes, replay_count, json.dumps(tags), json.dumps(log),
+                  json.dumps(platforms_played)))
             row = cur.fetchone()
     return jsonify(row_to_entry(row))
 
@@ -557,6 +570,35 @@ def get_cover(game_id):
 # Steam integration
 # ---------------------------------------------------------------------------
 
+def _fetch_steam_games(api_key, steam_id):
+    """Resolve vanity URL if needed, then return the user's owned Steam games."""
+    if not (steam_id.isdigit() and len(steam_id) == 17):
+        r = requests.get(
+            "https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/",
+            params={"key": api_key, "vanityurl": steam_id},
+        )
+        r.raise_for_status()
+        result = r.json().get("response", {})
+        if result.get("success") != 1:
+            raise ValueError(f"Could not resolve Steam ID '{steam_id}'.")
+        steam_id = result["steamid"]
+
+    r = requests.get(
+        "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/",
+        params={
+            "key": api_key, "steamid": steam_id,
+            "include_appinfo": "true",
+            "include_played_free_games": "true",
+            "format": "json",
+        },
+    )
+    r.raise_for_status()
+    games = r.json().get("response", {}).get("games", [])
+    if not games:
+        raise ValueError("No games found.")
+    return games, steam_id
+
+
 @app.route("/api/steam/library")
 def steam_library():
     """
@@ -579,37 +621,12 @@ def steam_library():
     if not row or not row["steam_api_key"] or not row["steam_id"]:
         return jsonify({"error": "Steam credentials not configured"}), 400
 
-    api_key  = row["steam_api_key"]
-    steam_id = row["steam_id"].strip()
-
-    # Resolve vanity URL to SteamID64 (17-digit numeric ID)
-    if not (steam_id.isdigit() and len(steam_id) == 17):
-        r = requests.get(
-            "https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/",
-            params={"key": api_key, "vanityurl": steam_id},
-        )
-        r.raise_for_status()
-        result = r.json().get("response", {})
-        if result.get("success") != 1:
-            return jsonify({"error": f"Could not resolve Steam ID '{steam_id}'. Make sure your profile is public."}), 400
-        steam_id = result["steamid"]
-
-    # Fetch owned games
-    r = requests.get(
-        "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/",
-        params={
-            "key": api_key,
-            "steamid": steam_id,
-            "include_appinfo": "true",
-            "include_played_free_games": "true",
-            "format": "json",
-        },
-    )
-    r.raise_for_status()
-    games = r.json().get("response", {}).get("games", [])
-
-    if not games:
-        return jsonify({"error": "No games found. Make sure your Steam profile and game details are set to Public."}), 404
+    try:
+        games, _ = _fetch_steam_games(row["steam_api_key"], row["steam_id"].strip())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception:
+        return jsonify({"error": "Failed to fetch Steam library."}), 400
 
     # Cross-reference with local list by game name (case-insensitive)
     with get_db() as conn:
@@ -624,6 +641,45 @@ def steam_library():
 
     games.sort(key=lambda g: g["name"].lower())
     return jsonify({"games": games, "total": len(games)})
+
+
+@app.route("/api/steam/sync-playtime-all", methods=["POST"])
+def steam_sync_all_playtime():
+    """
+    Bulk-update playtime_minutes for all Steam-imported entries.
+
+    Fetches the Steam library using stored credentials, then for every game
+    with playtime > 0 whose appid matches a game_id in entries, updates only
+    the playtime_minutes column (no other fields are touched).
+
+    Returns: { "updated": N, "total": M }
+    """
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT steam_api_key, steam_id FROM settings WHERE id = 1")
+            row = cur.fetchone()
+
+    if not row or not row["steam_api_key"] or not row["steam_id"]:
+        return jsonify({"error": "Steam credentials not configured"}), 400
+
+    try:
+        games, _ = _fetch_steam_games(row["steam_api_key"], row["steam_id"].strip())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+    updated = 0
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            for g in games:
+                mins = g.get("playtime_forever", 0)
+                if mins > 0:
+                    cur.execute(
+                        "UPDATE entries SET playtime_minutes = %s, updated_at = NOW() WHERE game_id = %s",
+                        (mins, g["appid"]),
+                    )
+                    updated += cur.rowcount
+
+    return jsonify({"updated": updated, "total": len(games)})
 
 
 if __name__ == "__main__":
