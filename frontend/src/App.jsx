@@ -60,12 +60,13 @@ function RatingInput({ value, onChange }) {
   };
   if (editing) return (
     <input ref={ref} value={input} onChange={e => setInput(e.target.value)}
+      onClick={e => e.stopPropagation()}
       onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
       placeholder="0–10"
       style={{ width: 52, background: "#0a0a14", border: "1px solid #7c6ef7", borderRadius: 4, color: "#e0e0f0", fontSize: 12, padding: "2px 5px", outline: "none", fontFamily: "inherit" }} />
   );
   return (
-    <span onClick={() => { setInput(value != null ? String(value) : ""); setEditing(true); }}
+    <span onClick={e => { e.stopPropagation(); setInput(value != null ? String(value) : ""); setEditing(true); }}
       style={{ cursor: "pointer", fontSize: 12, color: value != null ? "#e6a63a" : "#444", border: "1px solid #222", borderRadius: 4, padding: "2px 7px", background: "#0a0a14", whiteSpace: "nowrap", userSelect: "none" }}>
       {value != null ? `⭐ ${value}/10` : "+ Rate"}
     </span>
@@ -89,7 +90,7 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
   return (
     <>
       <input ref={ref} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
-      <button onClick={() => ref.current.click()} disabled={uploading}
+      <button onClick={e => { e.stopPropagation(); ref.current.click(); }} disabled={uploading}
         style={{ position: "absolute", bottom: 8, right: 8, background: "rgba(0,0,0,0.7)", border: "1px solid #333", borderRadius: 6, padding: `${3*sizeMult}px ${8*sizeMult}px`, color: uploading ? "#555" : "#aaa", cursor: "pointer", fontSize: Math.round(10*sizeMult), fontFamily: "inherit" }}>
         {uploading ? "…" : (btnText || "📷")}
       </button>
@@ -133,20 +134,24 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
     background: "#10101e",
   };
 
+  const openMeta = (e) => { if (listEntry && onOpenMetadata) { e.stopPropagation(); onOpenMetadata(game.id); } };
+
   return (
     <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      onClick={openMeta}
       style={{
         borderRadius: 12, overflow: "visible", position: "relative",
-        display: "flex", flexDirection: "column",          // ← flex column so body stretches to fill grid row height
+        display: "flex", flexDirection: "column",
         transition: "transform 0.15s, box-shadow 0.15s, border-color 0.15s",
         transform: hover ? "translateY(-4px)" : "none",
+        cursor: listEntry && onOpenMetadata ? "pointer" : "default",
         ...glowStyle,
       }}>
 
-      {/* Cover image — fixed height */}
+      {/* Cover image — fixed height, objectFit contain so full image is visible */}
       <div style={{ height: cardH, borderRadius: "12px 12px 0 0", overflow: "hidden", background: "#080814", position: "relative", flexShrink: 0 }}>
         {cover && !imgErr
-          ? <img src={cover} alt={game.name} onError={() => setImgErr(true)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          ? <img src={cover} alt={game.name} onError={() => setImgErr(true)} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
           : <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <span style={{ fontSize: 36 }}>🎮</span>
               <span style={{ fontSize: 11, color: "#333", textAlign: "center", padding: "0 12px", lineHeight: 1.4 }}>{game.name}</span>
@@ -165,35 +170,20 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
         {listEntry && <CoverUpload gameId={game.id} onUploaded={handleCoverUploaded} sizeMult={uploadBtnMult} btnText={uploadBtnText} />}
       </div>
 
-      {/* Card body — flex column; spacer pushes status button to the bottom */}
+      {/* Card body */}
       <div style={{ padding: "12px 14px 14px", display: "flex", flexDirection: "column", flex: 1 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "#eeeeff", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={game.name}>{game.name}</div>
 
-        {(game.rating > 0 || game.released) && (
-          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
-            {game.rating > 0 && <><StarRating rating={game.rating} /><span style={{ fontSize: 11, color: "#555" }}>{game.rating.toFixed(1)}</span></>}
-            {game.released && <span style={{ fontSize: 11, color: "#3a3a5a", marginLeft: "auto" }}>{game.released.slice(0,4)}</span>}
-          </div>
-        )}
-
         {listEntry && (
-          <div style={{ marginBottom: 10 }}>
+          <div style={{ marginBottom: 10 }} onClick={e => e.stopPropagation()}>
             <RatingInput value={listEntry.userRating ?? null} onChange={v => onRate(game.id, v)} />
           </div>
         )}
 
-        {/* Spacer — pushes the status dropdown to the bottom of the card body */}
         <div style={{ flex: 1 }} />
 
-        {listEntry && onOpenMetadata && (
-          <button onClick={() => onOpenMetadata(game.id)}
-            style={{ width: "100%", marginBottom: 6, padding: "5px 0", background: "transparent", border: "1px solid #1e1e35", borderRadius: 7, color: "#444", fontSize: 11, cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.3 }}>
-            Details
-          </button>
-        )}
-
-        <div ref={menuRef} style={{ position: "relative" }}>
-          <button onClick={() => setShowMenu(v => !v)}
+        <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
+          <button onClick={e => { e.stopPropagation(); setShowMenu(v => !v); }}
             style={{ width: "100%", padding: "7px 11px", borderRadius: 8, border: `1px solid ${status !== null ? STATUSES[status].color + "44" : "#1e1e35"}`, background: status !== null ? STATUSES[status].bg : "#0a0a14", color: status !== null ? STATUSES[status].color : "#555", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "inherit" }}>
             <span>{status !== null ? STATUSES[status].label : "＋ Add to list"}</span>
             <span style={{ opacity: 0.6, fontSize: 9 }}>▾</span>
@@ -201,14 +191,14 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
           {showMenu && (
             <div style={{ position: "absolute", bottom: "calc(100% + 5px)", left: 0, right: 0, background: "#10101e", border: "1px solid #2a2a40", borderRadius: 10, overflow: "hidden", zIndex: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}>
               {STATUSES.map(s => (
-                <button key={s.id} onClick={() => { onAdd(game, s.id); setShowMenu(false); }}
+                <button key={s.id} onClick={e => { e.stopPropagation(); onAdd(game, s.id); setShowMenu(false); }}
                   style={{ width: "100%", padding: "8px 14px", border: "none", background: status === s.id ? s.bg : "transparent", color: s.color, cursor: "pointer", fontSize: 12, textAlign: "left", fontWeight: status === s.id ? 700 : 400, display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit" }}>
                   <span style={{ fontSize: 10, opacity: status === s.id ? 1 : 0 }}>✓</span>{s.label}
                 </button>
               ))}
               {status !== null && <>
                 <div style={{ height: 1, background: "#1a1a30" }} />
-                <button onClick={() => { onRemove(game.id); setShowMenu(false); }}
+                <button onClick={e => { e.stopPropagation(); onRemove(game.id); setShowMenu(false); }}
                   style={{ width: "100%", padding: "8px 14px", border: "none", background: "transparent", color: "#ff6060", cursor: "pointer", fontSize: 12, textAlign: "left", fontFamily: "inherit" }}>
                   Remove from list
                 </button>
@@ -230,14 +220,14 @@ function Spinner({ text = "Loading…" }) {
   );
 }
 
-function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, emptyMsg, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount }) {
+function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, emptyMsg, cardW, cardH, uploadBtnMult, uploadBtnText, effectiveCardCount }) {
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   return (
     <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
       {games.map(g => (
         <GameCard key={g.id} game={g} listEntry={myList[g.id] || null} cardH={cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
-          onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded} />
+          onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded} onOpenMetadata={onOpenMetadata} />
       ))}
     </div>
   );
@@ -355,6 +345,8 @@ function MetadataModal({ gameId, entry, onClose, onSave }) {
   const [replayCount, setReplayCount] = useState(entry?.replayCount ?? 0);
   const [tags, setTags]               = useState(entry?.tags ?? []);
   const [tagInput, setTagInput]       = useState("");
+  const origYear = game?.released ? game.released.slice(0, 4) : "";
+  const [yearInput, setYearInput]     = useState(origYear);
 
   if (!entry || !game) return null;
 
@@ -370,7 +362,11 @@ function MetadataModal({ gameId, entry, onClose, onSave }) {
   };
 
   const handleSave = () => {
+    const updatedGame = yearInput !== origYear
+      ? { ...game, released: yearInput ? `${yearInput}-01-01` : null }
+      : game;
     onSave(gameId, {
+      game: updatedGame,
       playtimeMinutes: playtime !== "" ? Math.round(parseFloat(playtime) * 60) : null,
       replayCount,
       tags,
@@ -391,10 +387,30 @@ function MetadataModal({ gameId, entry, onClose, onSave }) {
 
         {/* Header */}
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#444", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 4, paddingRight: 24 }}>{game.name}</div>
-        {game.released && <div style={{ fontSize: 11, color: "#444", marginBottom: 20 }}>{game.released.slice(0, 4)}</div>}
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 12, paddingRight: 24 }}>{game.name}</div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+          {/* Year + Metacritic row */}
+          <div style={{ display: "flex", gap: 16, alignItems: "flex-end" }}>
+            <div>
+              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Release Year</div>
+              {origYear
+                ? <span style={{ fontSize: 14, color: "#666" }}>{origYear}</span>
+                : <input type="number" min="1970" max="2030" value={yearInput} onChange={e => setYearInput(e.target.value)}
+                    placeholder="e.g. 2023"
+                    style={{ width: 90, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "5px 8px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
+              }
+            </div>
+            {game.metacritic > 0 && (
+              <div>
+                <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Metacritic</div>
+                <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 6, background: game.metacritic >= 75 ? "#1a3a1a" : game.metacritic >= 50 ? "#2a2a0a" : "#2a1010", border: `1px solid ${game.metacritic >= 75 ? "#4caf8066" : game.metacritic >= 50 ? "#e6a63a66" : "#ff606066"}`, color: game.metacritic >= 75 ? "#4caf80" : game.metacritic >= 50 ? "#e6a63a" : "#ff8080", fontSize: 14, fontWeight: 800 }}>
+                  {game.metacritic}
+                </span>
+              </div>
+            )}
+          </div>
 
           {/* Playtime + Replays row */}
           <div style={{ display: "flex", gap: 16 }}>
@@ -415,16 +431,6 @@ function MetadataModal({ gameId, entry, onClose, onSave }) {
               </div>
             </div>
           </div>
-
-          {/* Metacritic */}
-          {game.metacritic > 0 && (
-            <div>
-              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Metacritic</div>
-              <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 6, background: game.metacritic >= 75 ? "#1a3a1a" : game.metacritic >= 50 ? "#2a2a0a" : "#2a1010", border: `1px solid ${game.metacritic >= 75 ? "#4caf8066" : game.metacritic >= 50 ? "#e6a63a66" : "#ff606066"}`, color: game.metacritic >= 75 ? "#4caf80" : game.metacritic >= 50 ? "#e6a63a" : "#ff8080", fontSize: 14, fontWeight: 800 }}>
-                {game.metacritic}
-              </span>
-            </div>
-          )}
 
           {/* Tags */}
           <div>
@@ -633,6 +639,7 @@ export default function App() {
   const [saving, setSaving]               = useState(false);
   const [toast, setToast]                 = useState(null);
   const [statusFilter, setStatusFilter]   = useState(null);
+  const [sortBy, setSortBy]               = useState("rating_desc");
   const [windowWidth, setWindowWidth]     = useState(window.innerWidth);
 
   const [favOrder, setFavOrder] = useState(() => {
@@ -853,9 +860,33 @@ export default function App() {
   }, []);
 
   // Derived views
-  const allEntries  = Object.values(myList);
-  const favEntries  = allEntries.filter(e => e.favourite);
-  const listEntries = statusFilter === null ? allEntries : allEntries.filter(e => e.status === statusFilter);
+  const allEntries = Object.values(myList);
+  const favEntries = allEntries.filter(e => e.favourite);
+
+  const listEntries = useMemo(() => {
+    const filtered = statusFilter === null ? allEntries : allEntries.filter(e => e.status === statusFilter);
+    const copy = [...filtered];
+    if (sortBy === "rating_desc") {
+      copy.sort((a, b) => {
+        if (a.userRating == null && b.userRating == null) return 0;
+        if (a.userRating == null) return 1;
+        if (b.userRating == null) return -1;
+        return b.userRating - a.userRating;
+      });
+    } else if (sortBy === "rating_asc") {
+      copy.sort((a, b) => {
+        if (a.userRating == null && b.userRating == null) return 0;
+        if (a.userRating == null) return 1;
+        if (b.userRating == null) return -1;
+        return a.userRating - b.userRating;
+      });
+    } else if (sortBy === "name_asc") {
+      copy.sort((a, b) => (a.game?.name || "").localeCompare(b.game?.name || ""));
+    } else if (sortBy === "name_desc") {
+      copy.sort((a, b) => (b.game?.name || "").localeCompare(a.game?.name || ""));
+    }
+    return copy;
+  }, [allEntries, statusFilter, sortBy]);
 
   const orderedFavEntries = useMemo(() => {
     if (!favOrder.length) return favEntries;
@@ -984,12 +1015,25 @@ export default function App() {
                 );
               })}
             </div>
-            {statusFilter !== null && (
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-                <span style={{ fontSize: 13, color: STATUSES[statusFilter].color, fontWeight: 700 }}>Filtering: {STATUSES[statusFilter].label}</span>
-                <button onClick={() => setStatusFilter(null)} style={{ fontSize: 11, color: "#555", background: "transparent", border: "1px solid #1e1e30", borderRadius: 5, padding: "3px 9px", cursor: "pointer", fontFamily: "inherit" }}>Clear</button>
-              </div>
-            )}
+            {/* Sort + filter toolbar */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+              {statusFilter !== null && (
+                <>
+                  <span style={{ fontSize: 13, color: STATUSES[statusFilter].color, fontWeight: 700 }}>Filtering: {STATUSES[statusFilter].label}</span>
+                  <button onClick={() => setStatusFilter(null)} style={{ fontSize: 11, color: "#555", background: "transparent", border: "1px solid #1e1e30", borderRadius: 5, padding: "3px 9px", cursor: "pointer", fontFamily: "inherit" }}>Clear</button>
+                  <div style={{ width: 1, height: 16, background: "#1e1e30", margin: "0 4px" }} />
+                </>
+              )}
+              <span style={{ fontSize: 12, color: "#444", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>Sort:</span>
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+                style={{ background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "5px 10px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+                <option value="rating_desc">Rating (high → low)</option>
+                <option value="rating_asc">Rating (low → high)</option>
+                <option value="name_asc">Name (A → Z)</option>
+                <option value="name_desc">Name (Z → A)</option>
+              </select>
+              <span style={{ fontSize: 12, color: "#333", marginLeft: "auto" }}>{listEntries.length} game{listEntries.length !== 1 ? "s" : ""}</span>
+            </div>
             {listLoading ? <Spinner text="Loading your list…" /> : <Grid games={listEntries.map(e => e.game)} {...gridProps} emptyMsg="Nothing here yet — search for games to add them!" />}
           </>
         )}
@@ -1106,6 +1150,34 @@ export default function App() {
 
             </div>
 
+            {/* ── Full-width preview ── */}
+            <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
+              <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>
+                Preview {effectiveCardCount > 0 ? `— ${effectiveCardCount} column${effectiveCardCount > 1 ? "s" : ""}` : "— Auto columns"}
+              </div>
+              {previewEntries.length > 0
+                ? (() => {
+                    const count = effectiveCardCount > 0 ? effectiveCardCount : Math.min(4, maxFitCols);
+                    const entries = Array.from({ length: count }, (_, i) => previewEntries[i % previewEntries.length]);
+                    const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
+                    return (
+                      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
+                        {entries.map((e, i) => (
+                          <GameCard key={i} game={e.game} listEntry={e} cardH={cardH}
+                            uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
+                            glowColor={i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null}
+                            onAdd={addToList} onRemove={removeFromList} onToggleFav={toggleFav}
+                            onRate={rateGame} onCoverUploaded={handleCoverUploaded} />
+                        ))}
+                      </div>
+                    );
+                  })()
+                : <div style={{ padding: "60px 0", textAlign: "center", color: "#333", fontSize: 13, border: "1px dashed #1a1a2e", borderRadius: 12 }}>
+                    Add games to your list to see a preview here
+                  </div>
+              }
+            </div>
+
             {/* ── Steam Integration ── */}
             <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
               <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>Steam Integration</div>
@@ -1151,34 +1223,6 @@ export default function App() {
                 )}
 
               </div>
-            </div>
-
-            {/* ── Full-width preview ── */}
-            <div style={{ borderTop: "1px solid #16162a", paddingTop: 28 }}>
-              <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>
-                Preview {effectiveCardCount > 0 ? `— ${effectiveCardCount} column${effectiveCardCount > 1 ? "s" : ""}` : "— Auto columns"}
-              </div>
-              {previewEntries.length > 0
-                ? (() => {
-                    const count = effectiveCardCount > 0 ? effectiveCardCount : Math.min(4, maxFitCols);
-                    const entries = Array.from({ length: count }, (_, i) => previewEntries[i % previewEntries.length]);
-                    const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
-                    return (
-                      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
-                        {entries.map((e, i) => (
-                          <GameCard key={i} game={e.game} listEntry={e} cardH={cardH}
-                            uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
-                            glowColor={i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null}
-                            onAdd={addToList} onRemove={removeFromList} onToggleFav={toggleFav}
-                            onRate={rateGame} onCoverUploaded={handleCoverUploaded} />
-                        ))}
-                      </div>
-                    );
-                  })()
-                : <div style={{ padding: "60px 0", textAlign: "center", color: "#333", fontSize: 13, border: "1px dashed #1a1a2e", borderRadius: 12 }}>
-                    Add games to your list to see a preview here
-                  </div>
-              }
             </div>
           </>
         )}
