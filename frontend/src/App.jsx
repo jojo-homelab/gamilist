@@ -485,7 +485,7 @@ function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
 // Metadata modal — playtime, replays, tags, metacritic, activity
 // ---------------------------------------------------------------------------
 
-function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255 }) {
+function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, onSyncRawg, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255 }) {
   const game = entry?.game;
   const [replayCount, setReplayCount]   = useState(entry?.replayCount ?? 0);
   const [tags, setTags]                 = useState(entry?.tags ?? []);
@@ -502,6 +502,8 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
   const [confirmDelete, setConfirmDelete]        = useState(false);
   const [syncingSteam, setSyncingSteam]          = useState(false);
   const [steamSynced, setSteamSynced]            = useState(false);
+  const [syncingRawg, setSyncingRawg]            = useState(false);
+  const [rawgSynced, setRawgSynced]              = useState(false);
   const [dragOverIdx, setDragOverIdx]            = useState(null);
   const dragIdxRef                               = useRef(null);
   const imageUploadRef = useRef();
@@ -515,6 +517,18 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
     setSyncingSteam(false);
     setSteamSynced(true);
     setTimeout(() => setSteamSynced(false), 2000);
+  };
+
+  const handleSyncRawg = async () => {
+    if (!onSyncRawg) return;
+    setSyncingRawg(true);
+    const result = await onSyncRawg(gameId);
+    setSyncingRawg(false);
+    if (result) {
+      if (result.extraImageIds) setExtraImageIds(result.extraImageIds);
+      setRawgSynced(true);
+      setTimeout(() => setRawgSynced(false), 2000);
+    }
   };
 
   const handleDragStart = (idx) => { dragIdxRef.current = idx; };
@@ -847,7 +861,13 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
               {isSteamGame && onSyncSteam && (
                 <button onClick={handleSyncSteam} disabled={syncingSteam}
                   style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${steamSynced ? "#4caf80" : "#3a4a5a"}`, borderRadius: 6, color: steamSynced ? "#4caf80" : syncingSteam ? "#333" : "#88aacc", fontSize: 12, cursor: syncingSteam ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                  {steamSynced ? "Synced!" : syncingSteam ? "Syncing…" : "Sync cover from Steam"}
+                  {steamSynced ? "Synced!" : syncingSteam ? "Syncing…" : "Sync from Steam"}
+                </button>
+              )}
+              {onSyncRawg && (
+                <button onClick={handleSyncRawg} disabled={syncingRawg}
+                  style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${rawgSynced ? "#4caf80" : "#a78bfa44"}`, borderRadius: 6, color: rawgSynced ? "#4caf80" : syncingRawg ? "#333" : "#a78bfa", fontSize: 12, cursor: syncingRawg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                  {rawgSynced ? "Synced!" : syncingRawg ? "Syncing…" : "Sync from RAWG"}
                 </button>
               )}
             </div>
@@ -1227,6 +1247,25 @@ export default function App() {
     }
   };
 
+  const syncRawgImage = async (id) => {
+    try {
+      const result = await apiFetch(`/list/${id}/sync-rawg-image`, { method: "POST" });
+      if (result.background_image) {
+        setMyList(p => ({
+          ...p,
+          [id]: {
+            ...p[id],
+            game: { ...p[id].game, background_image: result.background_image },
+            extraImageIds: result.extraImageIds ?? p[id].extraImageIds,
+          }
+        }));
+      }
+      return result;
+    } catch {
+      return null;
+    }
+  };
+
   const toggleFav = (id) => {
     const entry = myList[id];
     if (!entry) return;
@@ -1509,6 +1548,7 @@ export default function App() {
           onSave={saveMetadata}
           onDelete={removeFromList}
           onSyncSteam={syncSteamImage}
+          onSyncRawg={syncRawgImage}
           platformHighlightColor={platformDefaultColor}
           cardW={cardW}
           cardH={cardH}
