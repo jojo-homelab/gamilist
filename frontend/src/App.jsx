@@ -1064,6 +1064,7 @@ export default function App() {
   const [toast, setToast]                 = useState(null);
   const [statusFilter, setStatusFilter]   = useState(null);
   const [sortBy, setSortBy]               = useState("rating_desc");
+  const [listSearch, setListSearch]       = useState("");
   const [windowWidth, setWindowWidth]     = useState(window.innerWidth);
 
   const [favOrder, setFavOrder] = useState(() => {
@@ -1377,6 +1378,10 @@ export default function App() {
         return platformFilterSlugs.some(s => gameSlugs.includes(s));
       });
     }
+    if (listSearch.trim()) {
+      const q = listSearch.trim().toLowerCase();
+      filtered = filtered.filter(e => (e.game?.name || "").toLowerCase().includes(q));
+    }
     const copy = [...filtered];
     if (sortBy === "rating_desc") {
       copy.sort((a, b) => {
@@ -1404,7 +1409,7 @@ export default function App() {
       });
     }
     return copy;
-  }, [allEntries, statusFilter, sortBy, platformFilterSlugs]);
+  }, [allEntries, statusFilter, sortBy, platformFilterSlugs, listSearch]);
 
   const orderedFavEntries = useMemo(() => {
     if (!favOrder.length) return favEntries;
@@ -1579,6 +1584,19 @@ export default function App() {
                     <option value="name_desc">Name Z→A</option>
                     <option value="platform">Platform</option>
                   </select>
+                  <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
+                  <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                    <input
+                      value={listSearch}
+                      onChange={e => setListSearch(e.target.value)}
+                      placeholder="Search my list…"
+                      style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "4px 28px 4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", width: 160 }}
+                    />
+                    {listSearch && (
+                      <button onClick={() => setListSearch("")}
+                        style={{ position: "absolute", right: 6, background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
+                    )}
+                  </div>
                   <span style={{ fontSize: 11, color: "#333", marginLeft: "auto" }}>{listEntries.length} / {allEntries.length} games</span>
                 </div>
 
