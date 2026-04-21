@@ -735,7 +735,7 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
                 {[
                   { label: "Horizontal", value: imgPosX, set: setImgPosX, min: 0, max: 100, step: 1, color: "#7c6ef7", fmt: v => `${v}%` },
                   { label: "Vertical",   value: imgPosY, set: setImgPosY, min: 0, max: 100, step: 1, color: "#38bdf8", fmt: v => `${v}%` },
-                  { label: "Zoom",       value: imgScale, set: setImgScale, min: 1, max: 3, step: 0.05, color: "#e6a63a", fmt: v => `${v.toFixed(2)}×` },
+                  { label: "Zoom",       value: imgScale, set: setImgScale, min: 0.3, max: 3, step: 0.05, color: "#e6a63a", fmt: v => `${v.toFixed(2)}×` },
                 ].map(({ label, value, set, min, max, step, color, fmt }) => (
                   <div key={label}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
@@ -1091,14 +1091,18 @@ export default function App() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          game:            entry.game,
-          status:          entry.status,
-          userRating:      entry.userRating,
-          favourite:       entry.favourite,
-          playtimeMinutes: entry.playtimeMinutes ?? null,
-          replayCount:     entry.replayCount ?? 0,
-          tags:            entry.tags ?? [],
-          platformsPlayed: entry.platformsPlayed ?? [],
+          game:             entry.game,
+          status:           entry.status,
+          userRating:       entry.userRating,
+          favourite:        entry.favourite,
+          playtimeMinutes:  entry.playtimeMinutes ?? null,
+          replayCount:      entry.replayCount ?? 0,
+          tags:             entry.tags ?? [],
+          platformsPlayed:  entry.platformsPlayed ?? [],
+          customImagesOnly: entry.customImagesOnly ?? false,
+          imgPosX:          entry.imgPosX ?? 50,
+          imgPosY:          entry.imgPosY ?? 50,
+          imgScale:         entry.imgScale ?? 1.0,
         }),
       });
       setMyList(p => ({ ...p, [gameId]: { ...p[gameId], ...updated } }));
