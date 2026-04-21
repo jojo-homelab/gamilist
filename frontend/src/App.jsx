@@ -236,9 +236,17 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
       }}>
 
       {/* Cover image — fixed height with screenshot gallery navigation */}
+      {(() => {
+        const px = listEntry?.imgPosX ?? 50;
+        const py = listEntry?.imgPosY ?? 50;
+        const sc = listEntry?.imgScale ?? 1.0;
+        const imgStyle = { width: "100%", height: "100%", objectFit: "cover", objectPosition: `${px}% ${py}%`,
+          display: "block", transition: "opacity 0.2s",
+          ...(sc !== 1 ? { transform: `scale(${sc})`, transformOrigin: `${px}% ${py}%` } : {}) };
+        return (
       <div style={{ height: cardH, borderRadius: "12px 12px 0 0", overflow: "hidden", background: "#080814", position: "relative", flexShrink: 0 }}>
         {displayImg && !imgErr
-          ? <img src={displayImg} alt={game.name} onError={() => setImgErr(true)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", transition: "opacity 0.2s" }} />
+          ? <img src={displayImg} alt={game.name} onError={() => setImgErr(true)} style={imgStyle} />
           : <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <span style={{ fontSize: 36 }}>🎮</span>
               <span style={{ fontSize: 11, color: "#333", textAlign: "center", padding: "0 12px", lineHeight: 1.4 }}>{game.name}</span>
@@ -265,32 +273,39 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
         )}
         {/* CoverUpload moved to MetadataModal */}
       </div>
+        );
+      })()}
 
       {/* Card body */}
       <div style={{ padding: "12px 14px 14px", display: "flex", flexDirection: "column", flex: 1 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "#eeeeff", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={game.name}>{game.name}</div>
 
         {/* Platform badges */}
-        {(game.platforms || []).length > 0 && (() => {
+        {(() => {
           const played = listEntry?.platformsPlayed || [];
-          const isDefault = played.length === 0 && game.platforms.length === 1;
+          const gameSlugs = (game.platforms || []).map(p => p.platform.slug);
+          const extraPlayedSlugs = played.filter(s => !gameSlugs.includes(s));
+          const allBadgeSlugs = [...gameSlugs, ...extraPlayedSlugs];
+          if (!allBadgeSlugs.length) return null;
+          const isDefault = played.length === 0 && gameSlugs.length === 1;
           return (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 6 }} onClick={e => e.stopPropagation()}>
-              {game.platforms.map(p => {
-                const slug = p.platform.slug;
-                const active = played.includes(slug) || (isDefault && game.platforms[0].platform.slug === slug);
+              {allBadgeSlugs.map(slug => {
+                const pInfo = (game.platforms || []).find(p => p.platform.slug === slug)?.platform
+                           || ALL_PLATFORMS.find(p => p.slug === slug)
+                           || { name: slug };
+                const active = played.includes(slug) || (isDefault && gameSlugs[0] === slug);
                 const pc = getPlatformColor ? getPlatformColor(slug) : "#7c6ef7";
                 return (
-                  <span key={slug} title={p.platform.name}
+                  <span key={slug} title={pInfo.name}
                     onClick={e => { e.stopPropagation(); if (listEntry && onTogglePlatform) onTogglePlatform(game.id, slug); }}
                     style={{ fontSize: 9, fontWeight: 700,
-                      padding: "2px 5px",
-                      borderRadius: 3,
+                      padding: "2px 5px", borderRadius: 3,
                       background: active ? pc + "28" : "#141420",
                       border: `1px solid ${active ? pc + "77" : "#222238"}`,
                       color: active ? pc : "#444",
                       cursor: listEntry ? "pointer" : "default", userSelect: "none", whiteSpace: "nowrap" }}>
-                    {PLATFORM_SHORT[slug] || p.platform.name.slice(0, 4)}
+                    {PLATFORM_SHORT[slug] || pInfo.name?.slice(0, 4)}
                   </span>
                 );
               })}
@@ -356,7 +371,7 @@ function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUplo
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
+    <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20, alignItems: "start" }}>
       {games.map((g, i) => (
         <GameCard key={g.id} game={g} listEntry={myList[g.id] || null} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
           onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
@@ -372,7 +387,7 @@ function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, on
   if (!entries.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>No favourites yet. Add games to your list and star them!</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
+    <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20, alignItems: "start" }}>
       {entries.map((e, i) => {
         const glow = i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null;
         return (
@@ -420,7 +435,7 @@ function GlowRow({ rank, label, enabled, color, onToggle, onColor }) {
 // Activity graph — GitHub-style contribution heatmap
 // ---------------------------------------------------------------------------
 
-function ActivityGraph({ activityLog, colors = {} }) {
+function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
   const emptyColor = colors.empty || "#0d0d1a";
   const lowColor   = colors.low   || "#2d1f6b";
   const midColor   = colors.mid   || "#5040a0";
@@ -429,15 +444,14 @@ function ActivityGraph({ activityLog, colors = {} }) {
   const counts = {};
   for (const d of activityLog || []) counts[d] = (counts[d] || 0) + 1;
 
-  // AniList layout: 52 columns × 7 rows, today at top-right (col 51, row 0)
-  // col 0 = oldest, col 51 = most recent; row 0 = most recent day of that week
+  // AniList layout: numWeeks columns × 7 rows, today at top-right (col numWeeks-1, row 0)
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
   const weeks = [];
-  for (let col = 0; col < 52; col++) {
+  for (let col = 0; col < numWeeks; col++) {
     const week = [];
     for (let row = 0; row < 7; row++) {
-      const daysBack = (51 - col) * 7 + row;
+      const daysBack = (numWeeks - 1 - col) * 7 + row;
       const d = new Date(today);
       d.setDate(d.getDate() - daysBack);
       const iso = d.toISOString().slice(0, 10);
@@ -456,18 +470,18 @@ function ActivityGraph({ activityLog, colors = {} }) {
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
   return (
-    <div>
-      <div style={{ display: "flex", gap: 2, overflowX: "auto" }}>
+    <div style={{ display: "inline-block" }}>
+      <div style={{ display: "flex", gap: 2 }}>
         {weeks.map((week, wi) => (
           <div key={wi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {week.map((day, di) => (
-              <div key={di} title={`${day.iso}: ${day.count} edit${day.count !== 1 ? "s" : ""}`}
-                style={{ width: 10, height: 10, borderRadius: 2, background: cellColor(day.count), flexShrink: 0 }} />
+              <div key={di} title={`${day.iso} — ${day.count} session${day.count !== 1 ? "s" : ""}`}
+                style={{ width: 10, height: 10, borderRadius: 2, background: cellColor(day.count), flexShrink: 0, cursor: "default" }} />
             ))}
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 10, color: "#555", marginTop: 6 }}>{total} edit{total !== 1 ? "s" : ""} in the last year</div>
+      <div style={{ fontSize: 10, color: "#555", marginTop: 6 }}>{total} session{total !== 1 ? "s" : ""} in the last year</div>
     </div>
   );
 }
@@ -488,6 +502,9 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
   const [customImagesOnly, setCustomImagesOnly] = useState(entry?.customImagesOnly || false);
   const [extraImageIds, setExtraImageIds]       = useState(entry?.extraImageIds || []);
   const [uploadingImg, setUploadingImg]         = useState(false);
+  const [imgPosX, setImgPosX]                   = useState(entry?.imgPosX ?? 50);
+  const [imgPosY, setImgPosY]                   = useState(entry?.imgPosY ?? 50);
+  const [imgScale, setImgScale]                 = useState(entry?.imgScale ?? 1.0);
   const imageUploadRef = useRef();
 
   // Extra platforms: slugs user added manually not in game.platforms
@@ -563,6 +580,9 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
       platformsPlayed: platforms,
       playtimeMinutes: playtime !== "" ? Math.round(parseFloat(playtime) * 60) : (entry.playtimeMinutes ?? null),
       customImagesOnly,
+      imgPosX,
+      imgPosY,
+      imgScale,
     });
     onClose();
   };
@@ -694,6 +714,45 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
                   style={{ padding: "4px 12px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: selectedAddPlatform ? "#7c6ef7" : "#333", fontSize: 12, cursor: selectedAddPlatform ? "pointer" : "not-allowed", fontFamily: "inherit" }}>Add</button>
               </div>
             )}
+          </div>
+
+          {/* Image Framing */}
+          <div>
+            <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Image Framing</div>
+            <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+              {/* Live preview */}
+              <div style={{ width: 80, height: 106, borderRadius: 6, overflow: "hidden", background: "#080814", border: "1px solid #2a2a40", flexShrink: 0 }}>
+                {(() => {
+                  const previewSrc = entry.hasCover ? `${coverSrc(gameId)}?v=modal` : rawgImgSrc(game.background_image);
+                  return previewSrc
+                    ? <img src={previewSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${imgPosX}% ${imgPosY}%`,
+                        ...(imgScale !== 1 ? { transform: `scale(${imgScale})`, transformOrigin: `${imgPosX}% ${imgPosY}%` } : {}) }} />
+                    : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🎮</div>;
+                })()}
+              </div>
+              {/* Controls */}
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+                {[
+                  { label: "Horizontal", value: imgPosX, set: setImgPosX, min: 0, max: 100, step: 1, color: "#7c6ef7", fmt: v => `${v}%` },
+                  { label: "Vertical",   value: imgPosY, set: setImgPosY, min: 0, max: 100, step: 1, color: "#38bdf8", fmt: v => `${v}%` },
+                  { label: "Zoom",       value: imgScale, set: setImgScale, min: 1, max: 3, step: 0.05, color: "#e6a63a", fmt: v => `${v.toFixed(2)}×` },
+                ].map(({ label, value, set, min, max, step, color, fmt }) => (
+                  <div key={label}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: "#666" }}>{label}</span>
+                      <span style={{ fontSize: 11, color, fontWeight: 700 }}>{fmt(value)}</span>
+                    </div>
+                    <input type="range" min={min} max={max} step={step} value={value}
+                      onChange={e => set(parseFloat(e.target.value))}
+                      style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
+                  </div>
+                ))}
+                <button onClick={() => { setImgPosX(50); setImgPosY(50); setImgScale(1.0); }}
+                  style={{ fontSize: 10, color: "#444", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-start" }}>
+                  Reset
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Images */}
@@ -1388,60 +1447,64 @@ export default function App() {
                 );
               })}
             </div>
-            {/* Sort + filter toolbar */}
-            <div style={{ background: "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "12px 16px", marginBottom: 20 }}>
-              {/* Row 1: status active + sort */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                {statusFilter !== null && (
-                  <>
-                    <span style={{ fontSize: 12, color: getStatusProps(statusFilter).color, fontWeight: 700 }}>{STATUSES[statusFilter].label}</span>
-                    <button onClick={() => setStatusFilter(null)} style={{ fontSize: 10, color: "#555", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "2px 7px", cursor: "pointer", fontFamily: "inherit" }}>×</button>
-                    <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
-                  </>
+            {/* Sort + filter toolbar + Activity (same row) */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 20 }}>
+              {/* Sort + filter toolbar */}
+              <div style={{ flex: 1, minWidth: 0, background: "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "12px 16px" }}>
+                {/* Row 1: status active + sort */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  {statusFilter !== null && (
+                    <>
+                      <span style={{ fontSize: 12, color: getStatusProps(statusFilter).color, fontWeight: 700 }}>{STATUSES[statusFilter].label}</span>
+                      <button onClick={() => setStatusFilter(null)} style={{ fontSize: 10, color: "#555", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "2px 7px", cursor: "pointer", fontFamily: "inherit" }}>×</button>
+                      <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
+                    </>
+                  )}
+                  <span style={{ fontSize: 11, color: "#444", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>Sort</span>
+                  <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+                    style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+                    <option value="rating_desc">Rating ↓</option>
+                    <option value="rating_asc">Rating ↑</option>
+                    <option value="name_asc">Name A→Z</option>
+                    <option value="name_desc">Name Z→A</option>
+                    <option value="platform">Platform</option>
+                  </select>
+                  <span style={{ fontSize: 11, color: "#333", marginLeft: "auto" }}>{listEntries.length} / {allEntries.length} games</span>
+                </div>
+
+                {/* Row 2: Platform filter (only show platforms present in list) */}
+                {activePlatformSlugs.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11, color: "#444", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, minWidth: 48 }}>Platform</span>
+                    {activePlatformSlugs.map(slug => {
+                      const pInfo = ALL_PLATFORMS.find(p => p.slug === slug);
+                      const active = platformFilterSlugs.includes(slug);
+                      const pc = getPlatformColor(slug);
+                      return (
+                        <button key={slug} onClick={() => setPlatformFilterSlugs(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug])}
+                          title={pInfo?.name || slug}
+                          style={{ fontSize: 10, padding: "3px 7px", borderRadius: 4, border: `1px solid ${active ? pc + "66" : "#1e1e30"}`,
+                            background: active ? pc + "18" : "transparent", color: active ? pc : "#555",
+                            cursor: "pointer", fontFamily: "inherit" }}>
+                          {pInfo?.name || pInfo?.short || slug}
+                        </button>
+                      );
+                    })}
+                    {platformFilterSlugs.length > 0 && (
+                      <button onClick={() => setPlatformFilterSlugs([])} style={{ fontSize: 10, color: "#444", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "3px 7px", cursor: "pointer", fontFamily: "inherit" }}>Clear</button>
+                    )}
+                  </div>
                 )}
-                <span style={{ fontSize: 11, color: "#444", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>Sort</span>
-                <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-                  style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
-                  <option value="rating_desc">Rating ↓</option>
-                  <option value="rating_asc">Rating ↑</option>
-                  <option value="name_asc">Name A→Z</option>
-                  <option value="name_desc">Name Z→A</option>
-                  <option value="platform">Platform</option>
-                </select>
-                <span style={{ fontSize: 11, color: "#333", marginLeft: "auto" }}>{listEntries.length} / {allEntries.length} games</span>
               </div>
 
-              {/* Row 2: Platform filter (only show platforms present in list) */}
-              {activePlatformSlugs.length > 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 11, color: "#444", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, minWidth: 48 }}>Platform</span>
-                  {activePlatformSlugs.map(slug => {
-                    const pInfo = ALL_PLATFORMS.find(p => p.slug === slug);
-                    const active = platformFilterSlugs.includes(slug);
-                    const pc = getPlatformColor(slug);
-                    return (
-                      <button key={slug} onClick={() => setPlatformFilterSlugs(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug])}
-                        title={pInfo?.name || slug}
-                        style={{ fontSize: 10, padding: "3px 7px", borderRadius: 4, border: `1px solid ${active ? pc + "66" : "#1e1e30"}`,
-                          background: active ? pc + "18" : "transparent", color: active ? pc : "#555",
-                          cursor: "pointer", fontFamily: "inherit" }}>
-                        {pInfo?.name || pInfo?.short || slug}
-                      </button>
-                    );
-                  })}
-                  {platformFilterSlugs.length > 0 && (
-                    <button onClick={() => setPlatformFilterSlugs([])} style={{ fontSize: 10, color: "#444", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "3px 7px", cursor: "pointer", fontFamily: "inherit" }}>Clear</button>
-                  )}
+              {/* Global activity heatmap */}
+              {allEntries.length > 0 && (
+                <div style={{ flexShrink: 0, background: activityColors.bg || "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "14px 18px" }}>
+                  <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Activity</div>
+                  <ActivityGraph activityLog={globalActivityLog} colors={activityColors} />
                 </div>
               )}
             </div>
-            {/* Global activity heatmap */}
-            {allEntries.length > 0 && (
-              <div style={{ background: activityColors.bg || "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "14px 18px", marginBottom: 20 }}>
-                <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Activity</div>
-                <ActivityGraph activityLog={globalActivityLog} colors={activityColors} />
-              </div>
-            )}
             {listLoading ? <Spinner text="Loading your list…" /> : <Grid games={listEntries.map(e => e.game)} {...gridProps} emptyMsg="Nothing here yet — search for games to add them!" />}
           </>
         )}
@@ -1541,125 +1604,129 @@ export default function App() {
                     </div>
                   )}
                 </div>
-              </div>
 
-              {/* Cover Upload Button */}
-              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Cover Upload Button</div>
-                <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-                  Adjusts the size and label of the upload button on the bottom-right of each card. Leave the label empty to show the default 📷 icon.
-                </div>
-                <div style={{ marginBottom: 24 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Size</span>
-                    <span style={{ fontSize: 12, color: "#e6a63a", fontWeight: 700 }}>{uploadBtnMult.toFixed(1)}×</span>
+                {/* Cover Upload Button */}
+                <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
+                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Cover Upload Button</div>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={{ fontSize: 12, color: "#888" }}>Size</span>
+                      <span style={{ fontSize: 12, color: "#e6a63a", fontWeight: 700 }}>{uploadBtnMult.toFixed(1)}×</span>
+                    </div>
+                    <input type="range" min="0.5" max="4" step="0.05" value={uploadBtnMult} onChange={e => updateBtn(parseFloat(e.target.value))} style={{ width: "100%", accentColor: "#e6a63a", cursor: "pointer" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
+                      <span>0.5×</span><span>1×</span><span>2×</span><span>3×</span><span>4×</span>
+                    </div>
                   </div>
-                  <input type="range" min="0.5" max="4" step="0.05" value={uploadBtnMult} onChange={e => updateBtn(parseFloat(e.target.value))} style={{ width: "100%", accentColor: "#e6a63a", cursor: "pointer" }} />
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
-                    <span>0.5×</span><span>1×</span><span>2×</span><span>3×</span><span>4×</span>
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Button Label</div>
+                  <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>Button label (empty = 📷)</div>
                   <input type="text" value={uploadBtnText} onChange={e => updateBtnText(e.target.value)} placeholder="Leave empty to show 📷 icon" maxLength={24}
-                    style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "7px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }} />
+                    style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "7px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
                 </div>
               </div>
 
-              {/* Glow Settings */}
+              {/* Colors — Glow + Platform + Status merged */}
               <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Top Favourites Glow</div>
-                <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-                  The first three cards in your Favourites get a glowing border. Pick a colour and toggle each rank on or off.
-                </div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 18 }}>Colors</div>
+
+                {/* Top Favourites Glow */}
+                <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Top Favourites Glow</div>
                 <GlowRow rank="1" label="1st place" enabled={glow1Enabled} color={glow1Color} onToggle={() => updateGlow1E(!glow1Enabled)} onColor={updateGlow1C} />
                 <GlowRow rank="2" label="2nd place" enabled={glow2Enabled} color={glow2Color} onToggle={() => updateGlow2E(!glow2Enabled)} onColor={updateGlow2C} />
                 <GlowRow rank="3" label="3rd place" enabled={glow3Enabled} color={glow3Color} onToggle={() => updateGlow3E(!glow3Enabled)} onColor={updateGlow3C} />
-                <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 14, marginTop: 2 }}>
-                  <div style={{ fontSize: 11, color: "#333", lineHeight: 1.6 }}>Reorder Favourites by dragging cards on the Favourites tab.</div>
-                </div>
-              </div>
+                <div style={{ fontSize: 10, color: "#333", marginTop: 6, marginBottom: 18 }}>Reorder Favourites by dragging cards on the Favourites tab.</div>
 
-              {/* Platform Settings */}
-              {(() => {
-                const featuredSlugs = ["pc","playstation5","xbox-series-x","nintendo-switch","macos","linux","ios","android"];
-                const colorRows = showMorePlatformColors ? ALL_PLATFORMS : ALL_PLATFORMS.filter(p => featuredSlugs.includes(p.slug));
-                return (
-                  <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Platform Display</div>
-                    <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
-                      Platform badges show from RAWG data. Click a badge on a card to mark which platform you played on.
-                    </div>
-
-                    {/* Default colour */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid #1a1a2e" }}>
-                      <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, flex: 1 }}>Default Color</span>
-                      <input type="color" value={platformDefaultColor} onChange={e => updatePlatformDefault(e.target.value)}
-                        style={{ width: 30, height: 22, border: "1px solid #2a2a40", borderRadius: 4, cursor: "pointer", background: "none", padding: 1 }} />
-                      <span style={{ fontSize: 11, color: platformDefaultColor, fontWeight: 700 }}>{platformDefaultColor}</span>
-                    </div>
-
-                    {/* Per-platform colours */}
-                    <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Per-Platform Colour</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {colorRows.map(p => {
-                        const c = platformColors[p.slug] ?? platformDefaultColor;
-                        return (
-                          <div key={p.slug} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: 9, fontWeight: 700, color: c, minWidth: 28 }}>{p.short}</span>
-                            <span style={{ fontSize: 11, color: "#666", flex: 1 }}>{p.name}</span>
-                            <input type="color" value={c} onChange={e => setPlatformColorDirty(p.slug, e.target.value)}
-                              style={{ width: 26, height: 20, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
-                            {platformColors[p.slug] && platformColors[p.slug] !== platformDefaultColor && (
-                              <button onClick={() => { const n = { ...platformColors }; delete n[p.slug]; setPlatformColors(n); setSettingsDirty(true); }}
-                                style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset to default">↺</button>
-                            )}
+                {/* Status Colors */}
+                <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 18, marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Status Colors</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {STATUSES.map(s => {
+                      const sp = getStatusProps(s.id);
+                      const hasOverride = !!statusColors[s.id];
+                      return (
+                        <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: sp.color, flex: 1,
+                            background: sp.bg, border: `1px solid ${sp.color}44`, borderRadius: 4,
+                            padding: "3px 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {s.label}
+                          </span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                            <span style={{ fontSize: 9, color: "#444" }}>Label</span>
+                            <input type="color" value={sp.color} onChange={e => setStatusColorDirty(s.id, "color", e.target.value)}
+                              style={{ width: 22, height: 16, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
                           </div>
-                        );
-                      })}
-                    </div>
-                    <button onClick={() => setShowMorePlatformColors(v => !v)}
-                      style={{ marginTop: 10, fontSize: 11, color: "#555", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
-                      {showMorePlatformColors ? "▲ Show less" : `▼ More platforms (${ALL_PLATFORMS.length - featuredSlugs.length})`}
-                    </button>
+                          <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                            <span style={{ fontSize: 9, color: "#444" }}>BG</span>
+                            <input type="color" value={sp.bg} onChange={e => setStatusColorDirty(s.id, "bg", e.target.value)}
+                              style={{ width: 22, height: 16, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
+                          </div>
+                          {hasOverride && (
+                            <button onClick={() => resetStatusColor(s.id)}
+                              style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset to default">↺</button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })()}
-
-              {/* Status Colors */}
-              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Status Colors</div>
-                <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
-                  Customize the label color and background for each status category. Click ↺ to reset to default.
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {STATUSES.map(s => {
-                    const sp = getStatusProps(s.id);
-                    const hasOverride = !!statusColors[s.id];
+
+                {/* Platform Colors */}
+                <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 18, marginTop: 10 }}>
+                  <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Platform Colors</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                    <span style={{ fontSize: 11, color: "#888", flex: 1 }}>Default</span>
+                    <input type="color" value={platformDefaultColor} onChange={e => updatePlatformDefault(e.target.value)}
+                      style={{ width: 26, height: 20, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
+                    <span style={{ fontSize: 10, color: platformDefaultColor, fontWeight: 700 }}>{platformDefaultColor}</span>
+                  </div>
+                  {/* Always-visible: PC, PS5, Xbox, Switch */}
+                  {(() => {
+                    const featured = ["pc","playstation5","xbox-series-x","nintendo-switch"];
+                    const extraPlatforms = ALL_PLATFORMS.filter(p => !featured.includes(p.slug));
                     return (
-                      <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: sp.color, flex: 1,
-                          background: sp.bg, border: `1px solid ${sp.color}44`, borderRadius: 4,
-                          padding: "3px 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {s.label}
-                        </span>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                          <span style={{ fontSize: 9, color: "#444" }}>Label</span>
-                          <input type="color" value={sp.color} onChange={e => setStatusColorDirty(s.id, "color", e.target.value)}
-                            style={{ width: 24, height: 18, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
+                      <>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                          {ALL_PLATFORMS.filter(p => featured.includes(p.slug)).map(p => {
+                            const c = platformColors[p.slug] ?? platformDefaultColor;
+                            return (
+                              <div key={p.slug} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ fontSize: 9, fontWeight: 700, color: c, minWidth: 28 }}>{p.short}</span>
+                                <span style={{ fontSize: 11, color: "#666", flex: 1 }}>{p.name}</span>
+                                <input type="color" value={c} onChange={e => setPlatformColorDirty(p.slug, e.target.value)}
+                                  style={{ width: 22, height: 16, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
+                                {platformColors[p.slug] && platformColors[p.slug] !== platformDefaultColor && (
+                                  <button onClick={() => { const n = { ...platformColors }; delete n[p.slug]; setPlatformColors(n); setSettingsDirty(true); }}
+                                    style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset">↺</button>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                          <span style={{ fontSize: 9, color: "#444" }}>BG</span>
-                          <input type="color" value={sp.bg} onChange={e => setStatusColorDirty(s.id, "bg", e.target.value)}
-                            style={{ width: 24, height: 18, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
-                        </div>
-                        {hasOverride && (
-                          <button onClick={() => resetStatusColor(s.id)}
-                            style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset to default">↺</button>
+                        <button onClick={() => setShowMorePlatformColors(v => !v)}
+                          style={{ marginTop: 10, fontSize: 11, color: "#555", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
+                          {showMorePlatformColors ? "▲ Show less" : `▼ More platforms (${extraPlatforms.length})`}
+                        </button>
+                        {showMorePlatformColors && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 8 }}>
+                            {extraPlatforms.map(p => {
+                              const c = platformColors[p.slug] ?? platformDefaultColor;
+                              return (
+                                <div key={p.slug} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span style={{ fontSize: 9, fontWeight: 700, color: c, minWidth: 28 }}>{p.short}</span>
+                                  <span style={{ fontSize: 11, color: "#666", flex: 1 }}>{p.name}</span>
+                                  <input type="color" value={c} onChange={e => setPlatformColorDirty(p.slug, e.target.value)}
+                                    style={{ width: 22, height: 16, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
+                                  {platformColors[p.slug] && platformColors[p.slug] !== platformDefaultColor && (
+                                    <button onClick={() => { const n = { ...platformColors }; delete n[p.slug]; setPlatformColors(n); setSettingsDirty(true); }}
+                                      style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset">↺</button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         )}
-                      </div>
+                      </>
                     );
-                  })}
+                  })()}
                 </div>
               </div>
 
@@ -1672,8 +1739,8 @@ export default function App() {
                 {[
                   { key: "bg",    label: "Background",  default: "#0c0c1c" },
                   { key: "empty", label: "Empty cell",  default: "#0d0d1a" },
-                  { key: "low",   label: "Low (1 edit)", default: "#2d1f6b" },
-                  { key: "mid",   label: "Mid (2 edits)", default: "#5040a0" },
+                  { key: "low",   label: "Low (1 session)", default: "#2d1f6b" },
+                  { key: "mid",   label: "Mid (2 sessions)", default: "#5040a0" },
                   { key: "high",  label: "High (3+)",   default: "#7c6ef7" },
                 ].map(({ key, label, default: def }) => {
                   const val = activityColors[key] || def;
@@ -1690,8 +1757,9 @@ export default function App() {
                     </div>
                   );
                 })}
-                <div style={{ marginTop: 14, padding: "10px", background: activityColors.bg || "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 8 }}>
-                  <ActivityGraph activityLog={exampleActivityLog} colors={activityColors} />
+                {/* 13-week preview to fit within the panel */}
+                <div style={{ marginTop: 14, padding: "10px", background: activityColors.bg || "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 8, overflowX: "hidden" }}>
+                  <ActivityGraph activityLog={exampleActivityLog} colors={activityColors} numWeeks={20} />
                 </div>
               </div>
 
