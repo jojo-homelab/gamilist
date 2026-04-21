@@ -23,6 +23,7 @@ const STATUSES = [
   { id: 5, label: "Plan to Replay", color: "#a78bfa", bg: "#1a1430" },
   { id: 6, label: "Dropped",        color: "#888",    bg: "#141414" },
   { id: 7, label: "Demo",           color: "#20b2aa", bg: "#0a1e1e" },
+  { id: 8, label: "Paused",         color: "#f59e0b", bg: "#1e1500" },
 ];
 
 // Comprehensive platform list — slug matches RAWG API platform slugs
