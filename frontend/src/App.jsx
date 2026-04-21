@@ -485,7 +485,7 @@ function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
 // Metadata modal — playtime, replays, tags, metacritic, activity
 // ---------------------------------------------------------------------------
 
-function MetadataModal({ gameId, entry, onClose, onSave, onDelete, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255 }) {
+function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255 }) {
   const game = entry?.game;
   const [replayCount, setReplayCount]   = useState(entry?.replayCount ?? 0);
   const [tags, setTags]                 = useState(entry?.tags ?? []);
@@ -500,7 +500,42 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, platformHighl
   const [imgPosX, setImgPosX]                   = useState(entry?.imgPosX ?? 50);
   const [imgPosY, setImgPosY]                   = useState(entry?.imgPosY ?? 50);
   const [confirmDelete, setConfirmDelete]        = useState(false);
+  const [syncingSteam, setSyncingSteam]          = useState(false);
+  const [steamSynced, setSteamSynced]            = useState(false);
+  const [dragOverIdx, setDragOverIdx]            = useState(null);
+  const dragIdxRef                               = useRef(null);
   const imageUploadRef = useRef();
+
+  const isSteamGame = (entry?.game?.slug || "").startsWith("steam-");
+
+  const handleSyncSteam = async () => {
+    if (!onSyncSteam) return;
+    setSyncingSteam(true);
+    await onSyncSteam(gameId);
+    setSyncingSteam(false);
+    setSteamSynced(true);
+    setTimeout(() => setSteamSynced(false), 2000);
+  };
+
+  const handleDragStart = (idx) => { dragIdxRef.current = idx; };
+  const handleDragOver  = (e, idx) => { e.preventDefault(); setDragOverIdx(idx); };
+  const handleDragEnd   = () => { dragIdxRef.current = null; setDragOverIdx(null); };
+  const handleDrop      = async (e, toIdx) => {
+    e.preventDefault();
+    const fromIdx = dragIdxRef.current;
+    dragIdxRef.current = null;
+    setDragOverIdx(null);
+    if (fromIdx === null || fromIdx === toIdx) return;
+    const newIds = [...extraImageIds];
+    const [moved] = newIds.splice(fromIdx, 1);
+    newIds.splice(toIdx, 0, moved);
+    setExtraImageIds(newIds);
+    await fetch(`${API}/list/${gameId}/images/reorder`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: newIds }),
+    });
+  };
 
   // Extra platforms: slugs user added manually not in game.platforms
   const gamePlatformSlugs = (game?.platforms || []).map(gp => gp.platform.slug);
@@ -767,7 +802,7 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, platformHighl
               </button>
             </div>
 
-            {/* Thumbnails: primary cover + extra images */}
+            {/* Thumbnails: primary cover (fixed) + extra images (draggable) */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
               {entry.hasCover && (
                 <div style={{ position: "relative" }}>
@@ -775,21 +810,42 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, platformHighl
                   <div style={{ position: "absolute", top: -4, right: -4, fontSize: 9, color: "#888", background: "#0c0c1c", border: "1px solid #2a2a40", borderRadius: 3, padding: "1px 3px" }}>main</div>
                 </div>
               )}
-              {extraImageIds.map(id => (
-                <div key={id} style={{ position: "relative" }}>
-                  <img src={`${API}/images/${id}`} alt="" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #2a2a40" }} />
+              {extraImageIds.map((id, idx) => (
+                <div key={id}
+                  draggable
+                  onDragStart={() => handleDragStart(idx)}
+                  onDragOver={e => handleDragOver(e, idx)}
+                  onDrop={e => handleDrop(e, idx)}
+                  onDragEnd={handleDragEnd}
+                  style={{
+                    position: "relative", cursor: "grab",
+                    outline: dragOverIdx === idx ? "2px solid #7c6ef7" : "none",
+                    borderRadius: 6,
+                    opacity: dragIdxRef.current === idx ? 0.4 : 1,
+                    transition: "outline 0.1s",
+                  }}>
+                  <img src={`${API}/images/${id}`} alt="" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #2a2a40", display: "block" }} />
                   <button onClick={() => deleteExtraImage(id)}
                     style={{ position: "absolute", top: -6, right: -6, width: 16, height: 16, borderRadius: "50%", background: "#2a0a0a", border: "1px solid #ff606066", color: "#ff6060", cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>×</button>
+                  <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#555" }}>#{idx + 1}</div>
                 </div>
               ))}
             </div>
 
-            {/* Upload */}
-            <input ref={imageUploadRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleImageUpload} />
-            <button onClick={() => imageUploadRef.current?.click()} disabled={uploadingImg}
-              style={{ padding: "5px 14px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: uploadingImg ? "#333" : "#7c6ef7", fontSize: 12, cursor: uploadingImg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-              {uploadingImg ? "Uploading…" : "+ Upload Image(s)"}
-            </button>
+            {/* Upload + Steam sync */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input ref={imageUploadRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleImageUpload} />
+              <button onClick={() => imageUploadRef.current?.click()} disabled={uploadingImg}
+                style={{ padding: "5px 14px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: uploadingImg ? "#333" : "#7c6ef7", fontSize: 12, cursor: uploadingImg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                {uploadingImg ? "Uploading…" : "+ Upload Image(s)"}
+              </button>
+              {isSteamGame && onSyncSteam && (
+                <button onClick={handleSyncSteam} disabled={syncingSteam}
+                  style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${steamSynced ? "#4caf80" : "#3a4a5a"}`, borderRadius: 6, color: steamSynced ? "#4caf80" : syncingSteam ? "#333" : "#88aacc", fontSize: 12, cursor: syncingSteam ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                  {steamSynced ? "Synced!" : syncingSteam ? "Syncing…" : "Sync cover from Steam"}
+                </button>
+              )}
+            </div>
           </div>
 
         </div>
@@ -1155,6 +1211,13 @@ export default function App() {
     await apiFetch(`/list/${id}`, { method: "DELETE" });
   };
 
+  const syncSteamImage = async (id) => {
+    const result = await apiFetch(`/list/${id}/sync-steam-image`, { method: "POST" });
+    if (result.background_image) {
+      setMyList(p => ({ ...p, [id]: { ...p[id], game: { ...p[id].game, background_image: result.background_image } } }));
+    }
+  };
+
   const toggleFav = (id) => {
     const entry = myList[id];
     if (!entry) return;
@@ -1432,6 +1495,7 @@ export default function App() {
           onClose={() => setMetadataGameId(null)}
           onSave={saveMetadata}
           onDelete={removeFromList}
+          onSyncSteam={syncSteamImage}
           platformHighlightColor={platformDefaultColor}
           cardW={cardW}
           cardH={cardH}

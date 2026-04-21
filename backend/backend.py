@@ -842,6 +842,47 @@ def delete_extra_image(img_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/list/<int:game_id>/images/reorder", methods=["PUT"])
+def reorder_images(game_id):
+    """
+    Update the display order of extra images for an entry.
+    Body: {"ids": [id1, id2, ...]} in the desired display order.
+    Sets seq = position index for each id.
+    """
+    ids = request.get_json().get("ids", [])
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            for seq, img_id in enumerate(ids):
+                cur.execute(
+                    "UPDATE entry_images SET seq = %s WHERE id = %s AND game_id = %s",
+                    (seq, img_id, game_id)
+                )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/list/<int:game_id>/sync-steam-image", methods=["POST"])
+def sync_steam_image(game_id):
+    """
+    Reset the cover image for a Steam-imported entry back to the Steam header URL.
+    Useful after a RAWG sync has replaced it and the user wants the original back.
+    Only updates game_data.background_image — custom cover_image is untouched.
+    """
+    steam_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{game_id}/header.jpg"
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT game_data FROM entries WHERE game_id = %s", (game_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Not found"}), 404
+            gd = dict(row["game_data"])
+            gd["background_image"] = steam_url
+            cur.execute(
+                "UPDATE entries SET game_data = %s::jsonb, updated_at = NOW() WHERE game_id = %s",
+                (json.dumps(gd), game_id)
+            )
+    return jsonify({"background_image": steam_url})
+
+
 # ---------------------------------------------------------------------------
 # Admin / maintenance routes
 # ---------------------------------------------------------------------------
