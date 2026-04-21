@@ -897,6 +897,68 @@ def resync_platforms():
     return jsonify({"updated": updated, "rawg_updated": rawg_updated})
 
 
+@app.route("/api/admin/sync-rawg-images", methods=["POST"])
+def sync_rawg_images():
+    """
+    For every Steam-imported entry (slug starts with 'steam-' or background_image
+    is from steamstatic.com), search RAWG by the game name and replace the
+    background_image with the RAWG result.
+
+    Custom covers (cover_image IS NOT NULL) are never touched.
+    Returns {"updated": N, "skipped": M}.
+    """
+    if not RAWG_KEY:
+        return jsonify({"error": "RAWG_API_KEY not configured"}), 400
+
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # Only fetch entries that have no custom cover and look like Steam imports
+            cur.execute("""
+                SELECT game_id, game_data
+                FROM entries
+                WHERE cover_image IS NULL
+                  AND (
+                    game_data->>'slug' LIKE 'steam-%%'
+                    OR game_data->>'background_image' LIKE '%%steamstatic%%'
+                    OR game_data->>'background_image' LIKE '%%steamcdn%%'
+                  )
+            """)
+            candidates = cur.fetchall()
+
+    updated = 0
+    skipped = 0
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            for entry in candidates:
+                gd = entry["game_data"] or {}
+                name = gd.get("name", "")
+                if not name:
+                    skipped += 1
+                    continue
+                try:
+                    results = rawg_get("/games", params={"search": name, "page_size": 1})
+                    games = results.get("results") or []
+                    if not games:
+                        skipped += 1
+                        continue
+                    rawg_img = games[0].get("background_image")
+                    if not rawg_img:
+                        skipped += 1
+                        continue
+                    updated_gd = dict(gd)
+                    updated_gd["background_image"] = rawg_img
+                    cur.execute(
+                        "UPDATE entries SET game_data = %s::jsonb, updated_at = NOW() WHERE game_id = %s",
+                        (json.dumps(updated_gd), entry["game_id"])
+                    )
+                    updated += 1
+                except Exception:
+                    skipped += 1
+
+    return jsonify({"updated": updated, "skipped": skipped})
+
+
 if __name__ == "__main__":
     # debug=True enables hot reload during local development.
     # In production (Kubernetes), the container is restarted instead.

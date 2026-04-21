@@ -973,6 +973,7 @@ export default function App() {
   const [showMorePlatformColors, setShowMorePlatformColors] = useState(false);
   const [syncingAllPlaytime, setSyncingAllPlaytime]       = useState(false);
   const [resyncingPlatforms, setResyncingPlatforms]       = useState(false);
+  const [resyncingImages, setResyncingImages]             = useState(false);
   const [platformFilterSlugs, setPlatformFilterSlugs]     = useState([]);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [saving, setSaving]               = useState(false);
@@ -1448,7 +1449,7 @@ export default function App() {
         {/* ── My List ── */}
         {tab === "mylist" && (
           <>
-            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 20 }}>My List</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 20, fontFamily: "'Gloria Hallelujah', cursive" }}>My List</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, marginBottom: 28 }}>
               {STATUSES.map(s => {
                 const cnt = allEntries.filter(e => e.status === s.id).length;
@@ -1528,7 +1529,7 @@ export default function App() {
         {/* ── Favourites ── */}
         {tab === "favs" && (
           <>
-            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 4 }}>Favourites</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 4, fontFamily: "'Gloria Hallelujah', cursive" }}>Favourites</div>
             <div style={{ fontSize: 13, color: "#444", marginBottom: 28 }}>Star ★ any game to add it here. Drag cards to reorder.</div>
             <FavGrid entries={orderedFavEntries} glowConfig={glowConfig} {...gridProps} favMults={[fav1Mult, fav2Mult, fav3Mult]} onReorder={reorderFavs} />
           </>
@@ -1539,7 +1540,7 @@ export default function App() {
           <>
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: saving ? 8 : 28, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff" }}>Settings</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", fontFamily: "'Gloria Hallelujah', cursive" }}>Settings</div>
               <button onClick={handleSave} disabled={!settingsDirty || saving}
                 style={{ padding: "8px 20px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 13, cursor: settingsDirty && !saving ? "pointer" : "not-allowed", background: settingsDirty && !saving ? "#7c6ef7" : "#1a1a2e", color: settingsDirty && !saving ? "#fff" : "#444", transition: "background 0.2s, color 0.2s", fontFamily: "inherit" }}>
                 {saving ? "Saving…" : "Save Settings"}
@@ -1905,6 +1906,27 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* RAWG Image sync */}
+                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>RAWG Images</div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
+                    Replace Steam header images with higher-quality covers from RAWG. Custom uploaded covers are never touched.
+                  </div>
+                  <button onClick={async () => {
+                    setResyncingImages(true);
+                    try {
+                      const r = await apiFetch("/admin/sync-rawg-images", { method: "POST" });
+                      setToast({ msg: `Updated images for ${r.updated} game${r.updated !== 1 ? "s" : ""} (${r.skipped} skipped)`, ok: true });
+                      const data = await apiFetch("/list");
+                      setMyList(data);
+                    } catch { setToast({ msg: "Failed to sync RAWG images", ok: false }); }
+                    finally { setResyncingImages(false); }
+                  }} disabled={resyncingImages}
+                    style={{ width: "100%", padding: "9px 0", background: resyncingImages ? "#1a1a2e" : "#1a0a2a", border: "1px solid #a78bfa44", borderRadius: 8, color: resyncingImages ? "#444" : "#a78bfa", fontWeight: 700, fontSize: 13, cursor: resyncingImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                    {resyncingImages ? "Syncing…" : "Sync Images from RAWG"}
+                  </button>
+                </div>
+
                 {/* Steam library — shown inline once synced */}
                 {steamLibrary && (
                   <SteamLibrarySection
@@ -1924,7 +1946,7 @@ export default function App() {
         {/* ── Search ── */}
         {tab === "search" && (
           <>
-            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 6, fontFamily: "'Gloria Hallelujah', cursive" }}>
               {searched ? `Results for "${query}"` : "Search Games"}
             </div>
             <div style={{ fontSize: 13, color: "#444", marginBottom: 28 }}>
