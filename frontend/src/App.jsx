@@ -480,7 +480,7 @@ function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
 // Metadata modal — playtime, replays, tags, metacritic, activity
 // ---------------------------------------------------------------------------
 
-function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor = "#7c6ef7" }) {
+function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255 }) {
   const game = entry?.game;
   const [replayCount, setReplayCount]   = useState(entry?.replayCount ?? 0);
   const [tags, setTags]                 = useState(entry?.tags ?? []);
@@ -709,14 +709,21 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
             <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Image Framing</div>
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
               {/* Live preview */}
-              <div style={{ width: 80, height: 106, borderRadius: 6, overflow: "hidden", background: "#080814", border: "1px solid #2a2a40", flexShrink: 0 }}>
-                {(() => {
-                  const previewSrc = entry.hasCover ? `${coverSrc(gameId)}?v=modal` : rawgImgSrc(game.background_image);
-                  return previewSrc
-                    ? <img src={previewSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${imgPosX}% ${imgPosY}%` }} />
-                    : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🎮</div>;
-                })()}
-              </div>
+              {(() => {
+                // Scale card dimensions down to fit the modal, preserving the exact aspect ratio
+                const maxPreviewW = 160;
+                const ratio = cardH / cardW;
+                const previewW = Math.min(maxPreviewW, cardW);
+                const previewH = Math.round(previewW * ratio);
+                const previewSrc = entry.hasCover ? `${coverSrc(gameId)}?v=modal` : rawgImgSrc(game.background_image);
+                return (
+                  <div style={{ width: previewW, height: previewH, borderRadius: 6, overflow: "hidden", background: "#080814", border: "1px solid #2a2a40", flexShrink: 0 }}>
+                    {previewSrc
+                      ? <img src={previewSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${imgPosX}% ${imgPosY}%` }} />
+                      : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🎮</div>}
+                  </div>
+                );
+              })()}
               {/* Controls */}
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
                 {[
@@ -1384,6 +1391,8 @@ export default function App() {
           onClose={() => setMetadataGameId(null)}
           onSave={saveMetadata}
           platformHighlightColor={platformDefaultColor}
+          cardW={cardW}
+          cardH={cardH}
         />
       )}
 
