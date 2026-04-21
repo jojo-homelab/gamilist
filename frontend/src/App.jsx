@@ -1727,11 +1727,41 @@ export default function App() {
                 )}
               </div>
 
-              {/* Global activity heatmap */}
+              {/* Global activity heatmap + Favourite settings */}
               {allEntries.length > 0 && (
-                <div style={{ flexShrink: 0, background: activityColors.bg || "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "14px 18px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                <div style={{ flexShrink: 0, background: activityColors.bg || "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "14px 18px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 0 }}>
                   <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Activity</div>
                   <ActivityGraph activityLog={globalActivityLog} colors={activityColors} />
+
+                  {/* Favourite Settings */}
+                  <div style={{ borderTop: "1px solid #16162a", marginTop: 16, paddingTop: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "#eeeeff", marginBottom: 2 }}>Favourite Settings</div>
+                    <div style={{ fontSize: 10, color: "#444", marginBottom: 14 }}>Glow and card size for your top-ranked favourites.</div>
+
+                    {/* Glow */}
+                    <div style={{ fontSize: 10, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Glow</div>
+                    <GlowRow rank="1" label="1st" enabled={glow1Enabled} color={glow1Color} onToggle={() => updateGlow1E(!glow1Enabled)} onColor={updateGlow1C} />
+                    <GlowRow rank="2" label="2nd" enabled={glow2Enabled} color={glow2Color} onToggle={() => updateGlow2E(!glow2Enabled)} onColor={updateGlow2C} />
+                    <GlowRow rank="3" label="3rd" enabled={glow3Enabled} color={glow3Color} onToggle={() => updateGlow3E(!glow3Enabled)} onColor={updateGlow3C} />
+
+                    {/* Size */}
+                    <div style={{ fontSize: 10, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginTop: 14, marginBottom: 8 }}>Card Size</div>
+                    {[
+                      { label: "1st", value: fav1Mult, update: updateFav1Mult, color: "#FFD700" },
+                      { label: "2nd", value: fav2Mult, update: updateFav2Mult, color: "#C0C0C0" },
+                      { label: "3rd", value: fav3Mult, update: updateFav3Mult, color: "#CD7F32" },
+                    ].map(({ label, value, update, color }) => (
+                      <div key={label} style={{ marginBottom: 10 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                          <span style={{ fontSize: 10, color: "#888" }}>{label}</span>
+                          <span style={{ fontSize: 10, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
+                        </div>
+                        <input type="range" min="1" max="4" step="0.25" value={value}
+                          onChange={e => update(parseFloat(e.target.value))}
+                          style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -1857,36 +1887,6 @@ export default function App() {
               {/* Colors — Glow + Platform + Status merged */}
               <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
                 <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 18 }}>Colors</div>
-
-                {/* Top Favourites Glow */}
-                <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Top Favourites Glow</div>
-                <GlowRow rank="1" label="1st place" enabled={glow1Enabled} color={glow1Color} onToggle={() => updateGlow1E(!glow1Enabled)} onColor={updateGlow1C} />
-                <GlowRow rank="2" label="2nd place" enabled={glow2Enabled} color={glow2Color} onToggle={() => updateGlow2E(!glow2Enabled)} onColor={updateGlow2C} />
-                <GlowRow rank="3" label="3rd place" enabled={glow3Enabled} color={glow3Color} onToggle={() => updateGlow3E(!glow3Enabled)} onColor={updateGlow3C} />
-                <div style={{ fontSize: 10, color: "#333", marginTop: 6, marginBottom: 18 }}>Reorder Favourites by dragging cards on the Favourites tab.</div>
-
-                {/* Top 3 card size */}
-                <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 14, marginBottom: 4 }}>
-                  <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 12 }}>Top Favourites Size</div>
-                  {[
-                    { label: "1st place", value: fav1Mult, update: updateFav1Mult, color: "#FFD700" },
-                    { label: "2nd place", value: fav2Mult, update: updateFav2Mult, color: "#C0C0C0" },
-                    { label: "3rd place", value: fav3Mult, update: updateFav3Mult, color: "#CD7F32" },
-                  ].map(({ label, value, update, color }) => (
-                    <div key={label} style={{ marginBottom: 14 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                        <span style={{ fontSize: 11, color: "#888" }}>{label}</span>
-                        <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
-                      </div>
-                      <input type="range" min="1" max="4" step="0.25" value={value}
-                        onChange={e => update(parseFloat(e.target.value))}
-                        style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 3 }}>
-                        <span>1×</span><span>2×</span><span>3×</span><span>4×</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
 
                 {/* Status Colors */}
                 <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 18, marginBottom: 10 }}>
