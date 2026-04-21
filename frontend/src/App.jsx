@@ -2017,15 +2017,25 @@ export default function App() {
                       {resyncingPlatforms ? "Syncing…" : "Re-sync Platforms from RAWG"}
                     </button>
 
-                    {/* Image sync section */}
+                    {/* Image sync + prune — shared threshold */}
                     <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 8, paddingTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div style={{ fontSize: 11, color: "#444", marginBottom: 2, lineHeight: 1.6 }}>
-                        Sync cover images. Custom uploaded covers are never touched.
+                      <div style={{ fontSize: 11, color: "#444", lineHeight: 1.6 }}>
+                        Skips Dropped games and games rated at or below the threshold. Custom covers are never touched.
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 12, color: "#666" }}>Rating threshold</span>
+                        <input
+                          type="number" min={0} max={10} step={0.5}
+                          value={pruneThreshold}
+                          onChange={e => setPruneThreshold(parseFloat(e.target.value) || 0)}
+                          style={{ width: 52, background: "#080814", border: "1px solid #2a2a50", borderRadius: 5, padding: "3px 6px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit", textAlign: "center" }}
+                        />
+                        <span style={{ fontSize: 12, color: "#444" }}>/ 10</span>
                       </div>
                       <button onClick={async () => {
                         setResyncingSteamImages(true);
                         try {
-                          const r = await apiFetch("/admin/sync-steam-images", { method: "POST" });
+                          const r = await apiFetch("/admin/sync-steam-images", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threshold: pruneThreshold }) });
                           setToast({ msg: `Updated Steam images for ${r.updated} game${r.updated !== 1 ? "s" : ""} (${r.skipped} skipped)`, ok: true });
                           const data = await apiFetch("/list");
                           setMyList(data);
@@ -2038,7 +2048,7 @@ export default function App() {
                       <button onClick={async () => {
                         setResyncingImages(true);
                         try {
-                          const r = await apiFetch("/admin/sync-rawg-images", { method: "POST" });
+                          const r = await apiFetch("/admin/sync-rawg-images", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threshold: pruneThreshold }) });
                           setToast({ msg: `Updated images for ${r.updated} game${r.updated !== 1 ? "s" : ""} (${r.skipped} skipped)`, ok: true });
                           const data = await apiFetch("/list");
                           setMyList(data);
@@ -2048,23 +2058,6 @@ export default function App() {
                         style={{ width: "100%", padding: "9px 0", background: resyncingImages ? "#1a1a2e" : "#1a0a2a", border: "1px solid #a78bfa44", borderRadius: 8, color: resyncingImages ? "#444" : "#a78bfa", fontWeight: 700, fontSize: 13, cursor: resyncingImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                         {resyncingImages ? "Syncing…" : "Sync Images from RAWG"}
                       </button>
-                    </div>
-
-                    {/* Prune extra images */}
-                    <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 8, paddingTop: 16 }}>
-                      <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.6 }}>
-                        Delete extra screenshots for Dropped games or games rated below a threshold. The cover image is always kept.
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                        <span style={{ fontSize: 12, color: "#666" }}>Rating threshold</span>
-                        <input
-                          type="number" min={0} max={10} step={0.5}
-                          value={pruneThreshold}
-                          onChange={e => setPruneThreshold(parseFloat(e.target.value) || 0)}
-                          style={{ width: 52, background: "#080814", border: "1px solid #2a2a50", borderRadius: 5, padding: "3px 6px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit", textAlign: "center" }}
-                        />
-                        <span style={{ fontSize: 12, color: "#444" }}>/ 10</span>
-                      </div>
                       <button onClick={async () => {
                         setPruning(true);
                         try {

@@ -906,21 +906,31 @@ def sync_steam_image(game_id):
     return jsonify({"background_image": steam_url})
 
 
+def _skip_threshold_clause():
+    """SQL fragment (no leading AND) that matches games to exclude from image syncs."""
+    return "status = 6 OR (user_rating IS NOT NULL AND user_rating <= %s)"
+
+
 @app.route("/api/admin/sync-steam-images", methods=["POST"])
 def sync_steam_images_all():
     """
     For every Steam-imported entry (slug starts with 'steam-') without a custom
     cover, resolve the best available Steam image URL and update background_image.
-    Tries header.jpg → library_600x900.jpg → library_hero.jpg → capsule_616x353.jpg.
+    Skips Dropped games (status 6) and games rated at or below the threshold.
+    Body (JSON): { "threshold": 5.0 }  (default 5)
     Returns {"updated": N, "skipped": M}.
     """
+    body = request.get_json() or {}
+    threshold = float(body.get("threshold", 5))
+
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
                 SELECT game_id, game_data FROM entries
                 WHERE cover_image IS NULL
                   AND game_data->>'slug' LIKE 'steam-%%'
-            """)
+                  AND NOT (status = 6 OR (user_rating IS NOT NULL AND user_rating <= %s))
+            """, (threshold,))
             candidates = cur.fetchall()
 
     updated = 0
@@ -967,7 +977,7 @@ def prune_extra_images():
             cur.execute("""
                 SELECT COUNT(DISTINCT game_id) FROM entries
                 WHERE status = 6
-                   OR (user_rating IS NOT NULL AND user_rating < %s)
+                   OR (user_rating IS NOT NULL AND user_rating <= %s)
             """, (threshold,))
             affected_games = cur.fetchone()[0]
 
@@ -977,7 +987,7 @@ def prune_extra_images():
                 WHERE game_id IN (
                     SELECT game_id FROM entries
                     WHERE status = 6
-                       OR (user_rating IS NOT NULL AND user_rating < %s)
+                       OR (user_rating IS NOT NULL AND user_rating <= %s)
                 )
             """, (threshold,))
             deleted_images = cur.rowcount
@@ -1079,22 +1089,21 @@ def _best_rawg_match(name, candidates, threshold=0.90):
 @app.route("/api/admin/sync-rawg-images", methods=["POST"])
 def sync_rawg_images():
     """
-    For every entry without a custom cover, search RAWG by game name and:
+    For every entry without a custom cover (excluding Dropped and low-rated games),
+    search RAWG by game name and:
       1. Replace background_image with the best matching RAWG cover.
-      2. Fetch all RAWG screenshots and store them in entry_images (downloaded
-         as binary blobs), but only if the entry has no existing extra images
-         so user-uploaded images are never overwritten.
+      2. Fetch all RAWG screenshots and store them in entry_images.
 
-    Search strategy:
-      - Try search_exact=true first (page_size=5), then fall back to regular
-        search (page_size=10). Both require >= 90% name similarity before
-        accepting a result, preventing wrong-game matches.
-
+    Skips Dropped games (status 6) and games rated at or below the threshold.
+    Body (JSON): { "threshold": 5.0 }  (default 5)
     Custom covers (cover_image IS NOT NULL) are never touched.
     Returns {"updated": N, "screenshots_added": S, "skipped": M}.
     """
     if not RAWG_KEY:
         return jsonify({"error": "RAWG_API_KEY not configured"}), 400
+
+    body = request.get_json() or {}
+    threshold = float(body.get("threshold", 5))
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -1102,7 +1111,8 @@ def sync_rawg_images():
                 SELECT e.game_id, e.game_data, e.custom_images_only
                 FROM entries e
                 WHERE e.cover_image IS NULL
-            """)
+                  AND NOT (status = 6 OR (user_rating IS NOT NULL AND user_rating <= %s))
+            """, (threshold,))
             candidates = cur.fetchall()
 
     updated = 0
