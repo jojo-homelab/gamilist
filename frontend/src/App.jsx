@@ -1263,7 +1263,10 @@ export default function App() {
   }, [allEntries]);
 
   const listEntries = useMemo(() => {
-    let filtered = statusFilter === null ? allEntries : allEntries.filter(e => e.status === statusFilter);
+    // Dropped (status 6) is hidden from the main list unless explicitly selected
+    let filtered = statusFilter === null
+      ? allEntries.filter(e => e.status !== 6)
+      : allEntries.filter(e => e.status === statusFilter);
     if (platformFilterSlugs.length > 0) {
       filtered = filtered.filter(e => {
         const gameSlugs = (e.game?.platforms || []).map(p => p.platform.slug);
