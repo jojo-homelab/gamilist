@@ -437,6 +437,8 @@ function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
   const midColor   = colors.mid   || "#5040a0";
   const highColor  = colors.high  || "#7c6ef7";
 
+  const [tooltip, setTooltip] = useState(null); // {label, x, y}
+
   const counts = {};
   for (const d of activityLog || []) counts[d] = (counts[d] || 0) + 1;
 
@@ -463,21 +465,40 @@ function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
     return highColor;
   };
 
+  const formatIso = (iso) => {
+    const [y, m, day] = iso.split("-").map(Number);
+    const label = new Date(y, m - 1, day).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    return label;
+  };
+
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
   return (
-    <div style={{ display: "inline-block" }}>
+    <div style={{ display: "inline-block", position: "relative" }}>
+      {tooltip && (
+        <div style={{
+          position: "fixed", left: tooltip.x + 12, top: tooltip.y - 32,
+          background: "#1a1a2e", border: "1px solid #2a2a40", borderRadius: 6,
+          padding: "4px 10px", fontSize: 11, color: "#c0c0e0", whiteSpace: "nowrap",
+          pointerEvents: "none", zIndex: 9999, boxShadow: "0 2px 8px rgba(0,0,0,0.5)"
+        }}>
+          {tooltip.label}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 2 }}>
         {weeks.map((week, wi) => (
           <div key={wi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {week.map((day, di) => (
-              <div key={di} title={`${day.iso} — ${day.count} session${day.count !== 1 ? "s" : ""}`}
+              <div key={di}
+                onMouseEnter={e => setTooltip({ label: `${formatIso(day.iso)} — ${day.count} edit${day.count !== 1 ? "s" : ""}`, x: e.clientX, y: e.clientY })}
+                onMouseMove={e => setTooltip(t => t ? { ...t, x: e.clientX, y: e.clientY } : t)}
+                onMouseLeave={() => setTooltip(null)}
                 style={{ width: 10, height: 10, borderRadius: 2, background: cellColor(day.count), flexShrink: 0, cursor: "default" }} />
             ))}
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 10, color: "#555", marginTop: 6 }}>{total} session{total !== 1 ? "s" : ""} in the last year</div>
+      <div style={{ fontSize: 10, color: "#555", marginTop: 6 }}>{total} edit{total !== 1 ? "s" : ""} in the last year</div>
     </div>
   );
 }
@@ -1598,15 +1619,15 @@ export default function App() {
                 const sp = getStatusProps(s.id);
                 return (
                   <div key={s.id} onClick={() => setStatusFilter(active ? null : s.id)}
-                    style={{ background: active ? sp.bg : "#0c0c1c", border: `1px solid ${active ? sp.color + "66" : "#1a1a2e"}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", transition: "all 0.15s", userSelect: "none", minWidth: 0 }}>
-                    <div style={{ fontSize: 9, color: sp.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</div>
-                    <div style={{ fontSize: 20, fontWeight: 800, color: sp.color }}>{cnt}</div>
+                    style={{ background: active ? sp.bg : "#0c0c1c", border: `1px solid ${active ? sp.color + "66" : "#1a1a2e"}`, borderRadius: 8, padding: "11px 10px", cursor: "pointer", transition: "all 0.15s", userSelect: "none", minWidth: 0 }}>
+                    <div style={{ fontSize: 10, color: sp.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: sp.color }}>{cnt}</div>
                   </div>
                 );
               })}
             </div>
             {/* Sort + filter toolbar + Activity (same row) */}
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "stretch", gap: 16, marginBottom: 20 }}>
               {/* Sort + filter toolbar */}
               <div style={{ flex: 1, minWidth: 0, background: "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "12px 16px" }}>
                 {/* Row 1: status active + sort */}
@@ -1628,12 +1649,12 @@ export default function App() {
                     <option value="platform">Platform</option>
                   </select>
                   <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
-                  <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                  <div style={{ position: "relative", display: "flex", alignItems: "center", flex: 1, minWidth: 120 }}>
                     <input
                       value={listSearch}
                       onChange={e => setListSearch(e.target.value)}
                       placeholder="Search my list…"
-                      style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "4px 28px 4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", width: 160 }}
+                      style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "4px 28px 4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", width: "100%" }}
                     />
                     {listSearch && (
                       <button onClick={() => setListSearch("")}
@@ -1670,7 +1691,7 @@ export default function App() {
 
               {/* Global activity heatmap */}
               {allEntries.length > 0 && (
-                <div style={{ flexShrink: 0, background: activityColors.bg || "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "14px 18px" }}>
+                <div style={{ flexShrink: 0, background: activityColors.bg || "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "14px 18px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
                   <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Activity</div>
                   <ActivityGraph activityLog={globalActivityLog} colors={activityColors} />
                 </div>
