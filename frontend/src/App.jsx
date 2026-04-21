@@ -240,9 +240,15 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
         const px = listEntry?.imgPosX ?? 50;
         const py = listEntry?.imgPosY ?? 50;
         const sc = listEntry?.imgScale ?? 1.0;
-        const imgStyle = { width: "100%", height: "100%", objectFit: "cover", objectPosition: `${px}% ${py}%`,
+        // Absolutely-position the image so sc<1 zooms out (letterbox) and sc>1 zooms in (crop).
+        // top/left anchor the zoom at the imgPos point.
+        const imgStyle = {
+          position: "absolute",
+          width: `${sc * 100}%`, height: `${sc * 100}%`,
+          top: `${(1 - sc) * py}%`, left: `${(1 - sc) * px}%`,
+          objectFit: "cover", objectPosition: `${px}% ${py}%`,
           display: "block", transition: "opacity 0.2s",
-          ...(sc !== 1 ? { transform: `scale(${sc})`, transformOrigin: `${px}% ${py}%` } : {}) };
+        };
         return (
       <div style={{ height: cardH, borderRadius: "12px 12px 0 0", overflow: "hidden", background: "#080814", position: "relative", flexShrink: 0 }}>
         {displayImg && !imgErr
@@ -721,12 +727,16 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
             <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Image Framing</div>
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
               {/* Live preview */}
-              <div style={{ width: 80, height: 106, borderRadius: 6, overflow: "hidden", background: "#080814", border: "1px solid #2a2a40", flexShrink: 0 }}>
+              <div style={{ width: 80, height: 106, borderRadius: 6, overflow: "hidden", background: "#080814", border: "1px solid #2a2a40", flexShrink: 0, position: "relative" }}>
                 {(() => {
                   const previewSrc = entry.hasCover ? `${coverSrc(gameId)}?v=modal` : rawgImgSrc(game.background_image);
                   return previewSrc
-                    ? <img src={previewSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${imgPosX}% ${imgPosY}%`,
-                        ...(imgScale !== 1 ? { transform: `scale(${imgScale})`, transformOrigin: `${imgPosX}% ${imgPosY}%` } : {}) }} />
+                    ? <img src={previewSrc} alt="" style={{
+                        position: "absolute",
+                        width: `${imgScale * 100}%`, height: `${imgScale * 100}%`,
+                        top: `${(1 - imgScale) * imgPosY}%`, left: `${(1 - imgScale) * imgPosX}%`,
+                        objectFit: "cover", objectPosition: `${imgPosX}% ${imgPosY}%`,
+                      }} />
                     : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🎮</div>;
                 })()}
               </div>
@@ -735,7 +745,7 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
                 {[
                   { label: "Horizontal", value: imgPosX, set: setImgPosX, min: 0, max: 100, step: 1, color: "#7c6ef7", fmt: v => `${v}%` },
                   { label: "Vertical",   value: imgPosY, set: setImgPosY, min: 0, max: 100, step: 1, color: "#38bdf8", fmt: v => `${v}%` },
-                  { label: "Zoom",       value: imgScale, set: setImgScale, min: 0.3, max: 3, step: 0.05, color: "#e6a63a", fmt: v => `${v.toFixed(2)}×` },
+                  { label: "Scale",      value: imgScale, set: setImgScale, min: 0.2, max: 3, step: 0.05, color: "#e6a63a", fmt: v => `${v.toFixed(2)}×` },
                 ].map(({ label, value, set, min, max, step, color, fmt }) => (
                   <div key={label}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
