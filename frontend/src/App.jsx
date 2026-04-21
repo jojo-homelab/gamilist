@@ -526,6 +526,8 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
   const [steamSynced, setSteamSynced]            = useState(false);
   const [syncingRawg, setSyncingRawg]            = useState(false);
   const [rawgSynced, setRawgSynced]              = useState(false);
+  const [syncingBoth, setSyncingBoth]            = useState(false);
+  const [bothSynced, setBothSynced]              = useState(false);
   const [dragOverIdx, setDragOverIdx]            = useState(null);
   const dragIdxRef                               = useRef(null);
   const imageUploadRef = useRef();
@@ -551,6 +553,17 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
       setRawgSynced(true);
       setTimeout(() => setRawgSynced(false), 2000);
     }
+  };
+
+  const handleSyncBoth = async () => {
+    if (!onSyncSteam || !onSyncRawg) return;
+    setSyncingBoth(true);
+    await onSyncSteam(gameId);
+    const result = await onSyncRawg(gameId);
+    setSyncingBoth(false);
+    if (result?.extraImageIds) setExtraImageIds(result.extraImageIds);
+    setBothSynced(true);
+    setTimeout(() => setBothSynced(false), 2000);
   };
 
   const handleDragStart = (idx) => { dragIdxRef.current = idx; };
@@ -881,15 +894,21 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
                 {uploadingImg ? "Uploading…" : "+ Upload Image(s)"}
               </button>
               {isSteamGame && onSyncSteam && (
-                <button onClick={handleSyncSteam} disabled={syncingSteam}
-                  style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${steamSynced ? "#4caf80" : "#3a4a5a"}`, borderRadius: 6, color: steamSynced ? "#4caf80" : syncingSteam ? "#333" : "#88aacc", fontSize: 12, cursor: syncingSteam ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                <button onClick={handleSyncSteam} disabled={syncingSteam || syncingBoth}
+                  style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${steamSynced ? "#4caf80" : "#3a4a5a"}`, borderRadius: 6, color: steamSynced ? "#4caf80" : (syncingSteam || syncingBoth) ? "#333" : "#88aacc", fontSize: 12, cursor: (syncingSteam || syncingBoth) ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                   {steamSynced ? "Synced!" : syncingSteam ? "Syncing…" : "Sync from Steam"}
                 </button>
               )}
               {onSyncRawg && (
-                <button onClick={handleSyncRawg} disabled={syncingRawg}
-                  style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${rawgSynced ? "#4caf80" : "#a78bfa44"}`, borderRadius: 6, color: rawgSynced ? "#4caf80" : syncingRawg ? "#333" : "#a78bfa", fontSize: 12, cursor: syncingRawg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                <button onClick={handleSyncRawg} disabled={syncingRawg || syncingBoth}
+                  style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${rawgSynced ? "#4caf80" : "#a78bfa44"}`, borderRadius: 6, color: rawgSynced ? "#4caf80" : (syncingRawg || syncingBoth) ? "#333" : "#a78bfa", fontSize: 12, cursor: (syncingRawg || syncingBoth) ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                   {rawgSynced ? "Synced!" : syncingRawg ? "Syncing…" : "Sync from RAWG"}
+                </button>
+              )}
+              {isSteamGame && onSyncSteam && onSyncRawg && (
+                <button onClick={handleSyncBoth} disabled={syncingBoth || syncingSteam || syncingRawg}
+                  style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${bothSynced ? "#4caf80" : "#4caf8044"}`, borderRadius: 6, color: bothSynced ? "#4caf80" : (syncingBoth || syncingSteam || syncingRawg) ? "#333" : "#4caf80", fontSize: 12, cursor: (syncingBoth || syncingSteam || syncingRawg) ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                  {bothSynced ? "Synced!" : syncingBoth ? "Syncing…" : "Sync from Both"}
                 </button>
               )}
             </div>
