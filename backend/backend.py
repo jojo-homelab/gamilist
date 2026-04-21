@@ -945,6 +945,46 @@ def sync_steam_images_all():
     return jsonify({"updated": updated, "skipped": skipped})
 
 
+@app.route("/api/admin/prune-extra-images", methods=["POST"])
+def prune_extra_images():
+    """
+    Delete extra screenshots (entry_images rows) for games the user didn't enjoy:
+      - Status 6 (Dropped), OR
+      - user_rating is set and is below the given threshold.
+
+    Unrated games are not affected unless they are Dropped.
+    The cover (cover_image column) and background_image in game_data are never touched.
+
+    Body (JSON): { "threshold": 5.0 }   (default 5)
+    Returns: { "deleted_images": N, "affected_games": M }
+    """
+    body = request.get_json() or {}
+    threshold = float(body.get("threshold", 5))
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            # Count affected games first
+            cur.execute("""
+                SELECT COUNT(DISTINCT game_id) FROM entries
+                WHERE status = 6
+                   OR (user_rating IS NOT NULL AND user_rating < %s)
+            """, (threshold,))
+            affected_games = cur.fetchone()[0]
+
+            # Delete extra images for those games
+            cur.execute("""
+                DELETE FROM entry_images
+                WHERE game_id IN (
+                    SELECT game_id FROM entries
+                    WHERE status = 6
+                       OR (user_rating IS NOT NULL AND user_rating < %s)
+                )
+            """, (threshold,))
+            deleted_images = cur.rowcount
+
+    return jsonify({"deleted_images": deleted_images, "affected_games": affected_games})
+
+
 # ---------------------------------------------------------------------------
 # Admin / maintenance routes
 # ---------------------------------------------------------------------------

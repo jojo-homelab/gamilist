@@ -1058,6 +1058,8 @@ export default function App() {
   const [resyncingPlatforms, setResyncingPlatforms]       = useState(false);
   const [resyncingImages, setResyncingImages]             = useState(false);
   const [resyncingSteamImages, setResyncingSteamImages]   = useState(false);
+  const [pruning, setPruning]                             = useState(false);
+  const [pruneThreshold, setPruneThreshold]               = useState(5);
   const [platformFilterSlugs, setPlatformFilterSlugs]     = useState([]);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [saving, setSaving]               = useState(false);
@@ -2045,6 +2047,36 @@ export default function App() {
                       }} disabled={resyncingImages}
                         style={{ width: "100%", padding: "9px 0", background: resyncingImages ? "#1a1a2e" : "#1a0a2a", border: "1px solid #a78bfa44", borderRadius: 8, color: resyncingImages ? "#444" : "#a78bfa", fontWeight: 700, fontSize: 13, cursor: resyncingImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                         {resyncingImages ? "Syncing…" : "Sync Images from RAWG"}
+                      </button>
+                    </div>
+
+                    {/* Prune extra images */}
+                    <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 8, paddingTop: 16 }}>
+                      <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.6 }}>
+                        Delete extra screenshots for Dropped games or games rated below a threshold. The cover image is always kept.
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                        <span style={{ fontSize: 12, color: "#666" }}>Rating threshold</span>
+                        <input
+                          type="number" min={0} max={10} step={0.5}
+                          value={pruneThreshold}
+                          onChange={e => setPruneThreshold(parseFloat(e.target.value) || 0)}
+                          style={{ width: 52, background: "#080814", border: "1px solid #2a2a50", borderRadius: 5, padding: "3px 6px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit", textAlign: "center" }}
+                        />
+                        <span style={{ fontSize: 12, color: "#444" }}>/ 10</span>
+                      </div>
+                      <button onClick={async () => {
+                        setPruning(true);
+                        try {
+                          const r = await apiFetch("/admin/prune-extra-images", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threshold: pruneThreshold }) });
+                          setToast({ msg: `Deleted ${r.deleted_images} image${r.deleted_images !== 1 ? "s" : ""} across ${r.affected_games} game${r.affected_games !== 1 ? "s" : ""}`, ok: true });
+                          const data = await apiFetch("/list");
+                          setMyList(data);
+                        } catch { setToast({ msg: "Failed to prune images", ok: false }); }
+                        finally { setPruning(false); }
+                      }} disabled={pruning}
+                        style={{ width: "100%", padding: "9px 0", background: pruning ? "#1a1a2e" : "#1a0a0a", border: "1px solid #e05a5a44", borderRadius: 8, color: pruning ? "#444" : "#e05a5a", fontWeight: 700, fontSize: 13, cursor: pruning ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                        {pruning ? "Pruning…" : "Prune Extra Images"}
                       </button>
                     </div>
                   </div>
