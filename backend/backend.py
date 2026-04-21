@@ -956,12 +956,9 @@ def sync_rawg_images():
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("""
-                SELECT e.game_id, e.game_data,
-                       COUNT(ei.id) AS existing_extra_images
+                SELECT e.game_id, e.game_data, e.custom_images_only
                 FROM entries e
-                LEFT JOIN entry_images ei ON ei.game_id = e.game_id
                 WHERE e.cover_image IS NULL
-                GROUP BY e.game_id
             """)
             candidates = cur.fetchall()
 
@@ -1005,23 +1002,29 @@ def sync_rawg_images():
                     )
                     updated += 1
 
-                    # Fetch and store screenshots only if entry has no extra images yet
-                    if entry["existing_extra_images"] == 0:
+                    # Fetch and store screenshots — clear existing RAWG images first,
+                    # then re-insert the full set. custom_images_only entries are skipped
+                    # so user-curated galleries are never wiped.
+                    custom_only = entry.get("custom_images_only") or False
+                    if not custom_only:
                         try:
                             shots = rawg_get(f"/games/{rawg_id}/screenshots", {"page_size": 20})
                             shot_urls = [s["image"] for s in (shots.get("results") or []) if s.get("image")]
-                            for seq, url in enumerate(shot_urls):
-                                try:
-                                    img_resp = requests.get(url, timeout=15)
-                                    img_resp.raise_for_status()
-                                    mime = img_resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
-                                    cur.execute(
-                                        "INSERT INTO entry_images (game_id, seq, image_data, image_mime) VALUES (%s, %s, %s, %s)",
-                                        (game_id, seq, psycopg2.Binary(img_resp.content), mime)
-                                    )
-                                    screenshots_added += 1
-                                except Exception:
-                                    pass  # skip individual failed downloads
+                            if shot_urls:
+                                # Clear previous RAWG-sourced images before re-inserting
+                                cur.execute("DELETE FROM entry_images WHERE game_id = %s", (game_id,))
+                                for seq, url in enumerate(shot_urls):
+                                    try:
+                                        img_resp = requests.get(url, timeout=15)
+                                        img_resp.raise_for_status()
+                                        mime = img_resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+                                        cur.execute(
+                                            "INSERT INTO entry_images (game_id, seq, image_data, image_mime) VALUES (%s, %s, %s, %s)",
+                                            (game_id, seq, psycopg2.Binary(img_resp.content), mime)
+                                        )
+                                        screenshots_added += 1
+                                    except Exception:
+                                        pass  # skip individual failed downloads
                         except Exception:
                             pass  # screenshots are best-effort; cover update already succeeded
 
