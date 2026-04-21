@@ -23,6 +23,8 @@ import psycopg2
 import psycopg2.extras
 import json
 import os
+import unicodedata
+from difflib import SequenceMatcher
 from datetime import datetime, timezone
 
 app = Flask(__name__)
@@ -897,18 +899,54 @@ def resync_platforms():
     return jsonify({"updated": updated, "rawg_updated": rawg_updated})
 
 
+def _name_similarity(a, b):
+    """
+    Return a 0.0–1.0 similarity ratio between two game name strings.
+    Both are lowercased and stripped of leading/trailing whitespace before
+    comparison. Uses SequenceMatcher (similar to difflib.get_close_matches).
+    """
+    a = a.lower().strip()
+    b = b.lower().strip()
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def _best_rawg_match(name, candidates, threshold=0.90):
+    """
+    Given a list of RAWG game dicts, return the one whose name best matches
+    `name` (case-insensitive), as long as the similarity is >= threshold AND
+    the game has a background_image.  Returns None if nothing qualifies.
+
+    Priority: exact match > highest similarity score.
+    """
+    name_lower = name.lower().strip()
+    best = None
+    best_score = 0.0
+    for g in candidates:
+        if not g.get("background_image"):
+            continue
+        score = _name_similarity(name_lower, g.get("name", ""))
+        if score == 1.0:
+            return g  # perfect match, stop immediately
+        if score >= threshold and score > best_score:
+            best = g
+            best_score = score
+    return best
+
+
 @app.route("/api/admin/sync-rawg-images", methods=["POST"])
 def sync_rawg_images():
     """
-    For every entry without a custom cover, search RAWG by exact game name and
-    replace the background_image with the RAWG result.
+    For every entry without a custom cover, search RAWG by game name and
+    replace the background_image with the best matching RAWG result.
 
     Search strategy:
-      1. Try search_exact=true with page_size=5, look for a name match.
-      2. If not found, fall back to regular search with page_size=10, still
-         requiring the returned game name to match exactly (case-insensitive).
-      3. If neither finds a matching name, skip the entry to avoid replacing
-         the image with a wrong game.
+      1. Try search_exact=true with page_size=5. Accept if similarity >= 90%.
+      2. If not found, regular search with page_size=10. Accept if similarity >= 90%.
+      3. If neither pass finds a match above the threshold, skip the entry.
+
+    The 90% threshold handles names that differ only by trailing emoji, punctuation,
+    or minor subtitle differences (e.g. "Slots & Daggers" matching "Slots & Daggers 👍").
+    It still rejects clearly different games like "Danger Scavenger".
 
     Custom covers (cover_image IS NOT NULL) are never touched.
     Returns {"updated": N, "skipped": M}.
@@ -918,7 +956,6 @@ def sync_rawg_images():
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            # All entries without a custom cover, regardless of origin
             cur.execute("SELECT game_id, game_data FROM entries WHERE cover_image IS NULL")
             candidates = cur.fetchall()
 
@@ -934,23 +971,16 @@ def sync_rawg_images():
                     skipped += 1
                     continue
                 try:
-                    name_lower = name.lower()
                     best = None
 
-                    # Pass 1: exact-match search
+                    # Pass 1: exact-match search (RAWG-side filtering)
                     results = rawg_get("/games", params={"search": name, "search_exact": True, "page_size": 5})
-                    for g in (results.get("results") or []):
-                        if g.get("name", "").lower() == name_lower and g.get("background_image"):
-                            best = g
-                            break
+                    best = _best_rawg_match(name, results.get("results") or [])
 
-                    # Pass 2: regular search — still verify name before accepting
+                    # Pass 2: broader search with similarity check
                     if not best:
                         results = rawg_get("/games", params={"search": name, "page_size": 10})
-                        for g in (results.get("results") or []):
-                            if g.get("name", "").lower() == name_lower and g.get("background_image"):
-                                best = g
-                                break
+                        best = _best_rawg_match(name, results.get("results") or [])
 
                     if not best:
                         skipped += 1
