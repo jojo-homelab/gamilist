@@ -1591,16 +1591,16 @@ export default function App() {
         {tab === "mylist" && (
           <>
             <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 20, fontFamily: "'Gloria Hallelujah', cursive" }}>My List</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, marginBottom: 28 }}>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${STATUSES.length}, 1fr)`, gap: 8, marginBottom: 28 }}>
               {STATUSES.map(s => {
                 const cnt = allEntries.filter(e => e.status === s.id).length;
                 const active = statusFilter === s.id;
                 const sp = getStatusProps(s.id);
                 return (
                   <div key={s.id} onClick={() => setStatusFilter(active ? null : s.id)}
-                    style={{ background: active ? sp.bg : "#0c0c1c", border: `1px solid ${active ? sp.color + "66" : "#1a1a2e"}`, borderRadius: 10, padding: "12px 16px", cursor: "pointer", transition: "all 0.15s", userSelect: "none" }}>
-                    <div style={{ fontSize: 10, color: sp.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 5 }}>{s.label}</div>
-                    <div style={{ fontSize: 26, fontWeight: 800, color: sp.color }}>{cnt}</div>
+                    style={{ background: active ? sp.bg : "#0c0c1c", border: `1px solid ${active ? sp.color + "66" : "#1a1a2e"}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", transition: "all 0.15s", userSelect: "none", minWidth: 0 }}>
+                    <div style={{ fontSize: 9, color: sp.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: sp.color }}>{cnt}</div>
                   </div>
                 );
               })}
