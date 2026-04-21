@@ -900,9 +900,15 @@ def resync_platforms():
 @app.route("/api/admin/sync-rawg-images", methods=["POST"])
 def sync_rawg_images():
     """
-    For every Steam-imported entry (slug starts with 'steam-' or background_image
-    is from steamstatic.com), search RAWG by the game name and replace the
-    background_image with the RAWG result.
+    For every entry without a custom cover, search RAWG by exact game name and
+    replace the background_image with the RAWG result.
+
+    Search strategy:
+      1. Try search_exact=true with page_size=5, look for a name match.
+      2. If not found, fall back to regular search with page_size=10, still
+         requiring the returned game name to match exactly (case-insensitive).
+      3. If neither finds a matching name, skip the entry to avoid replacing
+         the image with a wrong game.
 
     Custom covers (cover_image IS NOT NULL) are never touched.
     Returns {"updated": N, "skipped": M}.
@@ -912,17 +918,8 @@ def sync_rawg_images():
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            # Only fetch entries that have no custom cover and look like Steam imports
-            cur.execute("""
-                SELECT game_id, game_data
-                FROM entries
-                WHERE cover_image IS NULL
-                  AND (
-                    game_data->>'slug' LIKE 'steam-%%'
-                    OR game_data->>'background_image' LIKE '%%steamstatic%%'
-                    OR game_data->>'background_image' LIKE '%%steamcdn%%'
-                  )
-            """)
+            # All entries without a custom cover, regardless of origin
+            cur.execute("SELECT game_id, game_data FROM entries WHERE cover_image IS NULL")
             candidates = cur.fetchall()
 
     updated = 0
@@ -937,17 +934,30 @@ def sync_rawg_images():
                     skipped += 1
                     continue
                 try:
-                    results = rawg_get("/games", params={"search": name, "page_size": 1})
-                    games = results.get("results") or []
-                    if not games:
+                    name_lower = name.lower()
+                    best = None
+
+                    # Pass 1: exact-match search
+                    results = rawg_get("/games", params={"search": name, "search_exact": True, "page_size": 5})
+                    for g in (results.get("results") or []):
+                        if g.get("name", "").lower() == name_lower and g.get("background_image"):
+                            best = g
+                            break
+
+                    # Pass 2: regular search — still verify name before accepting
+                    if not best:
+                        results = rawg_get("/games", params={"search": name, "page_size": 10})
+                        for g in (results.get("results") or []):
+                            if g.get("name", "").lower() == name_lower and g.get("background_image"):
+                                best = g
+                                break
+
+                    if not best:
                         skipped += 1
                         continue
-                    rawg_img = games[0].get("background_image")
-                    if not rawg_img:
-                        skipped += 1
-                        continue
+
                     updated_gd = dict(gd)
-                    updated_gd["background_image"] = rawg_img
+                    updated_gd["background_image"] = best["background_image"]
                     cur.execute(
                         "UPDATE entries SET game_data = %s::jsonb, updated_at = NOW() WHERE game_id = %s",
                         (json.dumps(updated_gd), entry["game_id"])
