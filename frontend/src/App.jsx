@@ -485,7 +485,7 @@ function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
 // Metadata modal — playtime, replays, tags, metacritic, activity
 // ---------------------------------------------------------------------------
 
-function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255 }) {
+function MetadataModal({ gameId, entry, onClose, onSave, onDelete, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255 }) {
   const game = entry?.game;
   const [replayCount, setReplayCount]   = useState(entry?.replayCount ?? 0);
   const [tags, setTags]                 = useState(entry?.tags ?? []);
@@ -499,6 +499,7 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
   const [uploadingImg, setUploadingImg]         = useState(false);
   const [imgPosX, setImgPosX]                   = useState(entry?.imgPosX ?? 50);
   const [imgPosY, setImgPosY]                   = useState(entry?.imgPosY ?? 50);
+  const [confirmDelete, setConfirmDelete]        = useState(false);
   const imageUploadRef = useRef();
 
   // Extra platforms: slugs user added manually not in game.platforms
@@ -794,9 +795,30 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
         </div>
 
         {/* Footer */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 24, paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
-          <button onClick={onClose} style={{ padding: "7px 16px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 8, color: "#666", cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>Cancel</button>
-          <button onClick={handleSave} style={{ padding: "7px 20px", background: "#7c6ef7", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 24, paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+          {/* Delete zone */}
+          {onDelete && (
+            confirmDelete
+              ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: "#e05a5a" }}>Remove from list?</span>
+                  <button onClick={() => { onDelete(gameId); onClose(); }}
+                    style={{ padding: "5px 14px", background: "#e05a5a", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                    Yes, delete
+                  </button>
+                  <button onClick={() => setConfirmDelete(false)}
+                    style={{ padding: "5px 12px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#666", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                    Cancel
+                  </button>
+                </div>
+              : <button onClick={() => setConfirmDelete(true)}
+                  style={{ padding: "5px 14px", background: "transparent", border: "1px solid #e05a5a", borderRadius: 6, color: "#e05a5a", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                  Delete entry
+                </button>
+          )}
+          <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+            <button onClick={onClose} style={{ padding: "7px 16px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 8, color: "#666", cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>Cancel</button>
+            <button onClick={handleSave} style={{ padding: "7px 20px", background: "#7c6ef7", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1409,6 +1431,7 @@ export default function App() {
           entry={myList[metadataGameId]}
           onClose={() => setMetadataGameId(null)}
           onSave={saveMetadata}
+          onDelete={removeFromList}
           platformHighlightColor={platformDefaultColor}
           cardW={cardW}
           cardH={cardH}
