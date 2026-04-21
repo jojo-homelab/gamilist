@@ -936,30 +936,37 @@ def _best_rawg_match(name, candidates, threshold=0.90):
 @app.route("/api/admin/sync-rawg-images", methods=["POST"])
 def sync_rawg_images():
     """
-    For every entry without a custom cover, search RAWG by game name and
-    replace the background_image with the best matching RAWG result.
+    For every entry without a custom cover, search RAWG by game name and:
+      1. Replace background_image with the best matching RAWG cover.
+      2. Fetch all RAWG screenshots and store them in entry_images (downloaded
+         as binary blobs), but only if the entry has no existing extra images
+         so user-uploaded images are never overwritten.
 
     Search strategy:
-      1. Try search_exact=true with page_size=5. Accept if similarity >= 90%.
-      2. If not found, regular search with page_size=10. Accept if similarity >= 90%.
-      3. If neither pass finds a match above the threshold, skip the entry.
-
-    The 90% threshold handles names that differ only by trailing emoji, punctuation,
-    or minor subtitle differences (e.g. "Slots & Daggers" matching "Slots & Daggers 👍").
-    It still rejects clearly different games like "Danger Scavenger".
+      - Try search_exact=true first (page_size=5), then fall back to regular
+        search (page_size=10). Both require >= 90% name similarity before
+        accepting a result, preventing wrong-game matches.
 
     Custom covers (cover_image IS NOT NULL) are never touched.
-    Returns {"updated": N, "skipped": M}.
+    Returns {"updated": N, "screenshots_added": S, "skipped": M}.
     """
     if not RAWG_KEY:
         return jsonify({"error": "RAWG_API_KEY not configured"}), 400
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT game_id, game_data FROM entries WHERE cover_image IS NULL")
+            cur.execute("""
+                SELECT e.game_id, e.game_data,
+                       COUNT(ei.id) AS existing_extra_images
+                FROM entries e
+                LEFT JOIN entry_images ei ON ei.game_id = e.game_id
+                WHERE e.cover_image IS NULL
+                GROUP BY e.game_id
+            """)
             candidates = cur.fetchall()
 
     updated = 0
+    screenshots_added = 0
     skipped = 0
 
     with get_db() as conn:
@@ -986,17 +993,42 @@ def sync_rawg_images():
                         skipped += 1
                         continue
 
+                    game_id = entry["game_id"]
+                    rawg_id = best["id"]
+
+                    # Update background_image in game_data
                     updated_gd = dict(gd)
                     updated_gd["background_image"] = best["background_image"]
                     cur.execute(
                         "UPDATE entries SET game_data = %s::jsonb, updated_at = NOW() WHERE game_id = %s",
-                        (json.dumps(updated_gd), entry["game_id"])
+                        (json.dumps(updated_gd), game_id)
                     )
                     updated += 1
+
+                    # Fetch and store screenshots only if entry has no extra images yet
+                    if entry["existing_extra_images"] == 0:
+                        try:
+                            shots = rawg_get(f"/games/{rawg_id}/screenshots", {"page_size": 20})
+                            shot_urls = [s["image"] for s in (shots.get("results") or []) if s.get("image")]
+                            for seq, url in enumerate(shot_urls):
+                                try:
+                                    img_resp = requests.get(url, timeout=15)
+                                    img_resp.raise_for_status()
+                                    mime = img_resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+                                    cur.execute(
+                                        "INSERT INTO entry_images (game_id, seq, image_data, image_mime) VALUES (%s, %s, %s, %s)",
+                                        (game_id, seq, psycopg2.Binary(img_resp.content), mime)
+                                    )
+                                    screenshots_added += 1
+                                except Exception:
+                                    pass  # skip individual failed downloads
+                        except Exception:
+                            pass  # screenshots are best-effort; cover update already succeeded
+
                 except Exception:
                     skipped += 1
 
-    return jsonify({"updated": updated, "skipped": skipped})
+    return jsonify({"updated": updated, "screenshots_added": screenshots_added, "skipped": skipped})
 
 
 if __name__ == "__main__":
