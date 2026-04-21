@@ -1870,7 +1870,7 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Platform Data resync */}
+                {/* Platform Data resync + RAWG image sync */}
                 <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Platform Data</div>
                   <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
@@ -1901,30 +1901,29 @@ export default function App() {
                       finally { setResyncingPlatforms(false); }
                     }} disabled={resyncingPlatforms}
                       style={{ width: "100%", padding: "9px 0", background: resyncingPlatforms ? "#1a1a2e" : "#0a1a14", border: "1px solid #4caf8044", borderRadius: 8, color: resyncingPlatforms ? "#444" : "#4caf80", fontWeight: 700, fontSize: 13, cursor: resyncingPlatforms ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                      {resyncingPlatforms ? "Syncing…" : "Re-sync from RAWG"}
+                      {resyncingPlatforms ? "Syncing…" : "Re-sync Platforms from RAWG"}
                     </button>
-                  </div>
-                </div>
 
-                {/* RAWG Image sync */}
-                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>RAWG Images</div>
-                  <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-                    Replace Steam header images with higher-quality covers from RAWG. Custom uploaded covers are never touched.
+                    {/* RAWG image sync — inline below platform buttons */}
+                    <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 8, paddingTop: 16 }}>
+                      <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.6 }}>
+                        Replace Steam header images with higher-quality covers from RAWG. Custom uploaded covers are never touched.
+                      </div>
+                      <button onClick={async () => {
+                        setResyncingImages(true);
+                        try {
+                          const r = await apiFetch("/admin/sync-rawg-images", { method: "POST" });
+                          setToast({ msg: `Updated images for ${r.updated} game${r.updated !== 1 ? "s" : ""} (${r.skipped} skipped)`, ok: true });
+                          const data = await apiFetch("/list");
+                          setMyList(data);
+                        } catch { setToast({ msg: "Failed to sync RAWG images", ok: false }); }
+                        finally { setResyncingImages(false); }
+                      }} disabled={resyncingImages}
+                        style={{ width: "100%", padding: "9px 0", background: resyncingImages ? "#1a1a2e" : "#1a0a2a", border: "1px solid #a78bfa44", borderRadius: 8, color: resyncingImages ? "#444" : "#a78bfa", fontWeight: 700, fontSize: 13, cursor: resyncingImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                        {resyncingImages ? "Syncing…" : "Sync Images from RAWG"}
+                      </button>
+                    </div>
                   </div>
-                  <button onClick={async () => {
-                    setResyncingImages(true);
-                    try {
-                      const r = await apiFetch("/admin/sync-rawg-images", { method: "POST" });
-                      setToast({ msg: `Updated images for ${r.updated} game${r.updated !== 1 ? "s" : ""} (${r.skipped} skipped)`, ok: true });
-                      const data = await apiFetch("/list");
-                      setMyList(data);
-                    } catch { setToast({ msg: "Failed to sync RAWG images", ok: false }); }
-                    finally { setResyncingImages(false); }
-                  }} disabled={resyncingImages}
-                    style={{ width: "100%", padding: "9px 0", background: resyncingImages ? "#1a1a2e" : "#1a0a2a", border: "1px solid #a78bfa44", borderRadius: 8, color: resyncingImages ? "#444" : "#a78bfa", fontWeight: 700, fontSize: 13, cursor: resyncingImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                    {resyncingImages ? "Syncing…" : "Sync Images from RAWG"}
-                  </button>
                 </div>
 
                 {/* Steam library — shown inline once synced */}
