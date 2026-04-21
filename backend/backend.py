@@ -860,14 +860,37 @@ def reorder_images(game_id):
     return jsonify({"ok": True})
 
 
+def _resolve_steam_image_url(game_id):
+    """
+    Try Steam CDN URL patterns in order and return the first that responds with 200.
+    Returns None if none of the candidates work.
+    """
+    candidates = [
+        f"https://cdn.akamai.steamstatic.com/steam/apps/{game_id}/header.jpg",
+        f"https://cdn.akamai.steamstatic.com/steam/apps/{game_id}/library_600x900.jpg",
+        f"https://cdn.akamai.steamstatic.com/steam/apps/{game_id}/library_hero.jpg",
+        f"https://cdn.akamai.steamstatic.com/steam/apps/{game_id}/capsule_616x353.jpg",
+    ]
+    for url in candidates:
+        try:
+            r = requests.head(url, timeout=5, allow_redirects=True)
+            if r.status_code == 200:
+                return url
+        except Exception:
+            continue
+    return None
+
+
 @app.route("/api/list/<int:game_id>/sync-steam-image", methods=["POST"])
 def sync_steam_image(game_id):
     """
-    Reset the cover image for a Steam-imported entry back to the Steam header URL.
-    Useful after a RAWG sync has replaced it and the user wants the original back.
+    Reset the cover image for a Steam-imported entry to the best available Steam image.
+    Tries header.jpg → library_600x900.jpg → library_hero.jpg → capsule_616x353.jpg.
     Only updates game_data.background_image — custom cover_image is untouched.
     """
-    steam_url = f"https://cdn.akamai.steamstatic.com/steam/apps/{game_id}/header.jpg"
+    steam_url = _resolve_steam_image_url(game_id)
+    if not steam_url:
+        return jsonify({"error": "No Steam image found for this game"}), 404
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT game_data FROM entries WHERE game_id = %s", (game_id,))
@@ -881,6 +904,45 @@ def sync_steam_image(game_id):
                 (json.dumps(gd), game_id)
             )
     return jsonify({"background_image": steam_url})
+
+
+@app.route("/api/admin/sync-steam-images", methods=["POST"])
+def sync_steam_images_all():
+    """
+    For every Steam-imported entry (slug starts with 'steam-') without a custom
+    cover, resolve the best available Steam image URL and update background_image.
+    Tries header.jpg → library_600x900.jpg → library_hero.jpg → capsule_616x353.jpg.
+    Returns {"updated": N, "skipped": M}.
+    """
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT game_id, game_data FROM entries
+                WHERE cover_image IS NULL
+                  AND game_data->>'slug' LIKE 'steam-%%'
+            """)
+            candidates = cur.fetchall()
+
+    updated = 0
+    skipped = 0
+
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            for entry in candidates:
+                game_id = entry["game_id"]
+                steam_url = _resolve_steam_image_url(game_id)
+                if not steam_url:
+                    skipped += 1
+                    continue
+                gd = dict(entry["game_data"])
+                gd["background_image"] = steam_url
+                cur.execute(
+                    "UPDATE entries SET game_data = %s::jsonb, updated_at = NOW() WHERE game_id = %s",
+                    (json.dumps(gd), game_id)
+                )
+                updated += 1
+
+    return jsonify({"updated": updated, "skipped": skipped})
 
 
 # ---------------------------------------------------------------------------

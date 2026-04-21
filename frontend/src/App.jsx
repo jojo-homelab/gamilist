@@ -802,14 +802,19 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
               </button>
             </div>
 
-            {/* Thumbnails: primary cover (fixed) + extra images (draggable) */}
+            {/* Thumbnails: cover (fixed) + extra images (draggable) */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-              {entry.hasCover && (
-                <div style={{ position: "relative" }}>
-                  <img src={`${coverSrc(gameId)}?v=modal`} alt="cover" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #2a2a40" }} />
-                  <div style={{ position: "absolute", top: -4, right: -4, fontSize: 9, color: "#888", background: "#0c0c1c", border: "1px solid #2a2a40", borderRadius: 3, padding: "1px 3px" }}>main</div>
-                </div>
-              )}
+              {/* Main cover: custom blob or background_image */}
+              {(() => {
+                const src = entry.hasCover ? `${coverSrc(gameId)}?v=modal` : rawgImgSrc(game.background_image);
+                if (!src) return null;
+                return (
+                  <div style={{ position: "relative" }}>
+                    <img src={src} alt="cover" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #7c6ef766" }} />
+                    <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#7c6ef7", fontWeight: 700 }}>cover</div>
+                  </div>
+                );
+              })()}
               {extraImageIds.map((id, idx) => (
                 <div key={id}
                   draggable
@@ -1052,6 +1057,7 @@ export default function App() {
   const [syncingAllPlaytime, setSyncingAllPlaytime]       = useState(false);
   const [resyncingPlatforms, setResyncingPlatforms]       = useState(false);
   const [resyncingImages, setResyncingImages]             = useState(false);
+  const [resyncingSteamImages, setResyncingSteamImages]   = useState(false);
   const [platformFilterSlugs, setPlatformFilterSlugs]     = useState([]);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [saving, setSaving]               = useState(false);
@@ -1991,11 +1997,24 @@ export default function App() {
                       {resyncingPlatforms ? "Syncing…" : "Re-sync Platforms from RAWG"}
                     </button>
 
-                    {/* RAWG image sync — inline below platform buttons */}
-                    <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 8, paddingTop: 16 }}>
-                      <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.6 }}>
-                        Replace Steam header images with higher-quality covers from RAWG. Custom uploaded covers are never touched.
+                    {/* Image sync section */}
+                    <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 8, paddingTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ fontSize: 11, color: "#444", marginBottom: 2, lineHeight: 1.6 }}>
+                        Sync cover images. Custom uploaded covers are never touched.
                       </div>
+                      <button onClick={async () => {
+                        setResyncingSteamImages(true);
+                        try {
+                          const r = await apiFetch("/admin/sync-steam-images", { method: "POST" });
+                          setToast({ msg: `Updated Steam images for ${r.updated} game${r.updated !== 1 ? "s" : ""} (${r.skipped} skipped)`, ok: true });
+                          const data = await apiFetch("/list");
+                          setMyList(data);
+                        } catch { setToast({ msg: "Failed to sync Steam images", ok: false }); }
+                        finally { setResyncingSteamImages(false); }
+                      }} disabled={resyncingSteamImages}
+                        style={{ width: "100%", padding: "9px 0", background: resyncingSteamImages ? "#1a1a2e" : "#0a1a2a", border: "1px solid #38bdf844", borderRadius: 8, color: resyncingSteamImages ? "#444" : "#38bdf8", fontWeight: 700, fontSize: 13, cursor: resyncingSteamImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                        {resyncingSteamImages ? "Syncing…" : "Sync Images from Steam"}
+                      </button>
                       <button onClick={async () => {
                         setResyncingImages(true);
                         try {
