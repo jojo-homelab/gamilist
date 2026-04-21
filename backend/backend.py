@@ -980,6 +980,86 @@ def sync_rawg_image_single(game_id):
     return jsonify({"background_image": new_bg, "screenshots_added": screenshots_added, "extraImageIds": new_ids})
 
 
+@app.route("/api/list/<int:game_id>/sync-both-images", methods=["POST"])
+def sync_both_images(game_id):
+    """
+    Sync images from both Steam and RAWG for a single entry.
+    - Cover (background_image): Steam URL (header → fallback chain)
+    - Screenshots (entry_images): RAWG screenshots
+    Both sources are combined; neither overwrites the other's contribution.
+    """
+    if not RAWG_KEY:
+        return jsonify({"error": "RAWG_API_KEY not configured"}), 400
+
+    # --- Steam cover ---
+    steam_url = _resolve_steam_image_url(game_id)
+
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT game_data, custom_images_only FROM entries WHERE game_id = %s", (game_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Not found"}), 404
+
+    gd = dict(row["game_data"])
+    name = gd.get("name", "")
+    if not name:
+        return jsonify({"error": "Entry has no name"}), 400
+
+    # --- RAWG match (for screenshots only) ---
+    best = None
+    results = rawg_get("/games", params={"search": name, "search_exact": True, "page_size": 5})
+    best = _best_rawg_match(name, results.get("results") or [])
+    if not best:
+        results = rawg_get("/games", params={"search": name, "page_size": 10})
+        best = _best_rawg_match(name, results.get("results") or [])
+
+    # Decide background_image: Steam wins if available, else fall back to RAWG cover
+    new_bg = steam_url or (best["background_image"] if best else gd.get("background_image"))
+
+    screenshots_added = 0
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            # Update cover
+            gd["background_image"] = new_bg
+            cur.execute(
+                "UPDATE entries SET game_data = %s::jsonb, updated_at = NOW() WHERE game_id = %s",
+                (json.dumps(gd), game_id)
+            )
+            # Sync RAWG screenshots unless custom_images_only
+            if best and not (row.get("custom_images_only") or False):
+                rawg_id = best["id"]
+                try:
+                    shots = rawg_get(f"/games/{rawg_id}/screenshots", {"page_size": 20})
+                    shot_urls = [s["image"] for s in (shots.get("results") or []) if s.get("image")]
+                    if shot_urls:
+                        cur.execute("DELETE FROM entry_images WHERE game_id = %s", (game_id,))
+                        for seq, url in enumerate(shot_urls):
+                            try:
+                                img_resp = requests.get(url, timeout=15)
+                                img_resp.raise_for_status()
+                                mime = img_resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+                                cur.execute(
+                                    "INSERT INTO entry_images (game_id, seq, image_data, image_mime) VALUES (%s, %s, %s, %s)",
+                                    (game_id, seq, psycopg2.Binary(img_resp.content), mime)
+                                )
+                                screenshots_added += 1
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+            cur.execute("SELECT id FROM entry_images WHERE game_id = %s ORDER BY seq", (game_id,))
+            new_ids = [r[0] for r in cur.fetchall()]
+
+    return jsonify({
+        "background_image": new_bg,
+        "steam_cover": bool(steam_url),
+        "screenshots_added": screenshots_added,
+        "extraImageIds": new_ids,
+    })
+
+
 def _skip_threshold_clause():
     """SQL fragment (no leading AND) that matches games to exclude from image syncs."""
     return "status = 6 OR (user_rating IS NOT NULL AND user_rating <= %s)"

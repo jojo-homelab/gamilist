@@ -507,7 +507,7 @@ function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
 // Metadata modal — playtime, replays, tags, metacritic, activity
 // ---------------------------------------------------------------------------
 
-function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, onSyncRawg, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255 }) {
+function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, onSyncRawg, onSyncBoth, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255 }) {
   const game = entry?.game;
   const [replayCount, setReplayCount]   = useState(entry?.replayCount ?? 0);
   const [tags, setTags]                 = useState(entry?.tags ?? []);
@@ -556,10 +556,9 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
   };
 
   const handleSyncBoth = async () => {
-    if (!onSyncSteam || !onSyncRawg) return;
+    if (!onSyncBoth) return;
     setSyncingBoth(true);
-    await onSyncSteam(gameId);
-    const result = await onSyncRawg(gameId);
+    const result = await onSyncBoth(gameId);
     setSyncingBoth(false);
     if (result?.extraImageIds) setExtraImageIds(result.extraImageIds);
     setBothSynced(true);
@@ -905,7 +904,7 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
                   {rawgSynced ? "Synced!" : syncingRawg ? "Syncing…" : "Sync from RAWG"}
                 </button>
               )}
-              {isSteamGame && onSyncSteam && onSyncRawg && (
+              {isSteamGame && onSyncBoth && (
                 <button onClick={handleSyncBoth} disabled={syncingBoth || syncingSteam || syncingRawg}
                   style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${bothSynced ? "#4caf80" : "#4caf8044"}`, borderRadius: 6, color: bothSynced ? "#4caf80" : (syncingBoth || syncingSteam || syncingRawg) ? "#333" : "#4caf80", fontSize: 12, cursor: (syncingBoth || syncingSteam || syncingRawg) ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                   {bothSynced ? "Synced!" : syncingBoth ? "Syncing…" : "Sync from Both"}
@@ -1307,6 +1306,25 @@ export default function App() {
     }
   };
 
+  const syncBothImages = async (id) => {
+    try {
+      const result = await apiFetch(`/list/${id}/sync-both-images`, { method: "POST" });
+      if (result.background_image) {
+        setMyList(p => ({
+          ...p,
+          [id]: {
+            ...p[id],
+            game: { ...p[id].game, background_image: result.background_image },
+            extraImageIds: result.extraImageIds ?? p[id].extraImageIds,
+          }
+        }));
+      }
+      return result;
+    } catch {
+      return null;
+    }
+  };
+
   const toggleFav = (id) => {
     const entry = myList[id];
     if (!entry) return;
@@ -1590,6 +1608,7 @@ export default function App() {
           onDelete={removeFromList}
           onSyncSteam={syncSteamImage}
           onSyncRawg={syncRawgImage}
+          onSyncBoth={syncBothImages}
           platformHighlightColor={platformDefaultColor}
           cardW={cardW}
           cardH={cardH}
