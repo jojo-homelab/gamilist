@@ -236,23 +236,9 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
       }}>
 
       {/* Cover image — fixed height with screenshot gallery navigation */}
-      {(() => {
-        const px = listEntry?.imgPosX ?? 50;
-        const py = listEntry?.imgPosY ?? 50;
-        const sc = listEntry?.imgScale ?? 1.0;
-        // Absolutely-position the image so sc<1 zooms out (letterbox) and sc>1 zooms in (crop).
-        // top/left anchor the zoom at the imgPos point.
-        const imgStyle = {
-          position: "absolute",
-          width: `${sc * 100}%`, height: `${sc * 100}%`,
-          top: `${(1 - sc) * py}%`, left: `${(1 - sc) * px}%`,
-          objectFit: "cover", objectPosition: `${px}% ${py}%`,
-          display: "block", transition: "opacity 0.2s",
-        };
-        return (
       <div style={{ height: cardH, borderRadius: "12px 12px 0 0", overflow: "hidden", background: "#080814", position: "relative", flexShrink: 0 }}>
         {displayImg && !imgErr
-          ? <img src={displayImg} alt={game.name} onError={() => setImgErr(true)} style={imgStyle} />
+          ? <img src={displayImg} alt={game.name} onError={() => setImgErr(true)} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${listEntry?.imgPosX ?? 50}% ${listEntry?.imgPosY ?? 50}%`, display: "block", transition: "opacity 0.2s" }} />
           : <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <span style={{ fontSize: 36 }}>🎮</span>
               <span style={{ fontSize: 11, color: "#333", textAlign: "center", padding: "0 12px", lineHeight: 1.4 }}>{game.name}</span>
@@ -279,8 +265,6 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
         )}
         {/* CoverUpload moved to MetadataModal */}
       </div>
-        );
-      })()}
 
       {/* Card body */}
       <div style={{ padding: "12px 14px 14px", display: "flex", flexDirection: "column", flex: 1 }}>
@@ -510,7 +494,6 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
   const [uploadingImg, setUploadingImg]         = useState(false);
   const [imgPosX, setImgPosX]                   = useState(entry?.imgPosX ?? 50);
   const [imgPosY, setImgPosY]                   = useState(entry?.imgPosY ?? 50);
-  const [imgScale, setImgScale]                 = useState(entry?.imgScale ?? 1.0);
   const imageUploadRef = useRef();
 
   // Extra platforms: slugs user added manually not in game.platforms
@@ -588,7 +571,6 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
       customImagesOnly,
       imgPosX,
       imgPosY,
-      imgScale,
     });
     onClose();
   };
@@ -727,37 +709,31 @@ function MetadataModal({ gameId, entry, onClose, onSave, platformHighlightColor 
             <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Image Framing</div>
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
               {/* Live preview */}
-              <div style={{ width: 80, height: 106, borderRadius: 6, overflow: "hidden", background: "#080814", border: "1px solid #2a2a40", flexShrink: 0, position: "relative" }}>
+              <div style={{ width: 80, height: 106, borderRadius: 6, overflow: "hidden", background: "#080814", border: "1px solid #2a2a40", flexShrink: 0 }}>
                 {(() => {
                   const previewSrc = entry.hasCover ? `${coverSrc(gameId)}?v=modal` : rawgImgSrc(game.background_image);
                   return previewSrc
-                    ? <img src={previewSrc} alt="" style={{
-                        position: "absolute",
-                        width: `${imgScale * 100}%`, height: `${imgScale * 100}%`,
-                        top: `${(1 - imgScale) * imgPosY}%`, left: `${(1 - imgScale) * imgPosX}%`,
-                        objectFit: "cover", objectPosition: `${imgPosX}% ${imgPosY}%`,
-                      }} />
+                    ? <img src={previewSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${imgPosX}% ${imgPosY}%` }} />
                     : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🎮</div>;
                 })()}
               </div>
               {/* Controls */}
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
                 {[
-                  { label: "Horizontal", value: imgPosX, set: setImgPosX, min: 0, max: 100, step: 1, color: "#7c6ef7", fmt: v => `${v}%` },
-                  { label: "Vertical",   value: imgPosY, set: setImgPosY, min: 0, max: 100, step: 1, color: "#38bdf8", fmt: v => `${v}%` },
-                  { label: "Scale",      value: imgScale, set: setImgScale, min: 0.2, max: 3, step: 0.05, color: "#e6a63a", fmt: v => `${v.toFixed(2)}×` },
-                ].map(({ label, value, set, min, max, step, color, fmt }) => (
+                  { label: "Horizontal", value: imgPosX, set: setImgPosX, color: "#7c6ef7" },
+                  { label: "Vertical",   value: imgPosY, set: setImgPosY, color: "#38bdf8" },
+                ].map(({ label, value, set, color }) => (
                   <div key={label}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                       <span style={{ fontSize: 11, color: "#666" }}>{label}</span>
-                      <span style={{ fontSize: 11, color, fontWeight: 700 }}>{fmt(value)}</span>
+                      <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value}%</span>
                     </div>
-                    <input type="range" min={min} max={max} step={step} value={value}
+                    <input type="range" min={0} max={100} step={1} value={value}
                       onChange={e => set(parseFloat(e.target.value))}
                       style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
                   </div>
                 ))}
-                <button onClick={() => { setImgPosX(50); setImgPosY(50); setImgScale(1.0); }}
+                <button onClick={() => { setImgPosX(50); setImgPosY(50); }}
                   style={{ fontSize: 10, color: "#444", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-start" }}>
                   Reset
                 </button>
@@ -1112,7 +1088,6 @@ export default function App() {
           customImagesOnly: entry.customImagesOnly ?? false,
           imgPosX:          entry.imgPosX ?? 50,
           imgPosY:          entry.imgPosY ?? 50,
-          imgScale:         entry.imgScale ?? 1.0,
         }),
       });
       setMyList(p => ({ ...p, [gameId]: { ...p[gameId], ...updated } }));
