@@ -371,15 +371,20 @@ function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUplo
   );
 }
 
-function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, onReorder }) {
+function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, favMults = [2, 2, 2], onReorder }) {
   const [dragOverId, setDragOverId] = useState(null);
   const dragId = useRef(null);
   if (!entries.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>No favourites yet. Add games to your list and star them!</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
+  // Max columns for capping span (avoid overflowing a 1-col layout)
+  const maxCols = effectiveCardCount > 0 ? effectiveCardCount : 12;
   return (
     <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20, alignItems: "start" }}>
       {entries.map((e, i) => {
         const glow = i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null;
+        const mult = i < 3 ? (favMults[i] ?? 2) : 1;
+        const span = i < 3 ? Math.max(1, Math.min(Math.round(mult), maxCols)) : 1;
+        const thisCardH = i < 3 ? Math.round(cardH * mult) : (altCardMode && i % 2 === 1 ? cardH2 : cardH);
         return (
           <div key={e.game.id} draggable
             onDragStart={() => { dragId.current = e.game.id; }}
@@ -387,8 +392,8 @@ function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, on
             onDragOver={ev => { ev.preventDefault(); if (dragId.current !== e.game.id) setDragOverId(e.game.id); }}
             onDragLeave={() => setDragOverId(null)}
             onDrop={() => { setDragOverId(null); if (dragId.current != null && dragId.current !== e.game.id) onReorder(dragId.current, e.game.id); }}
-            style={{ opacity: dragOverId === e.game.id ? 0.5 : 1, outline: dragOverId === e.game.id ? "2px dashed #7c6ef755" : "none", borderRadius: 12, cursor: "grab", transition: "opacity 0.15s" }}>
-            <GameCard game={e.game} listEntry={e} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText} glowColor={glow}
+            style={{ gridColumn: span > 1 ? `span ${span}` : undefined, opacity: dragOverId === e.game.id ? 0.5 : 1, outline: dragOverId === e.game.id ? "2px dashed #7c6ef755" : "none", borderRadius: 12, cursor: "grab", transition: "opacity 0.15s" }}>
+            <GameCard game={e.game} listEntry={e} cardH={thisCardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText} glowColor={glow}
               onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
               onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} />
           </div>
@@ -952,6 +957,9 @@ export default function App() {
   const [glow2Color,   setGlow2Color]     = useState("#C0C0C0");
   const [glow3Enabled, setGlow3Enabled]   = useState(true);
   const [glow3Color,   setGlow3Color]     = useState("#CD7F32");
+  const [fav1Mult, setFav1Mult]           = useState(2.0);
+  const [fav2Mult, setFav2Mult]           = useState(2.0);
+  const [fav3Mult, setFav3Mult]           = useState(2.0);
   const [steamApiKey, setSteamApiKey] = useState("");
   const [steamId, setSteamId]         = useState("");
   const [steamLibrary, setSteamLibrary] = useState(null);
@@ -982,6 +990,7 @@ export default function App() {
     cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
     steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {},
+    fav1Mult: 2.0, fav2Mult: 2.0, fav3Mult: 2.0,
   });
 
   const [query, setQuery]               = useState("");
@@ -1022,6 +1031,7 @@ export default function App() {
       setGlow1Enabled(loaded.glow1Enabled); setGlow1Color(loaded.glow1Color);
       setGlow2Enabled(loaded.glow2Enabled); setGlow2Color(loaded.glow2Color);
       setGlow3Enabled(loaded.glow3Enabled); setGlow3Color(loaded.glow3Color);
+      setFav1Mult(s.fav1Mult ?? 2.0); setFav2Mult(s.fav2Mult ?? 2.0); setFav3Mult(s.fav3Mult ?? 2.0);
       setSteamApiKey(loaded.steamApiKey); setSteamId(loaded.steamId);
       setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
       setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
@@ -1063,6 +1073,7 @@ export default function App() {
     setGlow1Enabled(s.glow1Enabled); setGlow1Color(s.glow1Color);
     setGlow2Enabled(s.glow2Enabled); setGlow2Color(s.glow2Color);
     setGlow3Enabled(s.glow3Enabled); setGlow3Color(s.glow3Color);
+    setFav1Mult(s.fav1Mult ?? 2.0); setFav2Mult(s.fav2Mult ?? 2.0); setFav3Mult(s.fav3Mult ?? 2.0);
     setSteamApiKey(s.steamApiKey); setSteamId(s.steamId);
     setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
     setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
@@ -1074,6 +1085,7 @@ export default function App() {
   const handleSave = () => saveSettings({
     cardWMult, cardHMult, cardH2Mult, altCardMode, uploadBtnMult, uploadBtnText, cardCount,
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
+    fav1Mult, fav2Mult, fav3Mult,
     steamApiKey, steamId, platformHighlightColor: platformDefaultColor,
     platformColors, statusColors, activityColors,
   });
@@ -1348,6 +1360,9 @@ export default function App() {
   const updateGlow2C     = markDirty(setGlow2Color);
   const updateGlow3E     = markDirty(setGlow3Enabled);
   const updateGlow3C     = markDirty(setGlow3Color);
+  const updateFav1Mult   = markDirty(setFav1Mult);
+  const updateFav2Mult   = markDirty(setFav2Mult);
+  const updateFav3Mult   = markDirty(setFav3Mult);
   const updateSteamKey          = markDirty(setSteamApiKey);
   const updateSteamId           = markDirty(setSteamId);
   const updatePlatformDefault   = markDirty(setPlatformDefaultColor);
@@ -1515,7 +1530,7 @@ export default function App() {
           <>
             <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 4 }}>Favourites</div>
             <div style={{ fontSize: 13, color: "#444", marginBottom: 28 }}>Star ★ any game to add it here. Drag cards to reorder.</div>
-            <FavGrid entries={orderedFavEntries} glowConfig={glowConfig} {...gridProps} onReorder={reorderFavs} />
+            <FavGrid entries={orderedFavEntries} glowConfig={glowConfig} {...gridProps} favMults={[fav1Mult, fav2Mult, fav3Mult]} onReorder={reorderFavs} />
           </>
         )}
 
@@ -1635,6 +1650,29 @@ export default function App() {
                 <GlowRow rank="2" label="2nd place" enabled={glow2Enabled} color={glow2Color} onToggle={() => updateGlow2E(!glow2Enabled)} onColor={updateGlow2C} />
                 <GlowRow rank="3" label="3rd place" enabled={glow3Enabled} color={glow3Color} onToggle={() => updateGlow3E(!glow3Enabled)} onColor={updateGlow3C} />
                 <div style={{ fontSize: 10, color: "#333", marginTop: 6, marginBottom: 18 }}>Reorder Favourites by dragging cards on the Favourites tab.</div>
+
+                {/* Top 3 card size */}
+                <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 14, marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 12 }}>Top Favourites Size</div>
+                  {[
+                    { label: "1st place", value: fav1Mult, update: updateFav1Mult, color: "#FFD700" },
+                    { label: "2nd place", value: fav2Mult, update: updateFav2Mult, color: "#C0C0C0" },
+                    { label: "3rd place", value: fav3Mult, update: updateFav3Mult, color: "#CD7F32" },
+                  ].map(({ label, value, update, color }) => (
+                    <div key={label} style={{ marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                        <span style={{ fontSize: 11, color: "#888" }}>{label}</span>
+                        <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
+                      </div>
+                      <input type="range" min="1" max="4" step="0.25" value={value}
+                        onChange={e => update(parseFloat(e.target.value))}
+                        style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 3 }}>
+                        <span>1×</span><span>2×</span><span>3×</span><span>4×</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
                 {/* Status Colors */}
                 <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 18, marginBottom: 10 }}>

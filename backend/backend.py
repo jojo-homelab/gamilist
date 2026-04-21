@@ -133,6 +133,9 @@ def init_db():
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS activity_colors         JSONB   NOT NULL DEFAULT '{}'")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS card_h2_mult            REAL    NOT NULL DEFAULT 1.0")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS alt_card_mode           BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav1_mult               REAL    NOT NULL DEFAULT 2.0")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav2_mult               REAL    NOT NULL DEFAULT 2.0")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav3_mult               REAL    NOT NULL DEFAULT 2.0")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS entry_images (
                     id         SERIAL PRIMARY KEY,
@@ -226,6 +229,9 @@ def get_settings():
             "activityColors":          row["activity_colors"] or {},
             "cardH2Mult":              row.get("card_h2_mult") or 1.0,
             "altCardMode":             row.get("alt_card_mode") or False,
+            "fav1Mult":                row.get("fav1_mult") if row.get("fav1_mult") is not None else 2.0,
+            "fav2Mult":                row.get("fav2_mult") if row.get("fav2_mult") is not None else 2.0,
+            "fav3Mult":                row.get("fav3_mult") if row.get("fav3_mult") is not None else 2.0,
         })
     # No row yet — return defaults so the frontend has something to work with
     return jsonify({
@@ -236,6 +242,7 @@ def get_settings():
         "steamApiKey": "", "steamId": "", "steamMappings": [],
         "platformHighlightColor": "#7c6ef7", "platformColors": {}, "platformIconMode": True, "statusColors": {}, "activityColors": {},
         "cardH2Mult": 1.0, "altCardMode": False,
+        "fav1Mult": 2.0, "fav2Mult": 2.0, "fav3Mult": 2.0,
     })
 
 
@@ -277,6 +284,9 @@ def put_settings():
     activity_colors          = body.get("activityColors")
     card_h2_mult             = body.get("cardH2Mult")
     alt_card_mode            = body.get("altCardMode")
+    fav1_mult                = body.get("fav1Mult")
+    fav2_mult                = body.get("fav2Mult")
+    fav3_mult                = body.get("fav3Mult")
     steam_mappings_json      = json.dumps(steam_mappings)      if steam_mappings is not None else None
     platform_colors_json     = json.dumps(platform_colors)     if platform_colors is not None else None
     status_colors_json       = json.dumps(status_colors)       if status_colors is not None else None
@@ -290,7 +300,7 @@ def put_settings():
                     glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
                     steam_api_key, steam_id, steam_mappings, platform_highlight_color,
                     platform_colors, platform_icon_mode, status_colors, activity_colors,
-                    card_h2_mult, alt_card_mode
+                    card_h2_mult, alt_card_mode, fav1_mult, fav2_mult, fav3_mult
                 )
                 VALUES (1,
                     COALESCE(%s, 1.5), COALESCE(%s, 1.5), COALESCE(%s, 1.0),
@@ -305,7 +315,8 @@ def put_settings():
                     COALESCE(%s, TRUE),
                     COALESCE(%s::jsonb, '{}'::jsonb),
                     COALESCE(%s::jsonb, '{}'::jsonb),
-                    COALESCE(%s, 1.0), COALESCE(%s, FALSE))
+                    COALESCE(%s, 1.0), COALESCE(%s, FALSE),
+                    COALESCE(%s, 2.0), COALESCE(%s, 2.0), COALESCE(%s, 2.0))
                 ON CONFLICT (id) DO UPDATE SET
                     card_w_mult              = COALESCE(EXCLUDED.card_w_mult,              settings.card_w_mult),
                     card_h_mult              = COALESCE(EXCLUDED.card_h_mult,              settings.card_h_mult),
@@ -327,13 +338,16 @@ def put_settings():
                     status_colors            = COALESCE(EXCLUDED.status_colors,            settings.status_colors),
                     activity_colors          = COALESCE(EXCLUDED.activity_colors,          settings.activity_colors),
                     card_h2_mult             = COALESCE(EXCLUDED.card_h2_mult,             settings.card_h2_mult),
-                    alt_card_mode            = COALESCE(EXCLUDED.alt_card_mode,            settings.alt_card_mode)
+                    alt_card_mode            = COALESCE(EXCLUDED.alt_card_mode,            settings.alt_card_mode),
+                    fav1_mult                = COALESCE(EXCLUDED.fav1_mult,                settings.fav1_mult),
+                    fav2_mult                = COALESCE(EXCLUDED.fav2_mult,                settings.fav2_mult),
+                    fav3_mult                = COALESCE(EXCLUDED.fav3_mult,                settings.fav3_mult)
                 RETURNING *
             """, (card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
                   glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
                   steam_api_key, steam_id, steam_mappings_json, platform_highlight_color,
                   platform_colors_json, platform_icon_mode, status_colors_json, activity_colors_json,
-                  card_h2_mult, alt_card_mode))
+                  card_h2_mult, alt_card_mode, fav1_mult, fav2_mult, fav3_mult))
             row = cur.fetchone()
     return jsonify({
         "cardWMult":              row["card_w_mult"],
@@ -357,6 +371,9 @@ def put_settings():
         "activityColors":         row["activity_colors"] or {},
         "cardH2Mult":             row.get("card_h2_mult") or 1.0,
         "altCardMode":            row.get("alt_card_mode") or False,
+        "fav1Mult":               row.get("fav1_mult") if row.get("fav1_mult") is not None else 2.0,
+        "fav2Mult":               row.get("fav2_mult") if row.get("fav2_mult") is not None else 2.0,
+        "fav3Mult":               row.get("fav3_mult") if row.get("fav3_mult") is not None else 2.0,
     })
 
 
