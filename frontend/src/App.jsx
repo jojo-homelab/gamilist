@@ -1093,6 +1093,7 @@ export default function App() {
   const [favCardWMult, setFavCardWMult]         = useState(1.5);
   const [favCardHMult, setFavCardHMult]         = useState(1.5);
   const [favCardCount, setFavCardCount]         = useState(0);
+  const [favAltCardMode, setFavAltCardMode]     = useState(false);
   const [uploadBtnMult, setUploadBtnMult]       = useState(1.0);
   const [uploadBtnText, setUploadBtnText]       = useState("");
   const [cardCount, setCardCount]         = useState(0);
@@ -1140,7 +1141,7 @@ export default function App() {
   });
 
   const dbSettings = useRef({
-    cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, showGalleryNav: true, favCardCustom: false, favCardWMult: 1.5, favCardHMult: 1.5, favCardCount: 0, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
+    cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, showGalleryNav: true, favCardCustom: false, favCardWMult: 1.5, favCardHMult: 1.5, favCardCount: 0, favAltCardMode: false, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
     steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {}, ratingColors: {},
     fav1Mult: 2.0, fav2Mult: 2.0, fav3Mult: 2.0,
@@ -1182,6 +1183,7 @@ export default function App() {
         favCardWMult:    s.favCardWMult    ?? 1.5,
         favCardHMult:    s.favCardHMult    ?? 1.5,
         favCardCount:    s.favCardCount    ?? 0,
+        favAltCardMode:  s.favAltCardMode  ?? false,
         uploadBtnMult:   s.uploadBtnMult   ?? 1.0,
         uploadBtnText: s.uploadBtnText ?? "",
         cardCount:     s.cardCount     ?? 0,
@@ -1193,7 +1195,7 @@ export default function App() {
       };
       setCardWMult(loaded.cardWMult);   setCardHMult(loaded.cardHMult);
       setCardH2Mult(loaded.cardH2Mult); setAltCardMode(loaded.altCardMode); setShowGalleryNav(loaded.showGalleryNav);
-      setFavCardCustom(loaded.favCardCustom); setFavCardWMult(loaded.favCardWMult); setFavCardHMult(loaded.favCardHMult); setFavCardCount(loaded.favCardCount);
+      setFavCardCustom(loaded.favCardCustom); setFavCardWMult(loaded.favCardWMult); setFavCardHMult(loaded.favCardHMult); setFavCardCount(loaded.favCardCount); setFavAltCardMode(loaded.favAltCardMode);
       setUploadBtnMult(loaded.uploadBtnMult); setUploadBtnText(loaded.uploadBtnText);
       setCardCount(loaded.cardCount);
       setGlow1Enabled(loaded.glow1Enabled); setGlow1Color(loaded.glow1Color);
@@ -1237,7 +1239,7 @@ export default function App() {
     const s = dbSettings.current;
     setCardWMult(s.cardWMult);   setCardHMult(s.cardHMult);
     setCardH2Mult(s.cardH2Mult ?? 1.0); setAltCardMode(s.altCardMode ?? false); setShowGalleryNav(s.showGalleryNav ?? true);
-    setFavCardCustom(s.favCardCustom ?? false); setFavCardWMult(s.favCardWMult ?? 1.5); setFavCardHMult(s.favCardHMult ?? 1.5); setFavCardCount(s.favCardCount ?? 0);
+    setFavCardCustom(s.favCardCustom ?? false); setFavCardWMult(s.favCardWMult ?? 1.5); setFavCardHMult(s.favCardHMult ?? 1.5); setFavCardCount(s.favCardCount ?? 0); setFavAltCardMode(s.favAltCardMode ?? false);
     setUploadBtnMult(s.uploadBtnMult); setUploadBtnText(s.uploadBtnText);
     setCardCount(s.cardCount);
     setGlow1Enabled(s.glow1Enabled); setGlow1Color(s.glow1Color);
@@ -1254,7 +1256,7 @@ export default function App() {
   }, []);
 
   const handleSave = () => saveSettings({
-    cardWMult, cardHMult, cardH2Mult, altCardMode, showGalleryNav, favCardCustom, favCardWMult, favCardHMult, favCardCount, uploadBtnMult, uploadBtnText, cardCount,
+    cardWMult, cardHMult, cardH2Mult, altCardMode, showGalleryNav, favCardCustom, favCardWMult, favCardHMult, favCardCount, favAltCardMode, uploadBtnMult, uploadBtnText, cardCount,
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
     fav1Mult, fav2Mult, fav3Mult,
     steamApiKey, steamId, platformHighlightColor: platformDefaultColor,
@@ -1570,10 +1572,11 @@ export default function App() {
   const updateBtn           = markDirty(setUploadBtnMult);
   const updateCount         = markDirty(setCardCount);
   const updateBtnText       = markDirty(setUploadBtnText);
-  const updateFavCardCustom = markDirty(setFavCardCustom);
-  const updateFavCardW      = markDirty(setFavCardWMult);
-  const updateFavCardH      = markDirty(setFavCardHMult);
-  const updateFavCardCount  = markDirty(setFavCardCount);
+  const updateFavCardCustom  = markDirty(setFavCardCustom);
+  const updateFavCardW       = markDirty(setFavCardWMult);
+  const updateFavCardH       = markDirty(setFavCardHMult);
+  const updateFavCardCount   = markDirty(setFavCardCount);
+  const updateFavAltCardMode = markDirty(setFavAltCardMode);
   const updateGlow1E     = markDirty(setGlow1Enabled);
   const updateGlow1C     = markDirty(setGlow1Color);
   const updateGlow2E     = markDirty(setGlow2Enabled);
@@ -1817,6 +1820,7 @@ export default function App() {
             <div style={{ fontSize: 13, color: "#444", marginBottom: 28 }}>Star ★ any game to add it here. Drag cards to reorder.</div>
             <FavGrid entries={orderedFavEntries} glowConfig={glowConfig} {...gridProps}
               cardW={favCardCustom ? favCardW : cardW} cardH={favCardCustom ? favCardH : cardH}
+              altCardMode={favCardCustom ? favAltCardMode : gridProps.altCardMode}
               effectiveCardCount={favCardCustom && favEffectiveCardCount > 0 ? favEffectiveCardCount : (favCardCustom ? 0 : gridProps.effectiveCardCount)}
               favMults={[fav1Mult, fav2Mult, fav3Mult]} onReorder={reorderFavs} />
           </>
@@ -1954,6 +1958,13 @@ export default function App() {
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 3 }}>
                           <span>Auto</span><span style={{ marginLeft: "auto" }}>Max {maxFitCols}</span>
                         </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16 }}>
+                        <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Alternating card heights</span>
+                        <button onClick={() => updateFavAltCardMode(!favAltCardMode)}
+                          style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: favAltCardMode ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                          <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: favAltCardMode ? 19 : 3, transition: "left 0.2s" }} />
+                        </button>
                       </div>
                     </>
                   )}
