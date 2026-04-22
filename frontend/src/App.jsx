@@ -1111,6 +1111,8 @@ export default function App() {
   const [platformColors, setPlatformColors]               = useState({ pc: "#ffffff" });
   const [statusColors, setStatusColors]                   = useState({});
   const [activityColors, setActivityColors]               = useState({});
+  const [ratingColors, setRatingColors]                   = useState({}); // key: "10"|"9.5"|...|"lt5" → color
+  const [selectedRatingColorKey, setSelectedRatingColorKey] = useState("10");
   const [showMorePlatformColors, setShowMorePlatformColors] = useState(false);
   const [syncingAllPlaytime, setSyncingAllPlaytime]       = useState(false);
   const [resyncingPlatforms, setResyncingPlatforms]       = useState(false);
@@ -1136,7 +1138,7 @@ export default function App() {
   const dbSettings = useRef({
     cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, showGalleryNav: true, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
-    steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {},
+    steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {}, ratingColors: {},
     fav1Mult: 2.0, fav2Mult: 2.0, fav3Mult: 2.0,
   });
 
@@ -1194,7 +1196,8 @@ export default function App() {
       setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
       setStatusColors(s.statusColors || {});
       setActivityColors(s.activityColors || {});
-      dbSettings.current = { ...loaded, platformHighlightColor: s.platformHighlightColor ?? "#7c6ef7", platformColors: { pc: "#ffffff", ...(s.platformColors || {}) }, statusColors: s.statusColors || {}, activityColors: s.activityColors || {} };
+      setRatingColors(s.ratingColors || {});
+      dbSettings.current = { ...loaded, platformHighlightColor: s.platformHighlightColor ?? "#7c6ef7", platformColors: { pc: "#ffffff", ...(s.platformColors || {}) }, statusColors: s.statusColors || {}, activityColors: s.activityColors || {}, ratingColors: s.ratingColors || {} };
     }).catch(() => {});
 
     apiFetch("/list")
@@ -1236,6 +1239,7 @@ export default function App() {
     setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
     setStatusColors(s.statusColors || {});
     setActivityColors(s.activityColors || {});
+    setRatingColors(s.ratingColors || {});
     setSettingsDirty(false);
   }, []);
 
@@ -1244,7 +1248,7 @@ export default function App() {
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
     fav1Mult, fav2Mult, fav3Mult,
     steamApiKey, steamId, platformHighlightColor: platformDefaultColor,
-    platformColors, statusColors, activityColors,
+    platformColors, statusColors, activityColors, ratingColors,
   });
 
   const persist = useCallback(async (gameId, entry) => {
@@ -1569,6 +1573,8 @@ export default function App() {
   const setStatusColorDirty     = (id, field, color) => { setStatusColors(p => ({ ...p, [id]: { ...p[id], [field]: color } })); setSettingsDirty(true); };
   const resetStatusColor        = (id) => { setStatusColors(p => { const n = { ...p }; delete n[id]; return n; }); setSettingsDirty(true); };
   const setActivityColorDirty   = (key, color) => { setActivityColors(p => ({ ...p, [key]: color })); setSettingsDirty(true); };
+  const setRatingColorDirty     = (key, color) => { setRatingColors(p => ({ ...p, [key]: color })); setSettingsDirty(true); };
+  const resetRatingColor        = (key) => { setRatingColors(p => { const n = { ...p }; delete n[key]; return n; }); setSettingsDirty(true); };
 
   const getPlatformColor = useCallback((slug) => platformColors[slug] ?? platformDefaultColor, [platformColors, platformDefaultColor]);
   const getStatusProps   = useCallback((id) => ({
@@ -1740,27 +1746,42 @@ export default function App() {
             {/* Rating filter strip */}
             {(() => {
               const RATING_STEPS = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5];
+              // Default colors per tier
+              const DEFAULT_RATING_COLORS = {
+                "10": "#FFD700", "9.5": "#f0c020", "9": "#e8b030",
+                "8.5": "#e0a040", "8": "#d89050", "7.5": "#cc8060",
+                "7": "#c07070", "6.5": "#aa6080", "6": "#9060a0",
+                "5.5": "#7050b0", "5": "#6040c0", "lt5": "#e05c7a",
+              };
+              const getRatingColor = key => ratingColors[key] || DEFAULT_RATING_COLORS[key] || "#7c6ef7";
+              // Count from status-filtered pool (respects category selection)
+              const pool = statusFilter === null
+                ? allEntries.filter(e => e.status !== 6 && e.status !== 7)
+                : allEntries.filter(e => e.status === statusFilter);
               return (
                 <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "nowrap", overflowX: "auto" }}>
                   {RATING_STEPS.map(r => {
+                    const key = String(r);
                     const active = ratingFilter === r;
-                    const count = allEntries.filter(e => e.userRating === r && e.status !== 6 && e.status !== 7).length;
+                    const col = getRatingColor(key);
+                    const count = pool.filter(e => e.userRating === r).length;
                     return (
                       <button key={r} onClick={() => setRatingFilter(active ? null : r)}
-                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? "#7c6ef766" : "#1a1a2e"}`, background: active ? "#1a1730" : "#0c0c1c", color: active ? "#a090ff" : count > 0 ? "#666" : "#2a2a40", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: active ? "#a090ff" : count > 0 ? "#888" : "#2a2a40" }}>{r % 1 === 0 ? `${r}/10` : r}</div>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: active ? "#7c6ef7" : count > 0 ? "#555" : "#222" }}>{count}</div>
+                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? col + "88" : "#1a1a2e"}`, background: active ? col + "18" : "#0c0c1c", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: active ? col : count > 0 ? "#888" : "#2a2a40" }}>{r % 1 === 0 ? `${r}/10` : r}</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: active ? col : count > 0 ? "#555" : "#222" }}>{count}</div>
                       </button>
                     );
                   })}
                   {(() => {
                     const active = ratingFilter === "lt5";
-                    const count = allEntries.filter(e => e.userRating != null && e.userRating < 5 && e.status !== 6 && e.status !== 7).length;
+                    const col = getRatingColor("lt5");
+                    const count = pool.filter(e => e.userRating != null && e.userRating < 5).length;
                     return (
                       <button onClick={() => setRatingFilter(active ? null : "lt5")}
-                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? "#e05c7a66" : "#1a1a2e"}`, background: active ? "#2a0f18" : "#0c0c1c", color: active ? "#e05c7a" : count > 0 ? "#666" : "#2a2a40", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: active ? "#e05c7a" : count > 0 ? "#888" : "#2a2a40" }}>&lt;5</div>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: active ? "#e05c7a" : count > 0 ? "#555" : "#222" }}>{count}</div>
+                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? col + "88" : "#1a1a2e"}`, background: active ? col + "18" : "#0c0c1c", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: active ? col : count > 0 ? "#888" : "#2a2a40" }}>&lt;5</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: active ? col : count > 0 ? "#555" : "#222" }}>{count}</div>
                       </button>
                     );
                   })()}
@@ -1996,6 +2017,62 @@ export default function App() {
                     );
                   })()}
                 </div>
+              </div>
+
+              {/* Rating Colors */}
+              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 4 }}>Rating Colors</div>
+                <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
+                  Customize the color of each rating tier in the filter strip.
+                </div>
+                {(() => {
+                  const RATING_STEPS_KEYS = [
+                    { key: "10",  label: "10 / 10" }, { key: "9.5", label: "9.5" },
+                    { key: "9",   label: "9"        }, { key: "8.5", label: "8.5" },
+                    { key: "8",   label: "8"        }, { key: "7.5", label: "7.5" },
+                    { key: "7",   label: "7"        }, { key: "6.5", label: "6.5" },
+                    { key: "6",   label: "6"        }, { key: "5.5", label: "5.5" },
+                    { key: "5",   label: "5"        }, { key: "lt5", label: "< 5" },
+                  ];
+                  const DEFAULT_RATING_COLORS = {
+                    "10": "#FFD700", "9.5": "#f0c020", "9": "#e8b030",
+                    "8.5": "#e0a040", "8": "#d89050", "7.5": "#cc8060",
+                    "7": "#c07070", "6.5": "#aa6080", "6": "#9060a0",
+                    "5.5": "#7050b0", "5": "#6040c0", "lt5": "#e05c7a",
+                  };
+                  const sel = selectedRatingColorKey;
+                  const currentColor = ratingColors[sel] || DEFAULT_RATING_COLORS[sel] || "#7c6ef7";
+                  const hasOverride = !!ratingColors[sel];
+                  return (
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                        <select value={sel} onChange={e => setSelectedRatingColorKey(e.target.value)}
+                          style={{ flex: 1, background: "#080814", border: "1px solid #2a2a40", borderRadius: 6, padding: "6px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+                          {RATING_STEPS_KEYS.map(({ key, label }) => (
+                            <option key={key} value={key}>{label}{ratingColors[key] ? " ●" : ""}</option>
+                          ))}
+                        </select>
+                        <input type="color" value={currentColor} onChange={e => setRatingColorDirty(sel, e.target.value)}
+                          style={{ width: 32, height: 28, border: "1px solid #2a2a40", borderRadius: 4, cursor: "pointer", background: "none", padding: 1 }} />
+                        {hasOverride && (
+                          <button onClick={() => resetRatingColor(sel)}
+                            style={{ fontSize: 11, color: "#555", background: "transparent", border: "none", cursor: "pointer", padding: "0 4px" }} title="Reset to default">↺</button>
+                        )}
+                      </div>
+                      {/* Mini preview strip */}
+                      <div style={{ display: "flex", gap: 3 }}>
+                        {RATING_STEPS_KEYS.map(({ key, label }) => {
+                          const c = ratingColors[key] || DEFAULT_RATING_COLORS[key] || "#7c6ef7";
+                          const isSelected = key === sel;
+                          return (
+                            <div key={key} onClick={() => setSelectedRatingColorKey(key)}
+                              style={{ flex: 1, height: 8, borderRadius: 3, background: c, cursor: "pointer", opacity: isSelected ? 1 : 0.5, outline: isSelected ? `2px solid ${c}` : "none", transition: "opacity 0.15s" }} />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Activity Graph Colors */}
