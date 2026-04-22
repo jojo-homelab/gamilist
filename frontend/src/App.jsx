@@ -1087,10 +1087,14 @@ export default function App() {
   const [cardWMult, setCardWMult]         = useState(1.5);
   const [cardHMult, setCardHMult]         = useState(1.5);
   const [cardH2Mult, setCardH2Mult]       = useState(1.0);
-  const [altCardMode, setAltCardMode]       = useState(false);
-  const [showGalleryNav, setShowGalleryNav] = useState(true);
-  const [uploadBtnMult, setUploadBtnMult]   = useState(1.0);
-  const [uploadBtnText, setUploadBtnText] = useState("");
+  const [altCardMode, setAltCardMode]           = useState(false);
+  const [showGalleryNav, setShowGalleryNav]     = useState(true);
+  const [favCardCustom, setFavCardCustom]       = useState(false);
+  const [favCardWMult, setFavCardWMult]         = useState(1.5);
+  const [favCardHMult, setFavCardHMult]         = useState(1.5);
+  const [favCardCount, setFavCardCount]         = useState(0);
+  const [uploadBtnMult, setUploadBtnMult]       = useState(1.0);
+  const [uploadBtnText, setUploadBtnText]       = useState("");
   const [cardCount, setCardCount]         = useState(0);
   const [glow1Enabled, setGlow1Enabled]   = useState(true);
   const [glow1Color,   setGlow1Color]     = useState("#FFD700");
@@ -1136,7 +1140,7 @@ export default function App() {
   });
 
   const dbSettings = useRef({
-    cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, showGalleryNav: true, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
+    cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, showGalleryNav: true, favCardCustom: false, favCardWMult: 1.5, favCardHMult: 1.5, favCardCount: 0, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
     steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {}, ratingColors: {},
     fav1Mult: 2.0, fav2Mult: 2.0, fav3Mult: 2.0,
@@ -1174,6 +1178,10 @@ export default function App() {
         cardH2Mult:    s.cardH2Mult    ?? 1.0,
         altCardMode:     s.altCardMode     ?? false,
         showGalleryNav:  s.showGalleryNav  ?? true,
+        favCardCustom:   s.favCardCustom   ?? false,
+        favCardWMult:    s.favCardWMult    ?? 1.5,
+        favCardHMult:    s.favCardHMult    ?? 1.5,
+        favCardCount:    s.favCardCount    ?? 0,
         uploadBtnMult:   s.uploadBtnMult   ?? 1.0,
         uploadBtnText: s.uploadBtnText ?? "",
         cardCount:     s.cardCount     ?? 0,
@@ -1185,6 +1193,7 @@ export default function App() {
       };
       setCardWMult(loaded.cardWMult);   setCardHMult(loaded.cardHMult);
       setCardH2Mult(loaded.cardH2Mult); setAltCardMode(loaded.altCardMode); setShowGalleryNav(loaded.showGalleryNav);
+      setFavCardCustom(loaded.favCardCustom); setFavCardWMult(loaded.favCardWMult); setFavCardHMult(loaded.favCardHMult); setFavCardCount(loaded.favCardCount);
       setUploadBtnMult(loaded.uploadBtnMult); setUploadBtnText(loaded.uploadBtnText);
       setCardCount(loaded.cardCount);
       setGlow1Enabled(loaded.glow1Enabled); setGlow1Color(loaded.glow1Color);
@@ -1228,6 +1237,7 @@ export default function App() {
     const s = dbSettings.current;
     setCardWMult(s.cardWMult);   setCardHMult(s.cardHMult);
     setCardH2Mult(s.cardH2Mult ?? 1.0); setAltCardMode(s.altCardMode ?? false); setShowGalleryNav(s.showGalleryNav ?? true);
+    setFavCardCustom(s.favCardCustom ?? false); setFavCardWMult(s.favCardWMult ?? 1.5); setFavCardHMult(s.favCardHMult ?? 1.5); setFavCardCount(s.favCardCount ?? 0);
     setUploadBtnMult(s.uploadBtnMult); setUploadBtnText(s.uploadBtnText);
     setCardCount(s.cardCount);
     setGlow1Enabled(s.glow1Enabled); setGlow1Color(s.glow1Color);
@@ -1244,7 +1254,7 @@ export default function App() {
   }, []);
 
   const handleSave = () => saveSettings({
-    cardWMult, cardHMult, cardH2Mult, altCardMode, showGalleryNav, uploadBtnMult, uploadBtnText, cardCount,
+    cardWMult, cardHMult, cardH2Mult, altCardMode, showGalleryNav, favCardCustom, favCardWMult, favCardHMult, favCardCount, uploadBtnMult, uploadBtnText, cardCount,
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
     fav1Mult, fav2Mult, fav3Mult,
     steamApiKey, steamId, platformHighlightColor: platformDefaultColor,
@@ -1545,6 +1555,9 @@ export default function App() {
   const cardW = Math.round(210 * cardWMult);
   const cardH = Math.round(170 * cardHMult);
   const cardH2 = Math.round(170 * cardH2Mult);
+  const favCardW = favCardCustom ? Math.round(210 * favCardWMult) : cardW;
+  const favCardH = favCardCustom ? Math.round(170 * favCardHMult) : cardH;
+  const favEffectiveCardCount = favCardCustom ? favCardCount : 0;
   const contentWidth = Math.min(windowWidth, 1280) - 56;
   const maxFitCols = Math.max(1, Math.floor((contentWidth + 20) / (cardW + 20)));
   const effectiveCardCount = cardCount > 0 ? Math.min(cardCount, maxFitCols) : 0;
@@ -1554,9 +1567,13 @@ export default function App() {
   const updateH          = markDirty(setCardHMult);
   const updateH2         = markDirty(setCardH2Mult);
   const updateAltMode    = markDirty(setAltCardMode);
-  const updateBtn        = markDirty(setUploadBtnMult);
-  const updateCount      = markDirty(setCardCount);
-  const updateBtnText    = markDirty(setUploadBtnText);
+  const updateBtn           = markDirty(setUploadBtnMult);
+  const updateCount         = markDirty(setCardCount);
+  const updateBtnText       = markDirty(setUploadBtnText);
+  const updateFavCardCustom = markDirty(setFavCardCustom);
+  const updateFavCardW      = markDirty(setFavCardWMult);
+  const updateFavCardH      = markDirty(setFavCardHMult);
+  const updateFavCardCount  = markDirty(setFavCardCount);
   const updateGlow1E     = markDirty(setGlow1Enabled);
   const updateGlow1C     = markDirty(setGlow1Color);
   const updateGlow2E     = markDirty(setGlow2Enabled);
@@ -1768,8 +1785,8 @@ export default function App() {
                     return (
                       <button key={r} onClick={() => setRatingFilter(active ? null : r)}
                         style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? col + "88" : "#1a1a2e"}`, background: active ? col + "18" : "#0c0c1c", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: active ? col : count > 0 ? "#888" : "#2a2a40" }}>{r % 1 === 0 ? `${r}/10` : r}</div>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: active ? col : count > 0 ? "#555" : "#222" }}>{count}</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: count > 0 || active ? col : col + "33" }}>{r % 1 === 0 ? `${r}/10` : r}</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: count > 0 || active ? col : col + "22" }}>{count}</div>
                       </button>
                     );
                   })}
@@ -1780,8 +1797,8 @@ export default function App() {
                     return (
                       <button onClick={() => setRatingFilter(active ? null : "lt5")}
                         style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? col + "88" : "#1a1a2e"}`, background: active ? col + "18" : "#0c0c1c", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: active ? col : count > 0 ? "#888" : "#2a2a40" }}>&lt;5</div>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: active ? col : count > 0 ? "#555" : "#222" }}>{count}</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: count > 0 || active ? col : col + "33" }}>&lt;5</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: count > 0 || active ? col : col + "22" }}>{count}</div>
                       </button>
                     );
                   })()}
@@ -1798,7 +1815,10 @@ export default function App() {
           <>
             <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 4, fontFamily: "'Gloria Hallelujah', cursive" }}>Favourites</div>
             <div style={{ fontSize: 13, color: "#444", marginBottom: 28 }}>Star ★ any game to add it here. Drag cards to reorder.</div>
-            <FavGrid entries={orderedFavEntries} glowConfig={glowConfig} {...gridProps} favMults={[fav1Mult, fav2Mult, fav3Mult]} onReorder={reorderFavs} />
+            <FavGrid entries={orderedFavEntries} glowConfig={glowConfig} {...gridProps}
+              cardW={favCardCustom ? favCardW : cardW} cardH={favCardCustom ? favCardH : cardH}
+              effectiveCardCount={favCardCustom && favEffectiveCardCount > 0 ? favEffectiveCardCount : (favCardCustom ? 0 : gridProps.effectiveCardCount)}
+              favMults={[fav1Mult, fav2Mult, fav3Mult]} onReorder={reorderFavs} />
           </>
         )}
 
@@ -1901,22 +1921,42 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Cover Upload Button */}
+                {/* Custom Favourites Layout */}
                 <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
-                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Cover Upload Button</div>
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={{ fontSize: 12, color: "#888" }}>Size</span>
-                      <span style={{ fontSize: 12, color: "#e6a63a", fontWeight: 700 }}>{uploadBtnMult.toFixed(1)}×</span>
-                    </div>
-                    <input type="range" min="0.5" max="4" step="0.05" value={uploadBtnMult} onChange={e => updateBtn(parseFloat(e.target.value))} style={{ width: "100%", accentColor: "#e6a63a", cursor: "pointer" }} />
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
-                      <span>0.5×</span><span>1×</span><span>2×</span><span>3×</span><span>4×</span>
-                    </div>
+                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Favourites Layout</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: favCardCustom ? 16 : 4 }}>
+                    <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Custom card size and columns for Favourites</span>
+                    <button onClick={() => updateFavCardCustom(!favCardCustom)}
+                      style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: favCardCustom ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                      <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: favCardCustom ? 19 : 3, transition: "left 0.2s" }} />
+                    </button>
                   </div>
-                  <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>Button label (empty = 📷)</div>
-                  <input type="text" value={uploadBtnText} onChange={e => updateBtnText(e.target.value)} placeholder="Leave empty to show 📷 icon" maxLength={24}
-                    style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "7px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+                  {favCardCustom && (
+                    <>
+                      {[
+                        { label: "Width",  value: favCardWMult, onChange: updateFavCardW, color: "#7c6ef7" },
+                        { label: "Height", value: favCardHMult, onChange: updateFavCardH, color: "#38bdf8" },
+                      ].map(({ label, value, onChange, color }) => (
+                        <div key={label} style={{ marginBottom: 16 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                            <span style={{ fontSize: 11, color: "#888" }}>{label}</span>
+                            <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
+                          </div>
+                          <input type="range" min="0.25" max="5" step="0.05" value={value} onChange={e => onChange(parseFloat(e.target.value))} style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
+                        </div>
+                      ))}
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                          <span style={{ fontSize: 11, color: "#888" }}>Columns</span>
+                          <span style={{ fontSize: 11, color: "#a78bfa", fontWeight: 700 }}>{favCardCount === 0 ? "Auto" : favCardCount}</span>
+                        </div>
+                        <input type="range" min="0" max={maxFitCols} step="1" value={Math.min(favCardCount, maxFitCols)} onChange={e => updateFavCardCount(parseInt(e.target.value))} style={{ width: "100%", accentColor: "#a78bfa", cursor: "pointer" }} />
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 3 }}>
+                          <span>Auto</span><span style={{ marginLeft: "auto" }}>Max {maxFitCols}</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -2016,66 +2056,60 @@ export default function App() {
                       </>
                     );
                   })()}
+                  {/* Rating Colors */}
+                  <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 18, marginTop: 10 }}>
+                    <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Rating Colors</div>
+                    {(() => {
+                      const RATING_STEPS_KEYS = [
+                        { key: "10",  label: "10 / 10" }, { key: "9.5", label: "9.5" },
+                        { key: "9",   label: "9"        }, { key: "8.5", label: "8.5" },
+                        { key: "8",   label: "8"        }, { key: "7.5", label: "7.5" },
+                        { key: "7",   label: "7"        }, { key: "6.5", label: "6.5" },
+                        { key: "6",   label: "6"        }, { key: "5.5", label: "5.5" },
+                        { key: "5",   label: "5"        }, { key: "lt5", label: "< 5" },
+                      ];
+                      const DEFAULT_RATING_COLORS = {
+                        "10": "#FFD700", "9.5": "#f0c020", "9": "#e8b030",
+                        "8.5": "#e0a040", "8": "#d89050", "7.5": "#cc8060",
+                        "7": "#c07070", "6.5": "#aa6080", "6": "#9060a0",
+                        "5.5": "#7050b0", "5": "#6040c0", "lt5": "#e05c7a",
+                      };
+                      const sel = selectedRatingColorKey;
+                      const currentColor = ratingColors[sel] || DEFAULT_RATING_COLORS[sel] || "#7c6ef7";
+                      const hasOverride = !!ratingColors[sel];
+                      return (
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                            <select value={sel} onChange={e => setSelectedRatingColorKey(e.target.value)}
+                              style={{ flex: 1, background: "#080814", border: "1px solid #2a2a40", borderRadius: 6, padding: "5px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+                              {RATING_STEPS_KEYS.map(({ key, label }) => (
+                                <option key={key} value={key}>{label}{ratingColors[key] ? " ●" : ""}</option>
+                              ))}
+                            </select>
+                            <input type="color" value={currentColor} onChange={e => setRatingColorDirty(sel, e.target.value)}
+                              style={{ width: 28, height: 24, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
+                            {hasOverride && (
+                              <button onClick={() => resetRatingColor(sel)}
+                                style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset">↺</button>
+                            )}
+                          </div>
+                          <div style={{ display: "flex", gap: 3 }}>
+                            {RATING_STEPS_KEYS.map(({ key }) => {
+                              const c = ratingColors[key] || DEFAULT_RATING_COLORS[key] || "#7c6ef7";
+                              return (
+                                <div key={key} onClick={() => setSelectedRatingColorKey(key)}
+                                  style={{ flex: 1, height: 7, borderRadius: 3, background: c, cursor: "pointer", opacity: key === sel ? 1 : 0.45, outline: key === sel ? `2px solid ${c}` : "none", transition: "opacity 0.15s" }} />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
 
-              {/* Rating Colors */}
-              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 4 }}>Rating Colors</div>
-                <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
-                  Customize the color of each rating tier in the filter strip.
-                </div>
-                {(() => {
-                  const RATING_STEPS_KEYS = [
-                    { key: "10",  label: "10 / 10" }, { key: "9.5", label: "9.5" },
-                    { key: "9",   label: "9"        }, { key: "8.5", label: "8.5" },
-                    { key: "8",   label: "8"        }, { key: "7.5", label: "7.5" },
-                    { key: "7",   label: "7"        }, { key: "6.5", label: "6.5" },
-                    { key: "6",   label: "6"        }, { key: "5.5", label: "5.5" },
-                    { key: "5",   label: "5"        }, { key: "lt5", label: "< 5" },
-                  ];
-                  const DEFAULT_RATING_COLORS = {
-                    "10": "#FFD700", "9.5": "#f0c020", "9": "#e8b030",
-                    "8.5": "#e0a040", "8": "#d89050", "7.5": "#cc8060",
-                    "7": "#c07070", "6.5": "#aa6080", "6": "#9060a0",
-                    "5.5": "#7050b0", "5": "#6040c0", "lt5": "#e05c7a",
-                  };
-                  const sel = selectedRatingColorKey;
-                  const currentColor = ratingColors[sel] || DEFAULT_RATING_COLORS[sel] || "#7c6ef7";
-                  const hasOverride = !!ratingColors[sel];
-                  return (
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                        <select value={sel} onChange={e => setSelectedRatingColorKey(e.target.value)}
-                          style={{ flex: 1, background: "#080814", border: "1px solid #2a2a40", borderRadius: 6, padding: "6px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
-                          {RATING_STEPS_KEYS.map(({ key, label }) => (
-                            <option key={key} value={key}>{label}{ratingColors[key] ? " ●" : ""}</option>
-                          ))}
-                        </select>
-                        <input type="color" value={currentColor} onChange={e => setRatingColorDirty(sel, e.target.value)}
-                          style={{ width: 32, height: 28, border: "1px solid #2a2a40", borderRadius: 4, cursor: "pointer", background: "none", padding: 1 }} />
-                        {hasOverride && (
-                          <button onClick={() => resetRatingColor(sel)}
-                            style={{ fontSize: 11, color: "#555", background: "transparent", border: "none", cursor: "pointer", padding: "0 4px" }} title="Reset to default">↺</button>
-                        )}
-                      </div>
-                      {/* Mini preview strip */}
-                      <div style={{ display: "flex", gap: 3 }}>
-                        {RATING_STEPS_KEYS.map(({ key, label }) => {
-                          const c = ratingColors[key] || DEFAULT_RATING_COLORS[key] || "#7c6ef7";
-                          const isSelected = key === sel;
-                          return (
-                            <div key={key} onClick={() => setSelectedRatingColorKey(key)}
-                              style={{ flex: 1, height: 8, borderRadius: 3, background: c, cursor: "pointer", opacity: isSelected ? 1 : 0.5, outline: isSelected ? `2px solid ${c}` : "none", transition: "opacity 0.15s" }} />
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Activity Graph Colors */}
+              {/* Activity Graph Colors + Favourite Settings (merged) */}
               <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
                 <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Activity Graph</div>
                 <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
@@ -2106,40 +2140,40 @@ export default function App() {
                 <div style={{ marginTop: 14, padding: "10px", background: activityColors.bg || "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 8, overflowX: "hidden" }}>
                   <ActivityGraph activityLog={exampleActivityLog} colors={activityColors} numWeeks={20} />
                 </div>
-              </div>
 
-              {/* Favourite Settings */}
-              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 4 }}>Favourite Settings</div>
-                <div style={{ fontSize: 11, color: "#444", marginBottom: 18, lineHeight: 1.6 }}>
-                  Glow effects and card size multipliers for your top-ranked favourites. Reorder favourites by dragging cards on the Favourites tab.
-                </div>
+                {/* Favourite Settings — merged below with separator */}
+                <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 24, paddingTop: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 4 }}>Favourite Settings</div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
+                    Glow effects and card size multipliers for your top-ranked favourites. Reorder favourites by dragging cards on the Favourites tab.
+                  </div>
 
-                <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Glow</div>
-                <GlowRow rank="1" label="1st place" enabled={glow1Enabled} color={glow1Color} onToggle={() => updateGlow1E(!glow1Enabled)} onColor={updateGlow1C} />
-                <GlowRow rank="2" label="2nd place" enabled={glow2Enabled} color={glow2Color} onToggle={() => updateGlow2E(!glow2Enabled)} onColor={updateGlow2C} />
-                <GlowRow rank="3" label="3rd place" enabled={glow3Enabled} color={glow3Color} onToggle={() => updateGlow3E(!glow3Enabled)} onColor={updateGlow3C} />
+                  <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Glow</div>
+                  <GlowRow rank="1" label="1st place" enabled={glow1Enabled} color={glow1Color} onToggle={() => updateGlow1E(!glow1Enabled)} onColor={updateGlow1C} />
+                  <GlowRow rank="2" label="2nd place" enabled={glow2Enabled} color={glow2Color} onToggle={() => updateGlow2E(!glow2Enabled)} onColor={updateGlow2C} />
+                  <GlowRow rank="3" label="3rd place" enabled={glow3Enabled} color={glow3Color} onToggle={() => updateGlow3E(!glow3Enabled)} onColor={updateGlow3C} />
 
-                <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 14, marginTop: 18 }}>
-                  <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 12 }}>Card Size</div>
-                  {[
-                    { label: "1st place", value: fav1Mult, update: updateFav1Mult, color: "#FFD700" },
-                    { label: "2nd place", value: fav2Mult, update: updateFav2Mult, color: "#C0C0C0" },
-                    { label: "3rd place", value: fav3Mult, update: updateFav3Mult, color: "#CD7F32" },
-                  ].map(({ label, value, update, color }) => (
-                    <div key={label} style={{ marginBottom: 14 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                        <span style={{ fontSize: 11, color: "#888" }}>{label}</span>
-                        <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
+                  <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 14, marginTop: 18 }}>
+                    <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 12 }}>Card Size</div>
+                    {[
+                      { label: "1st place", value: fav1Mult, update: updateFav1Mult, color: "#FFD700" },
+                      { label: "2nd place", value: fav2Mult, update: updateFav2Mult, color: "#C0C0C0" },
+                      { label: "3rd place", value: fav3Mult, update: updateFav3Mult, color: "#CD7F32" },
+                    ].map(({ label, value, update, color }) => (
+                      <div key={label} style={{ marginBottom: 14 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                          <span style={{ fontSize: 11, color: "#888" }}>{label}</span>
+                          <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
+                        </div>
+                        <input type="range" min="1" max="4" step="0.25" value={value}
+                          onChange={e => update(parseFloat(e.target.value))}
+                          style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 3 }}>
+                          <span>1×</span><span>2×</span><span>3×</span><span>4×</span>
+                        </div>
                       </div>
-                      <input type="range" min="1" max="4" step="0.25" value={value}
-                        onChange={e => update(parseFloat(e.target.value))}
-                        style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 3 }}>
-                        <span>1×</span><span>2×</span><span>3×</span><span>4×</span>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
 
