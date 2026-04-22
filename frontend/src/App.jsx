@@ -159,6 +159,7 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
 function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null, showGalleryNav = true }) {
   const statusProps = (id) => getStatusProps ? getStatusProps(id) : (STATUSES[id] || STATUSES[6]);
   const [hover, setHover]           = useState(false);
+  const [arrowHover, setArrowHover] = useState(false);
   const [showMenu, setShowMenu]     = useState(false);
   const [imgErr, setImgErr]         = useState(false);
   const [coverKey, setCoverKey]     = useState(0);
@@ -205,12 +206,12 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
     }
   };
 
-  // Auto-cycle through images while hovered
+  // Auto-cycle through images while hovered (paused when hovering arrows)
   useEffect(() => {
-    if (!hover || allImages.length <= 1) return;
+    if (!hover || arrowHover || allImages.length <= 1) return;
     const timer = setInterval(() => setImgIndex(i => (i + 1) % allImages.length), 2200);
     return () => clearInterval(timer);
-  }, [hover, allImages.length]);
+  }, [hover, arrowHover, allImages.length]);
 
   const glowStyle = glowColor ? {
     border:     `1px solid ${glowColor}99`,
@@ -244,18 +245,27 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
               <span style={{ fontSize: 36 }}>🎮</span>
               <span style={{ fontSize: 11, color: "#333", textAlign: "center", padding: "0 12px", lineHeight: 1.4 }}>{game.name}</span>
             </div>}
-        {/* Screenshot navigation: arrows + dots */}
+        {/* Screenshot navigation dots */}
         {allImages.length > 1 && hover && showGalleryNav && (
-          <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, zIndex: 10 }} onClick={e => e.stopPropagation()}>
-            <button onClick={e => { e.stopPropagation(); setImgIndex(i => (i - 1 + allImages.length) % allImages.length); }}
-              style={{ width: 20, height: 20, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, lineHeight: 1 }}>‹</button>
+          <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5, zIndex: 10 }} onClick={e => e.stopPropagation()}>
             {allImages.map((_, i) => (
               <div key={i} onClick={e => { e.stopPropagation(); setImgIndex(i); }}
                 style={{ width: i === imgIndex ? 18 : 6, height: 6, borderRadius: 3, background: i === imgIndex ? "#fff" : "rgba(255,255,255,0.45)", cursor: "pointer", transition: "all 0.2s", flexShrink: 0 }} />
             ))}
-            <button onClick={e => { e.stopPropagation(); setImgIndex(i => (i + 1) % allImages.length); }}
-              style={{ width: 20, height: 20, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, lineHeight: 1 }}>›</button>
           </div>
+        )}
+        {/* Side arrow buttons */}
+        {allImages.length > 1 && hover && showGalleryNav && (
+          <>
+            <button
+              onMouseEnter={() => setArrowHover(true)} onMouseLeave={() => setArrowHover(false)}
+              onClick={e => { e.stopPropagation(); setImgIndex(i => (i - 1 + allImages.length) % allImages.length); }}
+              style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10, lineHeight: 1 }}>‹</button>
+            <button
+              onMouseEnter={() => setArrowHover(true)} onMouseLeave={() => setArrowHover(false)}
+              onClick={e => { e.stopPropagation(); setImgIndex(i => (i + 1) % allImages.length); }}
+              style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10, lineHeight: 1 }}>›</button>
+          </>
         )}
         {listEntry && (
           <button onClick={e => { e.stopPropagation(); onToggleFav(game.id); }}
@@ -1261,9 +1271,11 @@ export default function App() {
 
   const addToList = (game, status, userRating = undefined) => {
     const existing = myList[game.id] || {};
+    // Default rating: 1 for Dropped, null otherwise (unless explicitly passed or already set)
+    const defaultRating = status === 6 ? 1 : null;
     const next = {
       ...existing, game, status,
-      userRating:      userRating !== undefined ? userRating : (existing.userRating ?? null),
+      userRating:      userRating !== undefined ? userRating : (existing.userRating ?? defaultRating),
       playtimeMinutes: existing.playtimeMinutes ?? null,
       replayCount:     existing.replayCount ?? 0,
       tags:            existing.tags?.length ? existing.tags : (game.genres?.map(g => g.name) || []),
@@ -1398,6 +1410,8 @@ export default function App() {
     const entry = myList[gameId];
     if (!entry) return;
     const next = { ...entry, ...updates };
+    // If moved to Dropped and has no rating, default to 1
+    if (next.status === 6 && next.userRating == null) next.userRating = 1;
     setMyList(p => ({ ...p, [gameId]: next }));
     persist(gameId, next);
   }, [myList, persist]);
@@ -1448,9 +1462,9 @@ export default function App() {
   }, [allEntries]);
 
   const listEntries = useMemo(() => {
-    // Dropped (status 6) is hidden from the main list unless explicitly selected
+    // Dropped (6) and Demo (7) are hidden from the main list unless explicitly selected
     let filtered = statusFilter === null
-      ? allEntries.filter(e => e.status !== 6)
+      ? allEntries.filter(e => e.status !== 6 && e.status !== 7)
       : allEntries.filter(e => e.status === statusFilter);
     if (platformFilterSlugs.length > 0) {
       filtered = filtered.filter(e => {
