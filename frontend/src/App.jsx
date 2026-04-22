@@ -156,7 +156,7 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
  * status dropdown is always at the same vertical position in every card
  * regardless of how many optional fields (rating bar, genres, score) are present.
  */
-function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null }) {
+function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null, showGalleryNav = true }) {
   const statusProps = (id) => getStatusProps ? getStatusProps(id) : (STATUSES[id] || STATUSES[6]);
   const [hover, setHover]           = useState(false);
   const [showMenu, setShowMenu]     = useState(false);
@@ -244,13 +244,17 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
               <span style={{ fontSize: 36 }}>🎮</span>
               <span style={{ fontSize: 11, color: "#333", textAlign: "center", padding: "0 12px", lineHeight: 1.4 }}>{game.name}</span>
             </div>}
-        {/* Screenshot navigation dots */}
-        {allImages.length > 1 && hover && (
-          <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5, zIndex: 10 }} onClick={e => e.stopPropagation()}>
+        {/* Screenshot navigation: arrows + dots */}
+        {allImages.length > 1 && hover && showGalleryNav && (
+          <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, zIndex: 10 }} onClick={e => e.stopPropagation()}>
+            <button onClick={e => { e.stopPropagation(); setImgIndex(i => (i - 1 + allImages.length) % allImages.length); }}
+              style={{ width: 20, height: 20, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, lineHeight: 1 }}>‹</button>
             {allImages.map((_, i) => (
               <div key={i} onClick={e => { e.stopPropagation(); setImgIndex(i); }}
                 style={{ width: i === imgIndex ? 18 : 6, height: 6, borderRadius: 3, background: i === imgIndex ? "#fff" : "rgba(255,255,255,0.45)", cursor: "pointer", transition: "all 0.2s", flexShrink: 0 }} />
             ))}
+            <button onClick={e => { e.stopPropagation(); setImgIndex(i => (i + 1) % allImages.length); }}
+              style={{ width: 20, height: 20, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, lineHeight: 1 }}>›</button>
           </div>
         )}
         {listEntry && (
@@ -358,7 +362,7 @@ function Spinner({ text = "Loading…" }) {
   );
 }
 
-function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount }) {
+function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, showGalleryNav }) {
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   return (
@@ -366,13 +370,13 @@ function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUplo
       {games.map((g, i) => (
         <GameCard key={g.id} game={g} listEntry={myList[g.id] || null} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
           onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
-          onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} />
+          onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav} />
       ))}
     </div>
   );
 }
 
-function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, favMults = [2, 2, 2], onReorder }) {
+function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, favMults = [2, 2, 2], onReorder, showGalleryNav }) {
   const [dragOverId, setDragOverId] = useState(null);
   const dragId = useRef(null);
   if (!entries.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>No favourites yet. Add games to your list and star them!</div>;
@@ -396,7 +400,7 @@ function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, on
             style={{ gridColumn: span > 1 ? `span ${span}` : undefined, opacity: dragOverId === e.game.id ? 0.5 : 1, outline: dragOverId === e.game.id ? "2px dashed #7c6ef755" : "none", borderRadius: 12, cursor: "grab", transition: "opacity 0.15s" }}>
             <GameCard game={e.game} listEntry={e} cardH={thisCardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText} glowColor={glow}
               onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
-              onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} />
+              onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav} />
           </div>
         );
       })}
@@ -1073,8 +1077,9 @@ export default function App() {
   const [cardWMult, setCardWMult]         = useState(1.5);
   const [cardHMult, setCardHMult]         = useState(1.5);
   const [cardH2Mult, setCardH2Mult]       = useState(1.0);
-  const [altCardMode, setAltCardMode]     = useState(false);
-  const [uploadBtnMult, setUploadBtnMult] = useState(1.0);
+  const [altCardMode, setAltCardMode]       = useState(false);
+  const [showGalleryNav, setShowGalleryNav] = useState(true);
+  const [uploadBtnMult, setUploadBtnMult]   = useState(1.0);
   const [uploadBtnText, setUploadBtnText] = useState("");
   const [cardCount, setCardCount]         = useState(0);
   const [glow1Enabled, setGlow1Enabled]   = useState(true);
@@ -1118,7 +1123,7 @@ export default function App() {
   });
 
   const dbSettings = useRef({
-    cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
+    cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, showGalleryNav: true, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
     steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {},
     fav1Mult: 2.0, fav2Mult: 2.0, fav3Mult: 2.0,
@@ -1154,8 +1159,9 @@ export default function App() {
         cardWMult:     s.cardWMult     ?? 1.5,
         cardHMult:     s.cardHMult     ?? 1.5,
         cardH2Mult:    s.cardH2Mult    ?? 1.0,
-        altCardMode:   s.altCardMode   ?? false,
-        uploadBtnMult: s.uploadBtnMult ?? 1.0,
+        altCardMode:     s.altCardMode     ?? false,
+        showGalleryNav:  s.showGalleryNav  ?? true,
+        uploadBtnMult:   s.uploadBtnMult   ?? 1.0,
         uploadBtnText: s.uploadBtnText ?? "",
         cardCount:     s.cardCount     ?? 0,
         glow1Enabled:  s.glow1Enabled  ?? true,  glow1Color: s.glow1Color ?? "#FFD700",
@@ -1165,7 +1171,7 @@ export default function App() {
         steamId:       s.steamId       ?? "",
       };
       setCardWMult(loaded.cardWMult);   setCardHMult(loaded.cardHMult);
-      setCardH2Mult(loaded.cardH2Mult); setAltCardMode(loaded.altCardMode);
+      setCardH2Mult(loaded.cardH2Mult); setAltCardMode(loaded.altCardMode); setShowGalleryNav(loaded.showGalleryNav);
       setUploadBtnMult(loaded.uploadBtnMult); setUploadBtnText(loaded.uploadBtnText);
       setCardCount(loaded.cardCount);
       setGlow1Enabled(loaded.glow1Enabled); setGlow1Color(loaded.glow1Color);
@@ -1207,7 +1213,7 @@ export default function App() {
   const cancelSettings = useCallback(() => {
     const s = dbSettings.current;
     setCardWMult(s.cardWMult);   setCardHMult(s.cardHMult);
-    setCardH2Mult(s.cardH2Mult ?? 1.0); setAltCardMode(s.altCardMode ?? false);
+    setCardH2Mult(s.cardH2Mult ?? 1.0); setAltCardMode(s.altCardMode ?? false); setShowGalleryNav(s.showGalleryNav ?? true);
     setUploadBtnMult(s.uploadBtnMult); setUploadBtnText(s.uploadBtnText);
     setCardCount(s.cardCount);
     setGlow1Enabled(s.glow1Enabled); setGlow1Color(s.glow1Color);
@@ -1223,7 +1229,7 @@ export default function App() {
   }, []);
 
   const handleSave = () => saveSettings({
-    cardWMult, cardHMult, cardH2Mult, altCardMode, uploadBtnMult, uploadBtnText, cardCount,
+    cardWMult, cardHMult, cardH2Mult, altCardMode, showGalleryNav, uploadBtnMult, uploadBtnText, cardCount,
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
     fav1Mult, fav2Mult, fav3Mult,
     steamApiKey, steamId, platformHighlightColor: platformDefaultColor,
@@ -1554,7 +1560,7 @@ export default function App() {
     { enabled: glow3Enabled, color: glow3Color },
   ];
 
-  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: setMetadataGameId, onTogglePlatform: togglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount };
+  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: setMetadataGameId, onTogglePlatform: togglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, showGalleryNav };
   const previewEntries = orderedFavEntries.length ? orderedFavEntries : allEntries;
 
   const credentialsReady = steamApiKey.trim() && steamId.trim();
@@ -1806,6 +1812,18 @@ export default function App() {
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* Gallery Navigation */}
+                <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
+                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Gallery Navigation</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Show arrows and dots on hover to browse card images</span>
+                    <button onClick={() => { setShowGalleryNav(v => !v); setSettingsDirty(true); }}
+                      style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: showGalleryNav ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                      <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: showGalleryNav ? 19 : 3, transition: "left 0.2s" }} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Cover Upload Button */}
