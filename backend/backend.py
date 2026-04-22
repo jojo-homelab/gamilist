@@ -426,12 +426,12 @@ def search():
 
     Query params:
       q          — search term (required)
-      page_size  — number of results to return (default: 12)
+      page_size  — number of results to return (default: 50)
 
     Returns a JSON array of RAWG game objects.
     """
     q = request.args.get("q", "")
-    page_size = request.args.get("page_size", 12)
+    page_size = request.args.get("page_size", 50)
     data = rawg_get("/games", {"search": q, "page_size": page_size})
     return jsonify(data.get("results", []))
 
