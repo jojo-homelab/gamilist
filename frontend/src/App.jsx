@@ -1123,6 +1123,7 @@ export default function App() {
   const [saving, setSaving]               = useState(false);
   const [toast, setToast]                 = useState(null);
   const [statusFilter, setStatusFilter]   = useState(null);
+  const [ratingFilter, setRatingFilter]   = useState(null); // number = exact, "lt5" = <5
   const [sortBy, setSortBy]               = useState("rating_desc");
   const [listSearch, setListSearch]       = useState("");
   const [windowWidth, setWindowWidth]     = useState(window.innerWidth);
@@ -1476,6 +1477,13 @@ export default function App() {
       const q = listSearch.trim().toLowerCase();
       filtered = filtered.filter(e => (e.game?.name || "").toLowerCase().includes(q));
     }
+    if (ratingFilter !== null) {
+      if (ratingFilter === "lt5") {
+        filtered = filtered.filter(e => e.userRating != null && e.userRating < 5);
+      } else {
+        filtered = filtered.filter(e => e.userRating === ratingFilter);
+      }
+    }
     const copy = [...filtered];
     if (sortBy === "rating_desc") {
       copy.sort((a, b) => {
@@ -1503,7 +1511,7 @@ export default function App() {
       });
     }
     return copy;
-  }, [allEntries, statusFilter, sortBy, platformFilterSlugs, listSearch]);
+  }, [allEntries, statusFilter, ratingFilter, sortBy, platformFilterSlugs, listSearch]);
 
   const orderedFavEntries = useMemo(() => {
     if (!favOrder.length) return favEntries;
@@ -1728,6 +1736,38 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {/* Rating filter strip */}
+            {(() => {
+              const RATING_STEPS = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5];
+              return (
+                <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "nowrap", overflowX: "auto" }}>
+                  {RATING_STEPS.map(r => {
+                    const active = ratingFilter === r;
+                    const count = allEntries.filter(e => e.userRating === r && e.status !== 6 && e.status !== 7).length;
+                    return (
+                      <button key={r} onClick={() => setRatingFilter(active ? null : r)}
+                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? "#7c6ef766" : "#1a1a2e"}`, background: active ? "#1a1730" : "#0c0c1c", color: active ? "#a090ff" : count > 0 ? "#666" : "#2a2a40", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: active ? "#a090ff" : count > 0 ? "#888" : "#2a2a40" }}>{r % 1 === 0 ? `${r}/10` : r}</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: active ? "#7c6ef7" : count > 0 ? "#555" : "#222" }}>{count}</div>
+                      </button>
+                    );
+                  })}
+                  {(() => {
+                    const active = ratingFilter === "lt5";
+                    const count = allEntries.filter(e => e.userRating != null && e.userRating < 5 && e.status !== 6 && e.status !== 7).length;
+                    return (
+                      <button onClick={() => setRatingFilter(active ? null : "lt5")}
+                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? "#e05c7a66" : "#1a1a2e"}`, background: active ? "#2a0f18" : "#0c0c1c", color: active ? "#e05c7a" : count > 0 ? "#666" : "#2a2a40", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: active ? "#e05c7a" : count > 0 ? "#888" : "#2a2a40" }}>&lt;5</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: active ? "#e05c7a" : count > 0 ? "#555" : "#222" }}>{count}</div>
+                      </button>
+                    );
+                  })()}
+                </div>
+              );
+            })()}
+
             {listLoading ? <Spinner text="Loading your list…" /> : <Grid games={listEntries.map(e => e.game)} {...gridProps} emptyMsg="Nothing here yet — search for games to add them!" />}
           </>
         )}
