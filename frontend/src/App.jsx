@@ -8,7 +8,7 @@
  *   Settings   — card size, columns, upload button, glow, Steam integration
  */
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from "react";
 
 // VITE_API_URL="" means "use relative paths" (production via ingress).
 // Falls back to localhost:5001 only when the var is not set at all (local dev).
@@ -1133,6 +1133,15 @@ export default function App() {
   const [listLoading, setListLoading]   = useState(true);
   const [backendOk, setBackendOk]       = useState(null);
 
+  // Preserve scroll position when list re-sorts after an inline edit
+  const savedScrollY = useRef(null);
+  useLayoutEffect(() => {
+    if (savedScrollY.current !== null) {
+      window.scrollTo(0, savedScrollY.current);
+      savedScrollY.current = null;
+    }
+  });
+
   useEffect(() => {
     const handler = () => setWindowWidth(window.innerWidth);
     window.addEventListener("resize", handler);
@@ -1299,6 +1308,7 @@ export default function App() {
   };
 
   const rateGame = (id, v) => {
+    savedScrollY.current = window.scrollY;
     const entry = myList[id];
     const next = { ...entry, userRating: v, status: v != null ? 1 : entry.status };
     setMyList(p => ({ ...p, [id]: next }));
