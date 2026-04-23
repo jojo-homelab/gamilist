@@ -1707,6 +1707,14 @@ export default function App() {
         const bp = b.game?.platforms?.[0]?.platform?.name || "zzz";
         return ap.localeCompare(bp);
       });
+    } else if (sortBy === "unrated") {
+      copy.sort((a, b) => {
+        const aUnrated = a.userRating == null;
+        const bUnrated = b.userRating == null;
+        if (aUnrated && !bUnrated) return -1;
+        if (!aUnrated && bUnrated) return 1;
+        return (a.game?.name || "").localeCompare(b.game?.name || "");
+      });
     }
     return copy;
   }, [allEntries, statusFilter, ratingFilter, sortBy, platformFilterSlugs, listSearch]);
@@ -1895,6 +1903,7 @@ export default function App() {
                     <option value="name_asc">Name A→Z</option>
                     <option value="name_desc">Name Z→A</option>
                     <option value="platform">Platform</option>
+                    <option value="unrated">Unrated first</option>
                   </select>
                   <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
                   <div style={{ position: "relative", display: "flex", alignItems: "center", flex: 1, minWidth: 120 }}>
