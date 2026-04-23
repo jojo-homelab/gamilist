@@ -23,6 +23,7 @@ import psycopg2
 import psycopg2.extras
 import json
 import os
+import zlib
 import unicodedata
 from difflib import SequenceMatcher
 from datetime import datetime, timezone
@@ -138,6 +139,7 @@ def init_db():
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav1_mult               REAL    NOT NULL DEFAULT 2.0")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav2_mult               REAL    NOT NULL DEFAULT 2.0")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav3_mult               REAL    NOT NULL DEFAULT 2.0")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS psn_npsso              TEXT    NOT NULL DEFAULT ''")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS entry_images (
                     id         SERIAL PRIMARY KEY,
@@ -234,6 +236,7 @@ def get_settings():
             "fav1Mult":                row.get("fav1_mult") if row.get("fav1_mult") is not None else 2.0,
             "fav2Mult":                row.get("fav2_mult") if row.get("fav2_mult") is not None else 2.0,
             "fav3Mult":                row.get("fav3_mult") if row.get("fav3_mult") is not None else 2.0,
+            "psnNpsso":                row.get("psn_npsso") or "",
         })
     # No row yet — return defaults so the frontend has something to work with
     return jsonify({
@@ -245,6 +248,7 @@ def get_settings():
         "platformHighlightColor": "#7c6ef7", "platformColors": {}, "platformIconMode": True, "statusColors": {}, "activityColors": {},
         "cardH2Mult": 1.0, "altCardMode": False,
         "fav1Mult": 2.0, "fav2Mult": 2.0, "fav3Mult": 2.0,
+        "psnNpsso": "",
     })
 
 
@@ -289,6 +293,7 @@ def put_settings():
     fav1_mult                = body.get("fav1Mult")
     fav2_mult                = body.get("fav2Mult")
     fav3_mult                = body.get("fav3Mult")
+    psn_npsso                = body.get("psnNpsso")
     steam_mappings_json      = json.dumps(steam_mappings)      if steam_mappings is not None else None
     platform_colors_json     = json.dumps(platform_colors)     if platform_colors is not None else None
     status_colors_json       = json.dumps(status_colors)       if status_colors is not None else None
@@ -302,7 +307,7 @@ def put_settings():
                     glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
                     steam_api_key, steam_id, steam_mappings, platform_highlight_color,
                     platform_colors, platform_icon_mode, status_colors, activity_colors,
-                    card_h2_mult, alt_card_mode, fav1_mult, fav2_mult, fav3_mult
+                    card_h2_mult, alt_card_mode, fav1_mult, fav2_mult, fav3_mult, psn_npsso
                 )
                 VALUES (1,
                     COALESCE(%s, 1.5), COALESCE(%s, 1.5), COALESCE(%s, 1.0),
@@ -318,7 +323,8 @@ def put_settings():
                     COALESCE(%s::jsonb, '{}'::jsonb),
                     COALESCE(%s::jsonb, '{}'::jsonb),
                     COALESCE(%s, 1.0), COALESCE(%s, FALSE),
-                    COALESCE(%s, 2.0), COALESCE(%s, 2.0), COALESCE(%s, 2.0))
+                    COALESCE(%s, 2.0), COALESCE(%s, 2.0), COALESCE(%s, 2.0),
+                    COALESCE(%s, ''))
                 ON CONFLICT (id) DO UPDATE SET
                     card_w_mult              = COALESCE(EXCLUDED.card_w_mult,              settings.card_w_mult),
                     card_h_mult              = COALESCE(EXCLUDED.card_h_mult,              settings.card_h_mult),
@@ -343,13 +349,14 @@ def put_settings():
                     alt_card_mode            = COALESCE(EXCLUDED.alt_card_mode,            settings.alt_card_mode),
                     fav1_mult                = COALESCE(EXCLUDED.fav1_mult,                settings.fav1_mult),
                     fav2_mult                = COALESCE(EXCLUDED.fav2_mult,                settings.fav2_mult),
-                    fav3_mult                = COALESCE(EXCLUDED.fav3_mult,                settings.fav3_mult)
+                    fav3_mult                = COALESCE(EXCLUDED.fav3_mult,                settings.fav3_mult),
+                    psn_npsso                = COALESCE(EXCLUDED.psn_npsso,                settings.psn_npsso)
                 RETURNING *
             """, (card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
                   glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
                   steam_api_key, steam_id, steam_mappings_json, platform_highlight_color,
                   platform_colors_json, platform_icon_mode, status_colors_json, activity_colors_json,
-                  card_h2_mult, alt_card_mode, fav1_mult, fav2_mult, fav3_mult))
+                  card_h2_mult, alt_card_mode, fav1_mult, fav2_mult, fav3_mult, psn_npsso))
             row = cur.fetchone()
     return jsonify({
         "cardWMult":              row["card_w_mult"],
@@ -376,6 +383,7 @@ def put_settings():
         "fav1Mult":               row.get("fav1_mult") if row.get("fav1_mult") is not None else 2.0,
         "fav2Mult":               row.get("fav2_mult") if row.get("fav2_mult") is not None else 2.0,
         "fav3Mult":               row.get("fav3_mult") if row.get("fav3_mult") is not None else 2.0,
+        "psnNpsso":               row.get("psn_npsso") or "",
     })
 
 
@@ -472,7 +480,7 @@ def image_proxy():
     Returns the raw image bytes with the original Content-Type header.
     """
     url = request.args.get("url")
-    allowed = ("rawg.io", "steamstatic.com", "steamcdn-a.akamaihd.net")
+    allowed = ("rawg.io", "steamstatic.com", "steamcdn-a.akamaihd.net", "image.api.playstation.com")
     if not url or not any(h in url for h in allowed):
         return jsonify({"error": "Invalid URL"}), 400
     r = requests.get(url, stream=True)
@@ -794,6 +802,125 @@ def steam_sync_all_playtime():
                     updated += cur.rowcount
 
     return jsonify({"updated": updated, "total": len(games)})
+
+
+# ---------------------------------------------------------------------------
+# PSN integration
+# ---------------------------------------------------------------------------
+
+def _psn_game_id(title_id: str) -> int:
+    """Deterministic integer game_id for a PSN title (fits in PostgreSQL INTEGER)."""
+    return (zlib.crc32(title_id.encode()) & 0x1FFFFFFF) + 1_600_000_000
+
+
+def _get_psn_client():
+    """Return a PSNAWP client using the stored NPSSO token, or raise ValueError."""
+    try:
+        from psnawp_api import PSNAWP
+    except ImportError:
+        raise ValueError("psnawp_api package is not installed.")
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT psn_npsso FROM settings WHERE id = 1")
+            row = cur.fetchone()
+    if not row or not row["psn_npsso"]:
+        raise ValueError("PSN NPSSO token not configured.")
+    return PSNAWP(row["psn_npsso"])
+
+
+@app.route("/api/psn/library")
+def psn_library():
+    """
+    Fetch the user's PSN game library and cross-reference with the local list.
+
+    Returns JSON:
+      { "games": [...], "total": N }
+
+    Each game includes:
+      title_id, name, image_url, platform, play_duration_minutes, gamilist_id
+    """
+    try:
+        psnawp = _get_psn_client()
+        client = psnawp.me()
+        raw_titles = list(client.title_stats())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch PSN library: {e}"}), 400
+
+    # Cross-reference with local list by game name (case-insensitive)
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT game_id, game_data->>'name' AS name FROM entries")
+            local_by_name = {r["name"].lower(): r["game_id"] for r in cur.fetchall()}
+            cur.execute("SELECT game_id FROM entries")
+            local_ids = {r["game_id"] for r in cur.fetchall()}
+
+    games = []
+    for t in raw_titles:
+        title_id = str(t.title_id) if hasattr(t, "title_id") else None
+        if not title_id:
+            continue
+        name = t.name or ""
+        image_url = str(t.image_url) if t.image_url else None
+        platform = str(t.category.value) if hasattr(t.category, "value") else str(t.category or "")
+        # play_duration is a timedelta for PS5; None for PS4
+        play_duration = getattr(t, "play_duration", None)
+        play_minutes = int(play_duration.total_seconds() // 60) if play_duration else 0
+
+        gid = _psn_game_id(title_id)
+        # Check by generated ID first, then by name
+        gamilist_id = gid if gid in local_ids else local_by_name.get(name.lower())
+
+        games.append({
+            "title_id":             title_id,
+            "game_id":              gid,
+            "name":                 name,
+            "image_url":            image_url,
+            "platform":             platform,
+            "play_duration_minutes": play_minutes,
+            "gamilist_id":          gamilist_id,
+        })
+
+    games.sort(key=lambda g: g["name"].lower())
+    return jsonify({"games": games, "total": len(games)})
+
+
+@app.route("/api/psn/sync-playtime-all", methods=["POST"])
+def psn_sync_all_playtime():
+    """
+    Bulk-update playtime_minutes for all PSN-imported entries that have PS5 playtime.
+    Returns: { "updated": N, "total": M }
+    """
+    try:
+        psnawp = _get_psn_client()
+        client = psnawp.me()
+        raw_titles = list(client.title_stats())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch PSN library: {e}"}), 400
+
+    updated = 0
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            for t in raw_titles:
+                title_id = str(t.title_id) if hasattr(t, "title_id") else None
+                if not title_id:
+                    continue
+                play_duration = getattr(t, "play_duration", None)
+                if not play_duration:
+                    continue
+                mins = int(play_duration.total_seconds() // 60)
+                if mins > 0:
+                    gid = _psn_game_id(title_id)
+                    cur.execute(
+                        "UPDATE entries SET playtime_minutes = %s, updated_at = NOW() WHERE game_id = %s",
+                        (mins, gid),
+                    )
+                    updated += cur.rowcount
+
+    return jsonify({"updated": updated, "total": len(raw_titles)})
 
 
 # ---------------------------------------------------------------------------

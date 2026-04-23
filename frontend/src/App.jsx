@@ -944,6 +944,135 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
 }
 
 /**
+ * PSN library import panel.
+ * Shows owned PSN games not yet in GamiList.
+ * Status pre-filled: PS5 playtime > 0 → Played, else Backlog.
+ */
+function PsnLibrarySection({ library, myList, onImport, onSyncPlaytime, onRefresh }) {
+  const [filter, setFilter]         = useState("new");
+  const [selections, setSelections] = useState({});
+  const [importing, setImporting]   = useState(false);
+  const [syncing, setSyncing]       = useState({});
+
+  useEffect(() => {
+    if (!library) return;
+    const init = {};
+    for (const g of library.games) {
+      if (g.gamilist_id) continue;
+      init[g.title_id] = { checked: true, status: g.play_duration_minutes > 0 ? 1 : 3 };
+    }
+    setSelections(init);
+  }, [library]);
+
+  const handleSyncPlaytime = async (g) => {
+    setSyncing(p => ({ ...p, [g.title_id]: true }));
+    await onSyncPlaytime(g.game_id, g.play_duration_minutes);
+    setSyncing(p => ({ ...p, [g.title_id]: false }));
+  };
+
+  if (!library) return null;
+
+  const displayed = filter === "new"
+    ? library.games.filter(g => !g.gamilist_id)
+    : library.games;
+
+  const checkedCount = Object.values(selections).filter(s => s.checked).length;
+
+  const handleImport = async () => {
+    setImporting(true);
+    const toImport = library.games
+      .filter(g => selections[g.title_id]?.checked)
+      .map(g => ({ ...g, ...selections[g.title_id] }));
+    await onImport(toImport);
+    setImporting(false);
+    onRefresh();
+  };
+
+  const setAll = (key, val) => {
+    setSelections(prev => {
+      const next = { ...prev };
+      for (const k of Object.keys(next)) next[k] = { ...next[k], [key]: val };
+      return next;
+    });
+  };
+
+  const formatHours = (mins) => {
+    if (!mins) return "—";
+    const h = Math.round(mins / 60);
+    return h < 1 ? `${mins}m` : `${h}h`;
+  };
+
+  return (
+    <div style={{ flex: 1, minWidth: 340, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>PSN Library</div>
+      <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
+        {library.total} games total · {library.games.filter(g => g.gamilist_id).length} already in GamiList · {library.games.filter(g => !g.gamilist_id).length} new
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {["new", "all"].map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            style={{ padding: "4px 12px", borderRadius: 6, border: "none", background: filter === f ? "#003087" + "55" : "transparent", color: filter === f ? "#0070cc" : "#555", cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>
+            {f === "new" ? "New only" : "All"}
+          </button>
+        ))}
+      </div>
+
+      {filter === "new" && displayed.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "8px 12px", background: "#080814", borderRadius: 8, border: "1px solid #1a1a2e" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#888", cursor: "pointer" }}>
+            <input type="checkbox" checked={checkedCount === displayed.length} onChange={e => setAll("checked", e.target.checked)} />
+            All
+          </label>
+          <span style={{ fontSize: 12, color: "#555" }}>{checkedCount} selected</span>
+          <select onChange={e => setAll("status", parseInt(e.target.value))} defaultValue=""
+            style={{ background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "4px 7px", color: "#e0e0f0", fontSize: 12, fontFamily: "inherit", outline: "none" }}>
+            <option value="" disabled>Set status…</option>
+            {STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+          <button onClick={handleImport} disabled={importing || checkedCount === 0}
+            style={{ marginLeft: "auto", padding: "5px 16px", background: checkedCount > 0 ? "#0070cc" : "#1a1a2e", border: "none", borderRadius: 7, color: checkedCount > 0 ? "#fff" : "#444", fontWeight: 700, fontSize: 12, cursor: checkedCount > 0 ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+            {importing ? "Importing…" : `Import ${checkedCount}`}
+          </button>
+        </div>
+      )}
+
+      <div style={{ maxHeight: 380, overflowY: "auto", border: "1px solid #1a1a2e", borderRadius: 8 }}>
+        {displayed.length === 0
+          ? <div style={{ padding: 32, textAlign: "center", color: "#444", fontSize: 13 }}>All PSN games are already in your GamiList!</div>
+          : displayed.map(g => {
+              const inList = !!g.gamilist_id;
+              const sel    = selections[g.title_id] || {};
+              return (
+                <div key={g.title_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "1px solid #0e0e1e", background: inList ? "#0a0c12" : "transparent" }}>
+                  {!inList
+                    ? <input type="checkbox" checked={sel.checked || false} onChange={e => setSelections(p => ({ ...p, [g.title_id]: { ...p[g.title_id], checked: e.target.checked } }))} />
+                    : <span style={{ fontSize: 11, color: "#0070cc", width: 14, textAlign: "center" }}>✓</span>}
+                  {g.image_url && <img src={g.image_url} alt="" style={{ width: 24, height: 24, borderRadius: 3, objectFit: "cover", flexShrink: 0 }} onError={e => e.target.style.display = "none"} />}
+                  <span style={{ flex: 1, fontSize: 13, color: inList ? "#0070cc99" : "#e0e0f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span>
+                  <span style={{ fontSize: 10, color: "#333", whiteSpace: "nowrap" }}>{g.platform.replace("ps5_native_game", "PS5").replace("ps4_game", "PS4").replace(/_/g, " ")}</span>
+                  <span style={{ fontSize: 11, color: "#444", whiteSpace: "nowrap", minWidth: 36, textAlign: "right" }}>{formatHours(g.play_duration_minutes)}</span>
+                  {!inList && (
+                    <span style={{ fontSize: 11, fontWeight: 600, color: STATUSES[sel.status ?? 3]?.color || "#555", whiteSpace: "nowrap", minWidth: 70, textAlign: "right" }}>
+                      {STATUSES[sel.status ?? 3]?.label ?? "—"}
+                    </span>
+                  )}
+                  {inList && g.play_duration_minutes > 0 && (
+                    <button onClick={() => handleSyncPlaytime(g)} disabled={syncing[g.title_id]}
+                      style={{ fontSize: 10, padding: "2px 8px", background: "transparent", border: "1px solid #1a2a3a", borderRadius: 4, color: syncing[g.title_id] ? "#333" : "#0070cc88", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>
+                      {syncing[g.title_id] ? "…" : "Sync playtime"}
+                    </button>
+                  )}
+                </div>
+              );
+            })
+        }
+      </div>
+    </div>
+  );
+}
+
+/**
  * Steam library import panel.
  * Shows owned Steam games not yet in GamiList.
  * Status is pre-filled by playtime: >0 → Played, 0 → Backlog.
@@ -1111,6 +1240,10 @@ export default function App() {
   const [steamLibrary, setSteamLibrary] = useState(null);
   const [steamSyncing, setSteamSyncing] = useState(false);
   const [steamError, setSteamError]   = useState(null);
+  const [psnNpsso, setPsnNpsso]       = useState("");
+  const [psnLibrary, setPsnLibrary]   = useState(null);
+  const [psnSyncing, setPsnSyncing]   = useState(false);
+  const [psnError, setPsnError]       = useState(null);
   const [metadataGameId, setMetadataGameId]               = useState(null);
   const [platformDefaultColor, setPlatformDefaultColor]   = useState("#7c6ef7");
   const [platformColors, setPlatformColors]               = useState({ pc: "#ffffff" });
@@ -1143,7 +1276,7 @@ export default function App() {
   const dbSettings = useRef({
     cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, showGalleryNav: true, favCardCustom: false, favCardWMult: 1.5, favCardHMult: 1.5, favCardCount: 0, favAltCardMode: false, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
-    steamApiKey: "", steamId: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {}, ratingColors: {},
+    steamApiKey: "", steamId: "", psnNpsso: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {}, ratingColors: {},
     fav1Mult: 2.0, fav2Mult: 2.0, fav3Mult: 2.0,
   });
 
@@ -1192,6 +1325,7 @@ export default function App() {
         glow3Enabled:  s.glow3Enabled  ?? true,  glow3Color: s.glow3Color ?? "#CD7F32",
         steamApiKey:   s.steamApiKey   ?? "",
         steamId:       s.steamId       ?? "",
+        psnNpsso:      s.psnNpsso      ?? "",
       };
       setCardWMult(loaded.cardWMult);   setCardHMult(loaded.cardHMult);
       setCardH2Mult(loaded.cardH2Mult); setAltCardMode(loaded.altCardMode); setShowGalleryNav(loaded.showGalleryNav);
@@ -1202,7 +1336,7 @@ export default function App() {
       setGlow2Enabled(loaded.glow2Enabled); setGlow2Color(loaded.glow2Color);
       setGlow3Enabled(loaded.glow3Enabled); setGlow3Color(loaded.glow3Color);
       setFav1Mult(s.fav1Mult ?? 2.0); setFav2Mult(s.fav2Mult ?? 2.0); setFav3Mult(s.fav3Mult ?? 2.0);
-      setSteamApiKey(loaded.steamApiKey); setSteamId(loaded.steamId);
+      setSteamApiKey(loaded.steamApiKey); setSteamId(loaded.steamId); setPsnNpsso(loaded.psnNpsso);
       setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
       setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
       setStatusColors(s.statusColors || {});
@@ -1246,7 +1380,7 @@ export default function App() {
     setGlow2Enabled(s.glow2Enabled); setGlow2Color(s.glow2Color);
     setGlow3Enabled(s.glow3Enabled); setGlow3Color(s.glow3Color);
     setFav1Mult(s.fav1Mult ?? 2.0); setFav2Mult(s.fav2Mult ?? 2.0); setFav3Mult(s.fav3Mult ?? 2.0);
-    setSteamApiKey(s.steamApiKey); setSteamId(s.steamId);
+    setSteamApiKey(s.steamApiKey); setSteamId(s.steamId); setPsnNpsso(s.psnNpsso ?? "");
     setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
     setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
     setStatusColors(s.statusColors || {});
@@ -1259,7 +1393,7 @@ export default function App() {
     cardWMult, cardHMult, cardH2Mult, altCardMode, showGalleryNav, favCardCustom, favCardWMult, favCardHMult, favCardCount, favAltCardMode, uploadBtnMult, uploadBtnText, cardCount,
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
     fav1Mult, fav2Mult, fav3Mult,
-    steamApiKey, steamId, platformHighlightColor: platformDefaultColor,
+    steamApiKey, steamId, psnNpsso, platformHighlightColor: platformDefaultColor,
     platformColors, statusColors, activityColors, ratingColors,
   });
 
@@ -1445,6 +1579,54 @@ export default function App() {
     } catch { setToast({ msg: "Failed to sync playtime", ok: false }); }
   }, []);
 
+  // PSN library sync
+  const syncPsn = useCallback(async () => {
+    setPsnSyncing(true);
+    setPsnError(null);
+    try {
+      const data = await apiFetch("/psn/library");
+      setPsnLibrary(data);
+    } catch (e) {
+      const msg = e.message.includes("400") ? "Check your NPSSO token — it may have expired." : "Failed to fetch PSN library.";
+      setPsnError(msg);
+    } finally { setPsnSyncing(false); }
+  }, []);
+
+  const importPsnGames = useCallback(async (games) => {
+    for (const g of games) {
+      const gameData = {
+        id:               g.game_id,
+        name:             g.name,
+        background_image: g.image_url || null,
+        genres:           [],
+        rating:           0,
+        released:         null,
+        slug:             `psn-${g.title_id}`,
+        platforms:        [{ platform: { slug: "playstation", name: "PlayStation" } }],
+      };
+      const entry = {
+        game: gameData, status: g.status, userRating: g.rating ?? null, favourite: false,
+        playtimeMinutes: g.play_duration_minutes > 0 ? g.play_duration_minutes : null,
+        replayCount: 0, tags: [],
+      };
+      setMyList(p => ({ ...p, [g.game_id]: entry }));
+      await apiFetch(`/list/${g.game_id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+    }
+  }, []);
+
+  const syncAllPsnPlaytime = useCallback(async () => {
+    try {
+      const result = await apiFetch("/psn/sync-playtime-all", { method: "POST" });
+      setToast({ msg: `Updated playtime for ${result.updated} PSN game${result.updated !== 1 ? "s" : ""}`, ok: true });
+      const data = await apiFetch("/list");
+      setMyList(data);
+    } catch { setToast({ msg: "Failed to sync PSN playtime", ok: false }); }
+  }, []);
+
   // Derived views
   const allEntries = Object.values(myList);
   const favEntries = allEntries.filter(e => e.favourite);
@@ -1588,6 +1770,7 @@ export default function App() {
   const updateFav3Mult   = markDirty(setFav3Mult);
   const updateSteamKey          = markDirty(setSteamApiKey);
   const updateSteamId           = markDirty(setSteamId);
+  const updatePsnNpsso          = markDirty(setPsnNpsso);
   const updatePlatformDefault   = markDirty(setPlatformDefaultColor);
   const setPlatformColorDirty   = (slug, color) => { setPlatformColors(p => ({ ...p, [slug]: color })); setSettingsDirty(true); };
   const setStatusColorDirty     = (id, field, color) => { setStatusColors(p => ({ ...p, [id]: { ...p[id], [field]: color } })); setSettingsDirty(true); };
@@ -2360,6 +2543,53 @@ export default function App() {
 
               </div>
             </div>
+
+            {/* ── PSN Integration ── */}
+            <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
+              <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>PSN Integration</div>
+
+              <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap" }}>
+
+                {/* PSN Credentials */}
+                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>PSN Account</div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
+                    Log into your PlayStation account, then visit <span style={{ color: "#0070cc" }}>ca.account.sony.com/api/v1/ssocookie</span> and paste the <strong style={{ color: "#888" }}>npsso</strong> value. Token is valid for ~60 days. Playtime only available for PS5 games.
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>NPSSO Token</div>
+                    <input type="password" value={psnNpsso} onChange={e => updatePsnNpsso(e.target.value)} placeholder="Paste your NPSSO token"
+                      style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "7px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }} />
+                  </div>
+                  {psnNpsso.trim() && (
+                    <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <button onClick={syncPsn} disabled={psnSyncing}
+                        style={{ width: "100%", padding: "9px 0", background: psnSyncing ? "#1a1a2e" : "#003087", border: "none", borderRadius: 8, color: psnSyncing ? "#444" : "#fff", fontWeight: 700, fontSize: 13, cursor: psnSyncing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                        {psnSyncing ? "Fetching library…" : "Sync PSN Library"}
+                      </button>
+                      <button onClick={syncAllPsnPlaytime}
+                        style={{ width: "100%", padding: "9px 0", background: "#0a1a2a", border: "1px solid #0070cc44", borderRadius: 8, color: "#0070cc", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                        Sync All Playtime
+                      </button>
+                      {psnError && <div style={{ fontSize: 12, color: "#ff8080", lineHeight: 1.5 }}>{psnError}</div>}
+                    </div>
+                  )}
+                </div>
+
+                {/* PSN library — shown inline once synced */}
+                {psnLibrary && (
+                  <PsnLibrarySection
+                    library={psnLibrary}
+                    myList={myList}
+                    onImport={importPsnGames}
+                    onSyncPlaytime={syncPlaytime}
+                    onRefresh={syncPsn}
+                  />
+                )}
+
+              </div>
+            </div>
+
           </>
         )}
 
