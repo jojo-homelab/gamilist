@@ -2401,9 +2401,9 @@ export default function App() {
               }
             </div>
 
-            {/* ── Steam Integration ── */}
+            {/* ── Integrations ── */}
             <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
-              <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>Steam Integration</div>
+              <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>Integrations</div>
 
               <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap" }}>
 
@@ -2540,15 +2540,6 @@ export default function App() {
                     onRefresh={syncSteam}
                   />
                 )}
-
-              </div>
-            </div>
-
-            {/* ── PSN Integration ── */}
-            <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
-              <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>PSN Integration</div>
-
-              <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap" }}>
 
                 {/* PSN Credentials */}
                 <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
