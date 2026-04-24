@@ -923,6 +923,73 @@ def psn_sync_all_playtime():
     return jsonify({"updated": updated, "total": len(raw_titles)})
 
 
+@app.route("/api/psn/sync-platforms-images", methods=["POST"])
+def psn_sync_platforms_images():
+    """
+    Re-sync platform and cover image for all PSN-imported entries.
+    Matches entries by game_id (derived from title_id via _psn_game_id).
+    Returns: { "updated": N, "total": M }
+    """
+    PSN_PLATFORM_MAP = {
+        "ps5_native_game": {"slug": "playstation5", "name": "PlayStation 5"},
+        "ps4_game":        {"slug": "playstation4", "name": "PlayStation 4"},
+        "ps3_game":        {"slug": "playstation3", "name": "PlayStation 3"},
+        "ps2_game":        {"slug": "playstation2", "name": "PlayStation 2"},
+    }
+
+    try:
+        psnawp = _get_psn_client()
+        client = psnawp.me()
+        raw_titles = list(client.title_stats())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch PSN library: {e}"}), 400
+
+    updated = 0
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            for t in raw_titles:
+                title_id = str(t.title_id) if hasattr(t, "title_id") else None
+                if not title_id:
+                    continue
+                gid = _psn_game_id(title_id)
+                cur.execute("SELECT game_data FROM entries WHERE game_id = %s", (gid,))
+                row = cur.fetchone()
+                if not row:
+                    continue
+
+                category_str = str(t.category.value) if hasattr(t.category, "value") else str(t.category or "")
+                plat = PSN_PLATFORM_MAP.get(category_str)
+                if not plat:
+                    # Fallback: infer from category string
+                    if "ps5" in category_str:
+                        plat = {"slug": "playstation5", "name": "PlayStation 5"}
+                    elif "ps4" in category_str:
+                        plat = {"slug": "playstation4", "name": "PlayStation 4"}
+                    elif "ps3" in category_str:
+                        plat = {"slug": "playstation3", "name": "PlayStation 3"}
+                    elif "ps2" in category_str:
+                        plat = {"slug": "playstation2", "name": "PlayStation 2"}
+                    else:
+                        plat = {"slug": "playstation", "name": "PlayStation"}
+
+                image_url = str(t.image_url) if t.image_url else None
+                game_data = row["game_data"] if isinstance(row["game_data"], dict) else json.loads(row["game_data"])
+                game_data["platforms"] = [{"platform": {"slug": plat["slug"], "name": plat["name"]}}]
+                if image_url:
+                    game_data["background_image"] = image_url
+
+                cur.execute(
+                    "UPDATE entries SET game_data = %s, updated_at = NOW() WHERE game_id = %s",
+                    (json.dumps(game_data), gid),
+                )
+                updated += cur.rowcount
+
+    return jsonify({"updated": updated, "total": len(raw_titles)})
+
+
+
 # ---------------------------------------------------------------------------
 # Extra image routes
 # ---------------------------------------------------------------------------

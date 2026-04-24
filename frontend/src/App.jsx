@@ -1592,8 +1592,17 @@ export default function App() {
     } finally { setPsnSyncing(false); }
   }, []);
 
+  const psnPlatformInfo = (category) => {
+    if (category.includes("ps5")) return { slug: "playstation5", name: "PlayStation 5" };
+    if (category.includes("ps4")) return { slug: "playstation4", name: "PlayStation 4" };
+    if (category.includes("ps3")) return { slug: "playstation3", name: "PlayStation 3" };
+    if (category.includes("ps2")) return { slug: "playstation2", name: "PlayStation 2" };
+    return { slug: "playstation", name: "PlayStation" };
+  };
+
   const importPsnGames = useCallback(async (games) => {
     for (const g of games) {
+      const plat = psnPlatformInfo(g.platform || "");
       const gameData = {
         id:               g.game_id,
         name:             g.name,
@@ -1602,7 +1611,7 @@ export default function App() {
         rating:           0,
         released:         null,
         slug:             `psn-${g.title_id}`,
-        platforms:        [{ platform: { slug: "playstation", name: "PlayStation" } }],
+        platforms:        [{ platform: { slug: plat.slug, name: plat.name } }],
       };
       const entry = {
         game: gameData, status: g.status, userRating: g.rating ?? null, favourite: false,
@@ -1626,6 +1635,16 @@ export default function App() {
       setMyList(data);
     } catch { setToast({ msg: "Failed to sync PSN playtime", ok: false }); }
   }, []);
+
+  const syncPsnPlatformsImages = useCallback(async () => {
+    try {
+      const result = await apiFetch("/psn/sync-platforms-images", { method: "POST" });
+      setToast({ msg: `Updated platforms & images for ${result.updated} PSN game${result.updated !== 1 ? "s" : ""}`, ok: true });
+      const data = await apiFetch("/list");
+      setMyList(data);
+    } catch { setToast({ msg: "Failed to sync PSN platforms & images", ok: false }); }
+  }, []);
+
 
   // Derived views
   const allEntries = Object.values(myList);
@@ -2570,6 +2589,10 @@ export default function App() {
                       <button onClick={syncAllPsnPlaytime}
                         style={{ width: "100%", padding: "9px 0", background: "#0a1a2a", border: "1px solid #0070cc44", borderRadius: 8, color: "#0070cc", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
                         Sync All Playtime
+                      </button>
+                      <button onClick={syncPsnPlatformsImages}
+                        style={{ width: "100%", padding: "9px 0", background: "#0a1a2a", border: "1px solid #0070cc44", borderRadius: 8, color: "#0070cc", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                        Sync Platforms &amp; Images
                       </button>
                       {psnError && <div style={{ fontSize: 12, color: "#ff8080", lineHeight: 1.5 }}>{psnError}</div>}
                     </div>
