@@ -886,6 +886,13 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
                   <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#555" }}>#{idx + 1}</div>
                 </div>
               ))}
+              {/* RAWG short_screenshots — shown when no extra images have been synced yet */}
+              {extraImageIds.length === 0 && (game.short_screenshots || []).map((ss, idx) => (
+                <div key={ss.id ?? idx} style={{ position: "relative" }}>
+                  <img src={rawgImgSrc(ss.image)} alt="" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #1a1a30", display: "block", opacity: 0.7 }} onError={e => e.target.style.display = "none"} />
+                  <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#555" }}>rawg</div>
+                </div>
+              ))}
             </div>
 
             {/* Upload + Steam sync */}
@@ -1258,6 +1265,9 @@ export default function App() {
   const [resyncingSteamImages, setResyncingSteamImages]   = useState(false);
   const [pruning, setPruning]                             = useState(false);
   const [pruneThreshold, setPruneThreshold]               = useState(5);
+  const [detectingDuplicates, setDetectingDuplicates]     = useState(false);
+  const [duplicateGroups, setDuplicateGroups]             = useState(null);
+  const [duplicateKeep, setDuplicateKeep]                 = useState({});  // game_id → bool (true=keep)
   const [platformFilterSlugs, setPlatformFilterSlugs]     = useState([]);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [saving, setSaving]               = useState(false);
@@ -2554,6 +2564,71 @@ export default function App() {
                         style={{ width: "100%", padding: "9px 0", background: pruning ? "#1a1a2e" : "#1a0a0a", border: "1px solid #e05a5a44", borderRadius: 8, color: pruning ? "#444" : "#e05a5a", fontWeight: 700, fontSize: 13, cursor: pruning ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                         {pruning ? "Pruning…" : "Prune Extra Images"}
                       </button>
+                    </div>
+
+                    {/* Duplicate detection */}
+                    <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 8, paddingTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ fontSize: 11, color: "#444", lineHeight: 1.6 }}>
+                        Find entries with similar names (75% match). Check the ones to <strong style={{ color: "#e0e0f0" }}>keep</strong>, uncheck to delete.
+                      </div>
+                      <button onClick={async () => {
+                        setDetectingDuplicates(true);
+                        setDuplicateGroups(null);
+                        try {
+                          const r = await apiFetch("/admin/find-duplicates");
+                          setDuplicateGroups(r.groups);
+                          // Default: keep first in each group, mark rest for deletion
+                          const init = {};
+                          for (const g of r.groups) g.forEach((e, i) => { init[e.game_id] = i === 0; });
+                          setDuplicateKeep(init);
+                        } catch { setToast({ msg: "Failed to detect duplicates", ok: false }); }
+                        finally { setDetectingDuplicates(false); }
+                      }} disabled={detectingDuplicates}
+                        style={{ width: "100%", padding: "9px 0", background: detectingDuplicates ? "#1a1a2e" : "#1a0a1a", border: "1px solid #e05a5a44", borderRadius: 8, color: detectingDuplicates ? "#444" : "#e05a5a", fontWeight: 700, fontSize: 13, cursor: detectingDuplicates ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                        {detectingDuplicates ? "Scanning…" : "Detect Duplicates"}
+                      </button>
+
+                      {duplicateGroups !== null && (
+                        <div>
+                          {duplicateGroups.length === 0
+                            ? <div style={{ fontSize: 12, color: "#444", padding: "8px 0" }}>No duplicates found.</div>
+                            : <>
+                                <div style={{ maxHeight: 320, overflowY: "auto", border: "1px solid #1a1a2e", borderRadius: 8, marginBottom: 8 }}>
+                                  {duplicateGroups.map((group, gi) => (
+                                    <div key={gi} style={{ borderBottom: "1px solid #0e0e1e", padding: "10px 12px" }}>
+                                      <div style={{ fontSize: 10, color: "#555", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Group {gi + 1}</div>
+                                      {group.map(e => (
+                                        <label key={e.game_id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 4 }}>
+                                          <input type="checkbox" checked={duplicateKeep[e.game_id] ?? true}
+                                            onChange={ev => setDuplicateKeep(p => ({ ...p, [e.game_id]: ev.target.checked }))} />
+                                          {e.image && <img src={rawgImgSrc(e.image)} alt="" style={{ width: 24, height: 32, objectFit: "cover", borderRadius: 3, flexShrink: 0 }} onError={ev => ev.target.style.display = "none"} />}
+                                          <span style={{ fontSize: 12, color: duplicateKeep[e.game_id] ?? true ? "#e0e0f0" : "#555", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: duplicateKeep[e.game_id] ?? true ? "none" : "line-through" }}>{e.name}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  ))}
+                                </div>
+                                {(() => {
+                                  const toDelete = Object.entries(duplicateKeep).filter(([,keep]) => !keep).map(([id]) => parseInt(id));
+                                  return toDelete.length > 0 && (
+                                    <button onClick={async () => {
+                                      try {
+                                        const r = await apiFetch("/admin/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ game_ids: toDelete }) });
+                                        setToast({ msg: `Deleted ${r.deleted} duplicate${r.deleted !== 1 ? "s" : ""}`, ok: true });
+                                        const data = await apiFetch("/list");
+                                        setMyList(data);
+                                        setDuplicateGroups(null);
+                                      } catch { setToast({ msg: "Failed to delete duplicates", ok: false }); }
+                                    }}
+                                      style={{ width: "100%", padding: "9px 0", background: "#2a0a0a", border: "1px solid #e05a5a99", borderRadius: 8, color: "#e05a5a", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                                      Delete {toDelete.length} unchecked entr{toDelete.length !== 1 ? "ies" : "y"}
+                                    </button>
+                                  );
+                                })()}
+                              </>
+                          }
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

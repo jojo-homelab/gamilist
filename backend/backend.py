@@ -757,7 +757,9 @@ def steam_library():
             local = {r["name"].lower(): r["game_id"] for r in cur.fetchall()}
 
     for g in games:
-        g["gamilist_id"] = local.get(g["name"].lower())
+        name_lower = g["name"].lower()
+        # Exact match first, then fuzzy fallback at 75%
+        g["gamilist_id"] = local.get(name_lower) or _fuzzy_find(name_lower, local)
         # playtime_forever is in minutes from Steam API
         g["steam_playtime_minutes"] = g.get("playtime_forever", 0)
 
@@ -869,8 +871,11 @@ def psn_library():
         play_minutes = int(play_duration.total_seconds() // 60) if play_duration else 0
 
         gid = _psn_game_id(title_id)
-        # Check by generated ID first, then by name
-        gamilist_id = gid if gid in local_ids else local_by_name.get(name.lower())
+        # Check by generated ID first, then exact name, then fuzzy name at 75%
+        if gid in local_ids:
+            gamilist_id = gid
+        else:
+            gamilist_id = local_by_name.get(name.lower()) or _fuzzy_find(name, local_by_name)
 
         games.append({
             "title_id":             title_id,
@@ -1334,6 +1339,70 @@ def prune_extra_images():
 # Admin / maintenance routes
 # ---------------------------------------------------------------------------
 
+@app.route("/api/admin/find-duplicates", methods=["GET"])
+def find_duplicates():
+    """
+    Find entries with similar names using normalized word-Jaccard similarity.
+    Uses strict duplicate scoring (_duplicate_score) at 0.85 threshold to avoid
+    false positives from sequels (Portal vs Portal 2, Destiny vs Destiny 2).
+    Returns: { "groups": [[{game_id, name, image, status},...], ...] }
+    """
+    threshold = float(request.args.get("threshold", 0.85))
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT game_id,
+                       game_data->>'name'             AS name,
+                       game_data->>'background_image' AS image,
+                       status
+                FROM entries
+                ORDER BY game_id
+            """)
+            entries = cur.fetchall()
+
+    groups = []
+    used = set()
+    for i, a in enumerate(entries):
+        if a["game_id"] in used:
+            continue
+        group = [a]
+        for b in entries[i + 1:]:
+            if b["game_id"] in used:
+                continue
+            if _duplicate_score(a["name"] or "", b["name"] or "") >= threshold:
+                group.append(b)
+                used.add(b["game_id"])
+        if len(group) > 1:
+            used.add(a["game_id"])
+            groups.append([
+                {"game_id": g["game_id"], "name": g["name"], "image": g["image"], "status": g["status"]}
+                for g in group
+            ])
+
+    return jsonify({"groups": groups, "total": sum(len(g) for g in groups)})
+
+
+@app.route("/api/admin/bulk-delete", methods=["POST"])
+def bulk_delete():
+    """
+    Delete multiple entries by game_id.
+    Body: { "game_ids": [int, ...] }
+    Also deletes associated entry_images and cover_image rows.
+    Returns: { "deleted": N }
+    """
+    game_ids = request.get_json().get("game_ids", [])
+    if not game_ids:
+        return jsonify({"deleted": 0})
+    deleted = 0
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            for gid in game_ids:
+                cur.execute("DELETE FROM entry_images WHERE game_id = %s", (gid,))
+                cur.execute("DELETE FROM entries WHERE game_id = %s", (gid,))
+                deleted += cur.rowcount
+    return jsonify({"deleted": deleted})
+
+
 @app.route("/api/admin/resync-platforms", methods=["POST"])
 def resync_platforms():
     """
@@ -1396,6 +1465,81 @@ def _name_similarity(a, b):
     a = a.lower().strip()
     b = b.lower().strip()
     return SequenceMatcher(None, a, b).ratio()
+
+
+import re as _re
+
+def _fuzzy_name_match(a: str, b: str) -> float:
+    """
+    Combined similarity score: max(word Jaccard, SequenceMatcher ratio).
+    Word Jaccard handles "Spider-Man: Miles Morales" vs "Marvel's Spider-Man: Miles Morales".
+    SequenceMatcher handles minor spelling differences.
+    Returns 0.0–1.0.
+    """
+    a = a.lower().strip()
+    b = b.lower().strip()
+    if a == b:
+        return 1.0
+    words_a = set(a.split())
+    words_b = set(b.split())
+    union = words_a | words_b
+    jaccard = len(words_a & words_b) / len(union) if union else 0.0
+    seq = SequenceMatcher(None, a, b).ratio()
+    return max(jaccard, seq)
+
+
+def _normalize_game_name(name: str) -> str:
+    """
+    Normalize a game name for duplicate detection:
+    - lowercase
+    - strip all non-alphanumeric characters (removes colons, dashes, apostrophes, etc.)
+    - remove common noise words: the, a, an, of, in
+    - collapse whitespace
+    This allows "Spider-Man: Miles Morales" == "Spider Man Miles Morales"
+    while keeping "Portal" != "Portal 2" (different word count).
+    """
+    s = name.lower()
+    s = _re.sub(r"[^a-z0-9\s]", " ", s)
+    noise = {"the", "a", "an", "of", "in"}
+    words = [w for w in s.split() if w and w not in noise]
+    return " ".join(words)
+
+
+def _duplicate_score(a: str, b: str) -> float:
+    """
+    Stricter similarity for duplicate detection.
+    Uses word Jaccard on normalized names to avoid matching sequels
+    (Portal vs Portal 2 → Jaccard 0.5) while catching true duplicates
+    (Spider-Man Miles Morales vs Spider-Man: Miles Morales → Jaccard ~1.0).
+    Returns 0.0–1.0.
+    """
+    na = _normalize_game_name(a)
+    nb = _normalize_game_name(b)
+    if na == nb:
+        return 1.0
+    words_a = set(na.split())
+    words_b = set(nb.split())
+    union = words_a | words_b
+    if not union:
+        return 0.0
+    return len(words_a & words_b) / len(union)
+
+
+def _fuzzy_find(name: str, local_names: dict, threshold: float = 0.75):
+    """
+    Find the best fuzzy match for `name` in `local_names` ({name_lower: game_id}).
+    Returns game_id of the best match if score >= threshold, else None.
+    Uses _fuzzy_name_match (liberal, for import dedup).
+    """
+    best_id = None
+    best_score = 0.0
+    name_lower = name.lower().strip()
+    for candidate, gid in local_names.items():
+        score = _fuzzy_name_match(name_lower, candidate)
+        if score >= threshold and score > best_score:
+            best_score = score
+            best_id = gid
+    return best_id
 
 
 def _best_rawg_match(name, candidates, threshold=0.90):
