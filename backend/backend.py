@@ -1488,20 +1488,34 @@ def _fuzzy_name_match(a: str, b: str) -> float:
     return max(jaccard, seq)
 
 
+_ROMAN_MAP = {
+    "i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5",
+    "vi": "6", "vii": "7", "viii": "8", "ix": "9", "x": "10",
+    "xi": "11", "xii": "12", "xiii": "13", "xiv": "14", "xv": "15",
+    "xvi": "16", "xvii": "17", "xviii": "18", "xix": "19", "xx": "20",
+}
+
+
 def _normalize_game_name(name: str) -> str:
     """
     Normalize a game name for duplicate detection:
+    - strip trailing parentheticals: "(PlayStation®5)", "(PS4)", "(2023)" etc.
     - lowercase
     - strip all non-alphanumeric characters (removes colons, dashes, apostrophes, etc.)
+    - convert standalone Roman numerals to Arabic (V→5, VII→7, etc.)
     - remove common noise words: the, a, an, of, in
     - collapse whitespace
-    This allows "Spider-Man: Miles Morales" == "Spider Man Miles Morales"
+    This allows "Grand Theft Auto V (PlayStation®5)" == "Grand Theft Auto V" == "Grand Theft Auto 5",
+    "Final Fantasy VII" == "Final Fantasy 7", etc.,
     while keeping "Portal" != "Portal 2" (different word count).
     """
-    s = name.lower()
+    s = name.strip()
+    # Remove trailing parenthetical suffixes added by PSN/Steam: "(PlayStation®5)", "(PS4)", "(2023)"
+    s = _re.sub(r"\s*\([^)]*\)\s*$", "", s)
+    s = s.lower()
     s = _re.sub(r"[^a-z0-9\s]", " ", s)
     noise = {"the", "a", "an", "of", "in"}
-    words = [w for w in s.split() if w and w not in noise]
+    words = [_ROMAN_MAP.get(w, w) for w in s.split() if w and w not in noise]
     return " ".join(words)
 
 
