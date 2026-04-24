@@ -154,6 +154,7 @@ def init_db():
             cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS img_pos_x REAL NOT NULL DEFAULT 50")
             cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS img_pos_y REAL NOT NULL DEFAULT 50")
             cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS img_scale REAL NOT NULL DEFAULT 1.0")
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS custom_name TEXT")
 
 
 init_db()
@@ -186,6 +187,7 @@ def row_to_entry(row):
         "imgPosX":          row.get("img_pos_x") if row.get("img_pos_x") is not None else 50,
         "imgPosY":          row.get("img_pos_y") if row.get("img_pos_y") is not None else 50,
         "imgScale":         row.get("img_scale") if row.get("img_scale") is not None else 1.0,
+        "customName":       row.get("custom_name") or None,
     }
 
 
@@ -549,6 +551,7 @@ def upsert_entry(game_id):
     img_pos_x          = body.get("imgPosX", 50)
     img_pos_y          = body.get("imgPosY", 50)
     img_scale          = body.get("imgScale", 1.0)
+    custom_name        = body.get("customName") or None
 
     today = datetime.now(timezone.utc).date().isoformat()
 
@@ -572,8 +575,8 @@ def upsert_entry(game_id):
                 INSERT INTO entries (game_id, game_data, status, user_rating, favourite,
                                      playtime_minutes, replay_count, tags, activity_log,
                                      platforms_played, custom_images_only,
-                                     img_pos_x, img_pos_y, img_scale, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s, %s, NOW())
+                                     img_pos_x, img_pos_y, img_scale, custom_name, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s, NOW())
                 ON CONFLICT (game_id) DO UPDATE SET
                     game_data          = EXCLUDED.game_data,
                     status             = EXCLUDED.status,
@@ -588,12 +591,13 @@ def upsert_entry(game_id):
                     img_pos_x          = EXCLUDED.img_pos_x,
                     img_pos_y          = EXCLUDED.img_pos_y,
                     img_scale          = EXCLUDED.img_scale,
+                    custom_name        = EXCLUDED.custom_name,
                     updated_at         = NOW()
                 RETURNING *
             """, (game_id, json.dumps(game_data), status, user_rating, favourite,
                   playtime_minutes, replay_count, json.dumps(tags), json.dumps(log),
                   json.dumps(platforms_played), custom_images_only,
-                  img_pos_x, img_pos_y, img_scale))
+                  img_pos_x, img_pos_y, img_scale, custom_name))
             row = cur.fetchone()
             # Also fetch extra image IDs for the returned entry
             cur.execute("SELECT json_agg(id ORDER BY seq) AS extra_image_ids FROM entry_images WHERE game_id = %s", (game_id,))

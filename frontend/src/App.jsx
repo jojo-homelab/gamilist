@@ -243,7 +243,7 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
           ? <img src={displayImg} alt={game.name} onError={() => setImgErr(true)} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${listEntry?.imgPosX ?? 50}% ${listEntry?.imgPosY ?? 50}%`, display: "block", transition: "opacity 0.2s" }} />
           : <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <span style={{ fontSize: 36 }}>🎮</span>
-              <span style={{ fontSize: 11, color: "#333", textAlign: "center", padding: "0 12px", lineHeight: 1.4 }}>{game.name}</span>
+              <span style={{ fontSize: 11, color: "#333", textAlign: "center", padding: "0 12px", lineHeight: 1.4 }}>{listEntry?.customName || game.name}</span>
             </div>}
         {/* Screenshot navigation dots */}
         {allImages.length > 1 && hover && showGalleryNav && (
@@ -283,7 +283,7 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
 
       {/* Card body */}
       <div style={{ padding: "12px 14px 14px", display: "flex", flexDirection: "column", flex: 1 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#eeeeff", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={game.name}>{game.name}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#eeeeff", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={listEntry?.customName || game.name}>{listEntry?.customName || game.name}</div>
 
         {/* Platform badges */}
         {(() => {
@@ -535,6 +535,7 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
   const [uploadingImg, setUploadingImg]         = useState(false);
   const [imgPosX, setImgPosX]                   = useState(entry?.imgPosX ?? 50);
   const [imgPosY, setImgPosY]                   = useState(entry?.imgPosY ?? 50);
+  const [customName, setCustomName]               = useState(entry?.customName || "");
   const [confirmDelete, setConfirmDelete]        = useState(false);
   const [syncingSteam, setSyncingSteam]          = useState(false);
   const [steamSynced, setSteamSynced]            = useState(false);
@@ -663,6 +664,7 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
       customImagesOnly,
       imgPosX,
       imgPosY,
+      customName: customName.trim() || null,
     });
     onClose();
   };
@@ -674,7 +676,25 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
 
         {/* Header */}
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#444", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 12, paddingRight: 24 }}>{game.name}</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 12, paddingRight: 24 }}>{customName.trim() || game.name}</div>
+
+        {/* Name override */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Name</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              value={customName}
+              onChange={e => setCustomName(e.target.value)}
+              placeholder={game.name}
+              style={{ flex: 1, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "5px 9px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }}
+            />
+            {customName && (
+              <button onClick={() => setCustomName("")}
+                style={{ padding: "5px 10px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#888", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                title="Reset to original name">×</button>
+            )}
+          </div>
+        </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
@@ -1424,6 +1444,7 @@ export default function App() {
           customImagesOnly: entry.customImagesOnly ?? false,
           imgPosX:          entry.imgPosX ?? 50,
           imgPosY:          entry.imgPosY ?? 50,
+          customName:       entry.customName ?? null,
         }),
       });
       setMyList(p => ({ ...p, [gameId]: { ...p[gameId], ...updated } }));
