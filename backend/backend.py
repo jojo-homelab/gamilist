@@ -923,70 +923,57 @@ def psn_sync_all_playtime():
     return jsonify({"updated": updated, "total": len(raw_titles)})
 
 
-@app.route("/api/psn/sync-platforms-images", methods=["POST"])
-def psn_sync_platforms_images():
+@app.route("/api/psn/sync-platforms", methods=["POST"])
+def psn_sync_platforms():
     """
-    Re-sync platform and cover image for all PSN-imported entries.
-    Matches entries by game_id (derived from title_id via _psn_game_id).
+    Fix the platform for all PSN-imported entries by reading the title_id prefix
+    stored in each entry's slug (psn-{title_id}). No PSN API call needed.
+
+    Title ID prefixes:
+      PPSA → PlayStation 5
+      CUSA → PlayStation 4
+      BCAS/BCES/BCJS/BCUS/NPAS/NPES/NPJS/NPUS → PlayStation 3
+      PCSB/PCSA/PCSC → PS Vita
+      UCAS/UCES/UCJS/UCUS → PSP
+
     Returns: { "updated": N, "total": M }
     """
-    PSN_PLATFORM_MAP = {
-        "ps5_native_game": {"slug": "playstation5", "name": "PlayStation 5"},
-        "ps4_game":        {"slug": "playstation4", "name": "PlayStation 4"},
-        "ps3_game":        {"slug": "playstation3", "name": "PlayStation 3"},
-        "ps2_game":        {"slug": "playstation2", "name": "PlayStation 2"},
-    }
-
-    try:
-        psnawp = _get_psn_client()
-        client = psnawp.me()
-        raw_titles = list(client.title_stats())
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": f"Failed to fetch PSN library: {e}"}), 400
+    def platform_from_title_id(title_id: str):
+        prefix = title_id[:4].upper()
+        if prefix == "PPSA":
+            return {"slug": "playstation5", "name": "PlayStation 5"}
+        if prefix == "CUSA":
+            return {"slug": "playstation4", "name": "PlayStation 4"}
+        if prefix in ("BCAS", "BCES", "BCJS", "BCUS", "NPAS", "NPES", "NPJS", "NPUS"):
+            return {"slug": "playstation3", "name": "PlayStation 3"}
+        if prefix in ("PCSB", "PCSA", "PCSC"):
+            return {"slug": "ps-vita", "name": "PS Vita"}
+        if prefix in ("UCAS", "UCES", "UCJS", "UCUS"):
+            return {"slug": "psp", "name": "PSP"}
+        return {"slug": "playstation", "name": "PlayStation"}
 
     updated = 0
+    total = 0
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            for t in raw_titles:
-                title_id = str(t.title_id) if hasattr(t, "title_id") else None
+            cur.execute("SELECT game_id, game_data FROM entries WHERE game_data->>'slug' LIKE 'psn-%'")
+            rows = cur.fetchall()
+            total = len(rows)
+            for row in rows:
+                game_data = row["game_data"] if isinstance(row["game_data"], dict) else json.loads(row["game_data"])
+                slug = game_data.get("slug", "")
+                title_id = slug[4:] if slug.startswith("psn-") else ""
                 if not title_id:
                     continue
-                gid = _psn_game_id(title_id)
-                cur.execute("SELECT game_data FROM entries WHERE game_id = %s", (gid,))
-                row = cur.fetchone()
-                if not row:
-                    continue
-
-                category_str = str(t.category.value) if hasattr(t.category, "value") else str(t.category or "")
-                plat = PSN_PLATFORM_MAP.get(category_str)
-                if not plat:
-                    # Fallback: infer from category string
-                    if "ps5" in category_str:
-                        plat = {"slug": "playstation5", "name": "PlayStation 5"}
-                    elif "ps4" in category_str:
-                        plat = {"slug": "playstation4", "name": "PlayStation 4"}
-                    elif "ps3" in category_str:
-                        plat = {"slug": "playstation3", "name": "PlayStation 3"}
-                    elif "ps2" in category_str:
-                        plat = {"slug": "playstation2", "name": "PlayStation 2"}
-                    else:
-                        plat = {"slug": "playstation", "name": "PlayStation"}
-
-                image_url = str(t.image_url) if t.image_url else None
-                game_data = row["game_data"] if isinstance(row["game_data"], dict) else json.loads(row["game_data"])
+                plat = platform_from_title_id(title_id)
                 game_data["platforms"] = [{"platform": {"slug": plat["slug"], "name": plat["name"]}}]
-                if image_url:
-                    game_data["background_image"] = image_url
-
                 cur.execute(
-                    "UPDATE entries SET game_data = %s, updated_at = NOW() WHERE game_id = %s",
-                    (json.dumps(game_data), gid),
+                    "UPDATE entries SET game_data = %s::jsonb, updated_at = NOW() WHERE game_id = %s",
+                    (json.dumps(game_data), row["game_id"]),
                 )
                 updated += cur.rowcount
 
-    return jsonify({"updated": updated, "total": len(raw_titles)})
+    return jsonify({"updated": updated, "total": total})
 
 
 

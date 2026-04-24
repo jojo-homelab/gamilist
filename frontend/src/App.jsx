@@ -1636,13 +1636,13 @@ export default function App() {
     } catch { setToast({ msg: "Failed to sync PSN playtime", ok: false }); }
   }, []);
 
-  const syncPsnPlatformsImages = useCallback(async () => {
+  const syncPsnPlatforms = useCallback(async () => {
     try {
-      const result = await apiFetch("/psn/sync-platforms-images", { method: "POST" });
-      setToast({ msg: `Updated platforms & images for ${result.updated} PSN game${result.updated !== 1 ? "s" : ""}`, ok: true });
+      const result = await apiFetch("/psn/sync-platforms", { method: "POST" });
+      setToast({ msg: `Updated platform for ${result.updated} PSN game${result.updated !== 1 ? "s" : ""}`, ok: true });
       const data = await apiFetch("/list");
       setMyList(data);
-    } catch { setToast({ msg: "Failed to sync PSN platforms & images", ok: false }); }
+    } catch { setToast({ msg: "Failed to sync PSN platforms", ok: false }); }
   }, []);
 
 
@@ -2590,9 +2590,9 @@ export default function App() {
                         style={{ width: "100%", padding: "9px 0", background: "#0a1a2a", border: "1px solid #0070cc44", borderRadius: 8, color: "#0070cc", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
                         Sync All Playtime
                       </button>
-                      <button onClick={syncPsnPlatformsImages}
+                      <button onClick={syncPsnPlatforms}
                         style={{ width: "100%", padding: "9px 0", background: "#0a1a2a", border: "1px solid #0070cc44", borderRadius: 8, color: "#0070cc", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-                        Sync Platforms &amp; Images
+                        Sync Platforms
                       </button>
                       {psnError && <div style={{ fontSize: 12, color: "#ff8080", lineHeight: 1.5 }}>{psnError}</div>}
                     </div>
