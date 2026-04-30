@@ -24,4 +24,4 @@ postgres:
 
 ingress:
   host: gamilist.local
-  maxBodySize: 20m  # max size for cover image uploads
+  maxBodySize: "0"  # unlimited — needed for backup file uploads

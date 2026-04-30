@@ -140,6 +140,20 @@ def init_db():
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav2_mult               REAL    NOT NULL DEFAULT 2.0")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav3_mult               REAL    NOT NULL DEFAULT 2.0")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS psn_npsso              TEXT    NOT NULL DEFAULT ''")
+            # Text-size, layout, and UI settings added later
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS show_gallery_nav    BOOLEAN NOT NULL DEFAULT TRUE")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav_card_custom     BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav_card_w_mult     REAL    NOT NULL DEFAULT 1.5")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav_card_h_mult     REAL    NOT NULL DEFAULT 1.5")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav_card_count      INTEGER NOT NULL DEFAULT 0")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav_alt_card_mode   BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS modal_width_mult    REAL    NOT NULL DEFAULT 1.0")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS list_stats_size     INTEGER NOT NULL DEFAULT 11")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav_stats_size      INTEGER NOT NULL DEFAULT 11")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS list_name_offset    INTEGER NOT NULL DEFAULT 0")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS fav_name_offset     INTEGER NOT NULL DEFAULT 0")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS auto_fit_title      BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS rating_colors       JSONB   NOT NULL DEFAULT '{}'")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS entry_images (
                     id         SERIAL PRIMARY KEY,
@@ -155,6 +169,9 @@ def init_db():
             cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS img_pos_y REAL NOT NULL DEFAULT 50")
             cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS img_scale REAL NOT NULL DEFAULT 1.0")
             cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS custom_name TEXT")
+            cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS img_fit TEXT NOT NULL DEFAULT 'cover'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS rawg_calls_month TEXT    NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS rawg_calls_count INTEGER NOT NULL DEFAULT 0")
 
 
 init_db()
@@ -187,6 +204,7 @@ def row_to_entry(row):
         "imgPosX":          row.get("img_pos_x") if row.get("img_pos_x") is not None else 50,
         "imgPosY":          row.get("img_pos_y") if row.get("img_pos_y") is not None else 50,
         "imgScale":         row.get("img_scale") if row.get("img_scale") is not None else 1.0,
+        "imgFit":           row.get("img_fit") or "cover",
         "customName":       row.get("custom_name") or None,
     }
 
@@ -239,6 +257,21 @@ def get_settings():
             "fav2Mult":                row.get("fav2_mult") if row.get("fav2_mult") is not None else 2.0,
             "fav3Mult":                row.get("fav3_mult") if row.get("fav3_mult") is not None else 2.0,
             "psnNpsso":                row.get("psn_npsso") or "",
+            "showGalleryNav":          row.get("show_gallery_nav") if row.get("show_gallery_nav") is not None else True,
+            "favCardCustom":           row.get("fav_card_custom") or False,
+            "favCardWMult":            row.get("fav_card_w_mult") if row.get("fav_card_w_mult") is not None else 1.5,
+            "favCardHMult":            row.get("fav_card_h_mult") if row.get("fav_card_h_mult") is not None else 1.5,
+            "favCardCount":            row.get("fav_card_count") if row.get("fav_card_count") is not None else 0,
+            "favAltCardMode":          row.get("fav_alt_card_mode") or False,
+            "modalWidthMult":          row.get("modal_width_mult") if row.get("modal_width_mult") is not None else 1.0,
+            "listStatsSize":           row.get("list_stats_size") if row.get("list_stats_size") is not None else 11,
+            "favStatsSize":            row.get("fav_stats_size") if row.get("fav_stats_size") is not None else 11,
+            "listNameOffset":          row.get("list_name_offset") if row.get("list_name_offset") is not None else 0,
+            "favNameOffset":           row.get("fav_name_offset") if row.get("fav_name_offset") is not None else 0,
+            "autoFitTitle":            row.get("auto_fit_title") or False,
+            "ratingColors":            row.get("rating_colors") or {},
+            "rawgCallsMonth":          row.get("rawg_calls_month") or "",
+            "rawgCallsCount":          row.get("rawg_calls_count") or 0,
         })
     # No row yet — return defaults so the frontend has something to work with
     return jsonify({
@@ -251,6 +284,10 @@ def get_settings():
         "cardH2Mult": 1.0, "altCardMode": False,
         "fav1Mult": 2.0, "fav2Mult": 2.0, "fav3Mult": 2.0,
         "psnNpsso": "",
+        "showGalleryNav": True, "favCardCustom": False, "favCardWMult": 1.5, "favCardHMult": 1.5,
+        "favCardCount": 0, "favAltCardMode": False, "modalWidthMult": 1.0,
+        "listStatsSize": 11, "favStatsSize": 11, "listNameOffset": 0, "favNameOffset": 0,
+        "autoFitTitle": False, "ratingColors": {}, "rawgCallsMonth": "", "rawgCallsCount": 0,
     })
 
 
@@ -296,10 +333,24 @@ def put_settings():
     fav2_mult                = body.get("fav2Mult")
     fav3_mult                = body.get("fav3Mult")
     psn_npsso                = body.get("psnNpsso")
+    show_gallery_nav         = body.get("showGalleryNav")
+    fav_card_custom          = body.get("favCardCustom")
+    fav_card_w_mult          = body.get("favCardWMult")
+    fav_card_h_mult          = body.get("favCardHMult")
+    fav_card_count           = body.get("favCardCount")
+    fav_alt_card_mode        = body.get("favAltCardMode")
+    modal_width_mult         = body.get("modalWidthMult")
+    list_stats_size          = body.get("listStatsSize")
+    fav_stats_size           = body.get("favStatsSize")
+    list_name_offset         = body.get("listNameOffset")
+    fav_name_offset          = body.get("favNameOffset")
+    auto_fit_title           = body.get("autoFitTitle")
+    rating_colors            = body.get("ratingColors")
     steam_mappings_json      = json.dumps(steam_mappings)      if steam_mappings is not None else None
     platform_colors_json     = json.dumps(platform_colors)     if platform_colors is not None else None
     status_colors_json       = json.dumps(status_colors)       if status_colors is not None else None
     activity_colors_json     = json.dumps(activity_colors)     if activity_colors is not None else None
+    rating_colors_json       = json.dumps(rating_colors)       if rating_colors is not None else None
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -309,7 +360,11 @@ def put_settings():
                     glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
                     steam_api_key, steam_id, steam_mappings, platform_highlight_color,
                     platform_colors, platform_icon_mode, status_colors, activity_colors,
-                    card_h2_mult, alt_card_mode, fav1_mult, fav2_mult, fav3_mult, psn_npsso
+                    card_h2_mult, alt_card_mode, fav1_mult, fav2_mult, fav3_mult, psn_npsso,
+                    show_gallery_nav, fav_card_custom, fav_card_w_mult, fav_card_h_mult,
+                    fav_card_count, fav_alt_card_mode, modal_width_mult,
+                    list_stats_size, fav_stats_size, list_name_offset, fav_name_offset,
+                    auto_fit_title, rating_colors
                 )
                 VALUES (1,
                     COALESCE(%s, 1.5), COALESCE(%s, 1.5), COALESCE(%s, 1.0),
@@ -326,7 +381,15 @@ def put_settings():
                     COALESCE(%s::jsonb, '{}'::jsonb),
                     COALESCE(%s, 1.0), COALESCE(%s, FALSE),
                     COALESCE(%s, 2.0), COALESCE(%s, 2.0), COALESCE(%s, 2.0),
-                    COALESCE(%s, ''))
+                    COALESCE(%s, ''),
+                    COALESCE(%s, TRUE), COALESCE(%s, FALSE),
+                    COALESCE(%s, 1.5),  COALESCE(%s, 1.5),
+                    COALESCE(%s, 0),    COALESCE(%s, FALSE),
+                    COALESCE(%s, 1.0),
+                    COALESCE(%s, 11),   COALESCE(%s, 11),
+                    COALESCE(%s, 0),    COALESCE(%s, 0),
+                    COALESCE(%s, FALSE),
+                    COALESCE(%s::jsonb, '{}'::jsonb))
                 ON CONFLICT (id) DO UPDATE SET
                     card_w_mult              = COALESCE(EXCLUDED.card_w_mult,              settings.card_w_mult),
                     card_h_mult              = COALESCE(EXCLUDED.card_h_mult,              settings.card_h_mult),
@@ -339,8 +402,8 @@ def put_settings():
                     glow2_color              = COALESCE(EXCLUDED.glow2_color,              settings.glow2_color),
                     glow3_enabled            = COALESCE(EXCLUDED.glow3_enabled,            settings.glow3_enabled),
                     glow3_color              = COALESCE(EXCLUDED.glow3_color,              settings.glow3_color),
-                    steam_api_key            = COALESCE(EXCLUDED.steam_api_key,            settings.steam_api_key),
-                    steam_id                 = COALESCE(EXCLUDED.steam_id,                 settings.steam_id),
+                    steam_api_key            = COALESCE(NULLIF(EXCLUDED.steam_api_key, ''), settings.steam_api_key),
+                    steam_id                 = COALESCE(NULLIF(EXCLUDED.steam_id, ''),     settings.steam_id),
                     steam_mappings           = COALESCE(EXCLUDED.steam_mappings,           settings.steam_mappings),
                     platform_highlight_color = COALESCE(EXCLUDED.platform_highlight_color, settings.platform_highlight_color),
                     platform_colors          = COALESCE(EXCLUDED.platform_colors,          settings.platform_colors),
@@ -352,13 +415,30 @@ def put_settings():
                     fav1_mult                = COALESCE(EXCLUDED.fav1_mult,                settings.fav1_mult),
                     fav2_mult                = COALESCE(EXCLUDED.fav2_mult,                settings.fav2_mult),
                     fav3_mult                = COALESCE(EXCLUDED.fav3_mult,                settings.fav3_mult),
-                    psn_npsso                = COALESCE(EXCLUDED.psn_npsso,                settings.psn_npsso)
+                    psn_npsso                = COALESCE(NULLIF(EXCLUDED.psn_npsso, ''),    settings.psn_npsso),
+                    show_gallery_nav         = COALESCE(EXCLUDED.show_gallery_nav,         settings.show_gallery_nav),
+                    fav_card_custom          = COALESCE(EXCLUDED.fav_card_custom,          settings.fav_card_custom),
+                    fav_card_w_mult          = COALESCE(EXCLUDED.fav_card_w_mult,          settings.fav_card_w_mult),
+                    fav_card_h_mult          = COALESCE(EXCLUDED.fav_card_h_mult,          settings.fav_card_h_mult),
+                    fav_card_count           = COALESCE(EXCLUDED.fav_card_count,           settings.fav_card_count),
+                    fav_alt_card_mode        = COALESCE(EXCLUDED.fav_alt_card_mode,        settings.fav_alt_card_mode),
+                    modal_width_mult         = COALESCE(EXCLUDED.modal_width_mult,         settings.modal_width_mult),
+                    list_stats_size          = COALESCE(EXCLUDED.list_stats_size,          settings.list_stats_size),
+                    fav_stats_size           = COALESCE(EXCLUDED.fav_stats_size,           settings.fav_stats_size),
+                    list_name_offset         = COALESCE(EXCLUDED.list_name_offset,         settings.list_name_offset),
+                    fav_name_offset          = COALESCE(EXCLUDED.fav_name_offset,          settings.fav_name_offset),
+                    auto_fit_title           = COALESCE(EXCLUDED.auto_fit_title,           settings.auto_fit_title),
+                    rating_colors            = COALESCE(EXCLUDED.rating_colors,            settings.rating_colors)
                 RETURNING *
             """, (card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
                   glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
                   steam_api_key, steam_id, steam_mappings_json, platform_highlight_color,
                   platform_colors_json, platform_icon_mode, status_colors_json, activity_colors_json,
-                  card_h2_mult, alt_card_mode, fav1_mult, fav2_mult, fav3_mult, psn_npsso))
+                  card_h2_mult, alt_card_mode, fav1_mult, fav2_mult, fav3_mult, psn_npsso,
+                  show_gallery_nav, fav_card_custom, fav_card_w_mult, fav_card_h_mult,
+                  fav_card_count, fav_alt_card_mode, modal_width_mult,
+                  list_stats_size, fav_stats_size, list_name_offset, fav_name_offset,
+                  auto_fit_title, rating_colors_json))
             row = cur.fetchone()
     return jsonify({
         "cardWMult":              row["card_w_mult"],
@@ -386,6 +466,21 @@ def put_settings():
         "fav2Mult":               row.get("fav2_mult") if row.get("fav2_mult") is not None else 2.0,
         "fav3Mult":               row.get("fav3_mult") if row.get("fav3_mult") is not None else 2.0,
         "psnNpsso":               row.get("psn_npsso") or "",
+        "showGalleryNav":         row.get("show_gallery_nav") if row.get("show_gallery_nav") is not None else True,
+        "favCardCustom":          row.get("fav_card_custom") or False,
+        "favCardWMult":           row.get("fav_card_w_mult") if row.get("fav_card_w_mult") is not None else 1.5,
+        "favCardHMult":           row.get("fav_card_h_mult") if row.get("fav_card_h_mult") is not None else 1.5,
+        "favCardCount":           row.get("fav_card_count") if row.get("fav_card_count") is not None else 0,
+        "favAltCardMode":         row.get("fav_alt_card_mode") or False,
+        "modalWidthMult":         row.get("modal_width_mult") if row.get("modal_width_mult") is not None else 1.0,
+        "listStatsSize":          row.get("list_stats_size") if row.get("list_stats_size") is not None else 11,
+        "favStatsSize":           row.get("fav_stats_size") if row.get("fav_stats_size") is not None else 11,
+        "listNameOffset":         row.get("list_name_offset") if row.get("list_name_offset") is not None else 0,
+        "favNameOffset":          row.get("fav_name_offset") if row.get("fav_name_offset") is not None else 0,
+        "autoFitTitle":           row.get("auto_fit_title") or False,
+        "ratingColors":           row.get("rating_colors") or {},
+        "rawgCallsMonth":         row.get("rawg_calls_month") or "",
+        "rawgCallsCount":         row.get("rawg_calls_count") or 0,
     })
 
 
@@ -407,12 +502,44 @@ def health():
 # RAWG API helpers
 # ---------------------------------------------------------------------------
 
+class RawgRateLimited(Exception):
+    """Raised when RAWG returns 401 (API key invalid or monthly quota exhausted)."""
+    pass
+
+
+@app.errorhandler(RawgRateLimited)
+def handle_rawg_rate_limited(e):
+    return jsonify({"error": "RAWG API limit reached (401). Your monthly quota may be exhausted — check your usage in Settings."}), 429
+
+
+def _increment_rawg_counter():
+    """Atomically increment the monthly RAWG call counter, resetting when the month rolls over."""
+    from datetime import datetime as _dt
+    current_month = _dt.utcnow().strftime("%Y-%m")
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO settings (id, rawg_calls_month, rawg_calls_count)
+                    VALUES (1, %s, 1)
+                    ON CONFLICT (id) DO UPDATE SET
+                        rawg_calls_count = CASE
+                            WHEN settings.rawg_calls_month = %s THEN settings.rawg_calls_count + 1
+                            ELSE 1
+                        END,
+                        rawg_calls_month = %s
+                """, (current_month, current_month, current_month))
+    except Exception:
+        pass  # Never let counter failure break an API response
+
+
 def rawg_get(path, params=None):
     """
     Make a GET request to the RAWG API and return the parsed JSON response.
 
     Automatically injects the API key into every request.
-    Raises an HTTPError if the RAWG API returns a non-2xx status.
+    Raises RawgRateLimited on 401 (quota exceeded / bad key).
+    Raises an HTTPError on other non-2xx statuses.
 
     Args:
       path   — API path, e.g. "/games"
@@ -421,7 +548,10 @@ def rawg_get(path, params=None):
     p = params or {}
     p["key"] = RAWG_KEY
     r = requests.get(f"{RAWG_BASE}{path}", params=p)
+    if r.status_code == 401:
+        raise RawgRateLimited("RAWG 401 Unauthorized")
     r.raise_for_status()
+    _increment_rawg_counter()
     return r.json()
 
 
@@ -432,18 +562,38 @@ def rawg_get(path, params=None):
 @app.route("/api/games/search")
 def search():
     """
-    Search RAWG for games matching the query string.
+    Search RAWG for games. Supports pagination and platform filtering.
 
     Query params:
-      q          — search term (required)
-      page_size  — number of results to return (default: 50)
+      q         — search term (optional; omit to browse)
+      page      — page number (default: 1)
+      page_size — results per page (default: 50)
+      platforms — RAWG platform ID (optional)
 
-    Returns a JSON array of RAWG game objects.
+    Returns {"results": [...], "count": N}.
     """
-    q = request.args.get("q", "")
-    page_size = request.args.get("page_size", 50)
-    data = rawg_get("/games", {"search": q, "page_size": page_size})
-    return jsonify(data.get("results", []))
+    q           = request.args.get("q", "").strip()
+    page        = int(request.args.get("page", 1))
+    page_size   = int(request.args.get("page_size", 50))
+    platform_id = request.args.get("platforms", "")
+
+    params = {"page_size": page_size, "page": page}
+    if q:
+        params["search"] = q
+    if platform_id:
+        params["platforms"] = platform_id
+    if not q:
+        params["ordering"] = "-added"
+
+    data = rawg_get("/games", params)
+    return jsonify({"results": data.get("results", []), "count": data.get("count", 0)})
+
+
+@app.route("/api/games/trending")
+def trending():
+    """Return 50 new and trending games (most recently added to RAWG, filtered to recent releases)."""
+    data = rawg_get("/games", {"ordering": "-added", "page_size": 50})
+    return jsonify({"results": data.get("results", []), "count": data.get("count", 0)})
 
 
 @app.route("/api/games/<int:game_id>/screenshots")
@@ -551,6 +701,7 @@ def upsert_entry(game_id):
     img_pos_x          = body.get("imgPosX", 50)
     img_pos_y          = body.get("imgPosY", 50)
     img_scale          = body.get("imgScale", 1.0)
+    img_fit            = body.get("imgFit", "cover")
     custom_name        = body.get("customName") or None
 
     today = datetime.now(timezone.utc).date().isoformat()
@@ -575,8 +726,8 @@ def upsert_entry(game_id):
                 INSERT INTO entries (game_id, game_data, status, user_rating, favourite,
                                      playtime_minutes, replay_count, tags, activity_log,
                                      platforms_played, custom_images_only,
-                                     img_pos_x, img_pos_y, img_scale, custom_name, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s, NOW())
+                                     img_pos_x, img_pos_y, img_scale, img_fit, custom_name, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s, %s, NOW())
                 ON CONFLICT (game_id) DO UPDATE SET
                     game_data          = EXCLUDED.game_data,
                     status             = EXCLUDED.status,
@@ -591,14 +742,21 @@ def upsert_entry(game_id):
                     img_pos_x          = EXCLUDED.img_pos_x,
                     img_pos_y          = EXCLUDED.img_pos_y,
                     img_scale          = EXCLUDED.img_scale,
+                    img_fit            = EXCLUDED.img_fit,
                     custom_name        = EXCLUDED.custom_name,
                     updated_at         = NOW()
                 RETURNING *
             """, (game_id, json.dumps(game_data), status, user_rating, favourite,
                   playtime_minutes, replay_count, json.dumps(tags), json.dumps(log),
                   json.dumps(platforms_played), custom_images_only,
-                  img_pos_x, img_pos_y, img_scale, custom_name))
+                  img_pos_x, img_pos_y, img_scale, img_fit, custom_name))
             row = cur.fetchone()
+            # When set to Dropped, clear RAWG screenshot data from game_data.
+            # entry_images (custom uploads) are intentionally preserved.
+            if status == 6 and isinstance(game_data, dict) and "short_screenshots" in game_data:
+                game_data.pop("short_screenshots", None)
+                cur.execute("UPDATE entries SET game_data = %s WHERE game_id = %s",
+                            (json.dumps(game_data), game_id))
             # Also fetch extra image IDs for the returned entry
             cur.execute("SELECT json_agg(id ORDER BY seq) AS extra_image_ids FROM entry_images WHERE game_id = %s", (game_id,))
             img_row = cur.fetchone()
@@ -1050,16 +1208,84 @@ def reorder_images(game_id):
     return jsonify({"ok": True})
 
 
-def _resolve_steam_image_url(game_id):
+@app.route("/api/list/<int:game_id>/images/<int:image_id>/promote-to-cover", methods=["POST"])
+def promote_image_to_cover(game_id, image_id):
+    """
+    Atomically swap an extra image into the cover slot.
+
+    1. The promoted extra image becomes the new cover_image.
+    2. The existing cover (if any) is inserted as a new extra image at position 0.
+    3. The promoted extra image row is deleted.
+    4. Remaining extra images are re-sequenced: old cover first, then the rest in
+       their original order.
+
+    Returns { "ok": True, "extraImageIds": [...], "hasCover": True }.
+    """
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            # Fetch the extra image being promoted
+            cur.execute(
+                "SELECT image_data, image_mime FROM entry_images WHERE id = %s AND game_id = %s",
+                (image_id, game_id),
+            )
+            img_row = cur.fetchone()
+            if not img_row:
+                return jsonify({"error": "Image not found"}), 404
+
+            # Fetch the current cover (may be NULL)
+            cur.execute("SELECT cover_image, cover_mime FROM entries WHERE game_id = %s", (game_id,))
+            entry_row = cur.fetchone()
+            if not entry_row:
+                return jsonify({"error": "Entry not found"}), 404
+
+            # Get remaining extra image IDs in their current order (excluding promoted)
+            cur.execute(
+                "SELECT id FROM entry_images WHERE game_id = %s AND id != %s ORDER BY seq",
+                (game_id, image_id),
+            )
+            remaining_ids = [r["id"] for r in cur.fetchall()]
+
+            # If a cover blob exists, insert it as a new extra image at the front
+            old_cover_id = None
+            if entry_row["cover_image"] is not None:
+                cur.execute(
+                    "INSERT INTO entry_images (game_id, seq, image_data, image_mime) "
+                    "VALUES (%s, -1, %s, %s) RETURNING id",
+                    (game_id,
+                     psycopg2.Binary(bytes(entry_row["cover_image"])),
+                     entry_row["cover_mime"] or "image/jpeg"),
+                )
+                old_cover_id = cur.fetchone()["id"]
+
+            # Set the extra image as the new cover
+            cur.execute(
+                "UPDATE entries SET cover_image = %s, cover_mime = %s WHERE game_id = %s",
+                (psycopg2.Binary(bytes(img_row["image_data"])),
+                 img_row["image_mime"],
+                 game_id),
+            )
+
+            # Remove the promoted extra image row
+            cur.execute("DELETE FROM entry_images WHERE id = %s", (image_id,))
+
+            # Re-sequence: old cover at 0, then remaining in original order
+            final_ids = ([old_cover_id] if old_cover_id else []) + remaining_ids
+            for seq, iid in enumerate(final_ids):
+                cur.execute("UPDATE entry_images SET seq = %s WHERE id = %s", (seq, iid))
+
+    return jsonify({"ok": True, "extraImageIds": final_ids, "hasCover": True})
+
+
+def _resolve_steam_image_url(steam_appid):
     """
     Try Steam CDN URL patterns in order and return the first that responds with 200.
     Returns None if none of the candidates work.
     """
     candidates = [
-        f"https://cdn.akamai.steamstatic.com/steam/apps/{game_id}/header.jpg",
-        f"https://cdn.akamai.steamstatic.com/steam/apps/{game_id}/library_600x900.jpg",
-        f"https://cdn.akamai.steamstatic.com/steam/apps/{game_id}/library_hero.jpg",
-        f"https://cdn.akamai.steamstatic.com/steam/apps/{game_id}/capsule_616x353.jpg",
+        f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_appid}/header.jpg",
+        f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_appid}/library_600x900.jpg",
+        f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_appid}/library_hero.jpg",
+        f"https://cdn.akamai.steamstatic.com/steam/apps/{steam_appid}/capsule_616x353.jpg",
     ]
     for url in candidates:
         try:
@@ -1071,16 +1297,60 @@ def _resolve_steam_image_url(game_id):
     return None
 
 
+def _get_steam_appid_for_rawg_game(rawg_id):
+    """
+    Use RAWG's stores endpoint to find the Steam appid for a game by its RAWG ID.
+    Returns the appid (int) or None if not found or RAWG key missing.
+    """
+    if not RAWG_KEY:
+        return None
+    try:
+        r = requests.get(
+            f"https://api.rawg.io/api/games/{rawg_id}/stores",
+            params={"key": RAWG_KEY},
+            timeout=8,
+        )
+        if r.status_code != 200:
+            return None
+        for entry in r.json().get("results", []):
+            # store_id 1 = Steam
+            if entry.get("store_id") == 1:
+                url = entry.get("url", "")
+                import re
+                m = re.search(r"/app/(\d+)", url)
+                if m:
+                    return int(m.group(1))
+    except Exception:
+        pass
+    return None
+
+
+def _find_rawg_id_by_name(name):
+    """
+    Search RAWG by name and return the best-matching game's RAWG ID, or None.
+    Uses exact search first, falls back to fuzzy.
+    """
+    if not RAWG_KEY or not name:
+        return None
+    try:
+        results = rawg_get("/games", params={"search": name, "search_exact": True, "page_size": 5})
+        best = _best_rawg_match(name, results.get("results") or [])
+        if not best:
+            results = rawg_get("/games", params={"search": name, "page_size": 10})
+            best = _best_rawg_match(name, results.get("results") or [])
+        return best["id"] if best else None
+    except Exception:
+        return None
+
+
 @app.route("/api/list/<int:game_id>/sync-steam-image", methods=["POST"])
 def sync_steam_image(game_id):
     """
-    Reset the cover image for a Steam-imported entry to the best available Steam image.
-    Tries header.jpg → library_600x900.jpg → library_hero.jpg → capsule_616x353.jpg.
-    Only updates game_data.background_image — custom cover_image is untouched.
+    Set game_data.background_image to the best available Steam CDN image.
+    For Steam-imported entries (slug starts with 'steam-') the game_id IS the appid.
+    For PSN/RAWG entries the RAWG stores API is used to look up the real Steam appid.
+    Custom cover_image is never touched.
     """
-    steam_url = _resolve_steam_image_url(game_id)
-    if not steam_url:
-        return jsonify({"error": "No Steam image found for this game"}), 404
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT game_data FROM entries WHERE game_id = %s", (game_id,))
@@ -1088,7 +1358,33 @@ def sync_steam_image(game_id):
             if not row:
                 return jsonify({"error": "Not found"}), 404
             gd = dict(row["game_data"])
-            gd["background_image"] = steam_url
+
+    slug = gd.get("slug", "")
+    if slug.startswith("steam-"):
+        # game_id IS the Steam appid
+        steam_appid = game_id
+    elif slug.startswith("psn-"):
+        # PSN game: game_id is a CRC-based internal ID, not a RAWG ID.
+        # Find the real RAWG ID by searching by name, then use stores.
+        rawg_id = _find_rawg_id_by_name(gd.get("name", ""))
+        if not rawg_id:
+            return jsonify({"error": "Could not find this game on RAWG to locate Steam store link"}), 404
+        steam_appid = _get_steam_appid_for_rawg_game(rawg_id)
+        if not steam_appid:
+            return jsonify({"error": "No Steam store link found for this game"}), 404
+    else:
+        # Direct RAWG game — game_id is the RAWG ID
+        steam_appid = _get_steam_appid_for_rawg_game(game_id)
+        if not steam_appid:
+            return jsonify({"error": "No Steam store link found for this game"}), 404
+
+    steam_url = _resolve_steam_image_url(steam_appid)
+    if not steam_url:
+        return jsonify({"error": "No Steam image found for this game"}), 404
+
+    gd["background_image"] = steam_url
+    with get_db() as conn:
+        with conn.cursor() as cur:
             cur.execute(
                 "UPDATE entries SET game_data = %s::jsonb, updated_at = NOW() WHERE game_id = %s",
                 (json.dumps(gd), game_id)
@@ -1116,13 +1412,25 @@ def sync_rawg_image_single(game_id):
 
     gd = dict(row["game_data"])
     name = gd.get("name", "")
+    slug = gd.get("slug", "")
     if not name:
         return jsonify({"error": "Entry has no name"}), 400
 
-    # Find best RAWG match
+    # Find the RAWG game to use for this entry.
+    # For direct RAWG imports (slug is neither steam- nor psn-), game_id IS the RAWG ID — use it
+    # directly to skip the search round-trip and guarantee an exact match.
     best = None
-    results = rawg_get("/games", params={"search": name, "search_exact": True, "page_size": 5})
-    best = _best_rawg_match(name, results.get("results") or [])
+    if not slug.startswith("steam-") and not slug.startswith("psn-"):
+        try:
+            data = rawg_get(f"/games/{game_id}", params={})
+            if data.get("id") and data.get("background_image"):
+                best = data
+        except Exception:
+            pass
+
+    if not best:
+        results = rawg_get("/games", params={"search": name, "search_exact": True, "page_size": 5})
+        best = _best_rawg_match(name, results.get("results") or [])
     if not best:
         results = rawg_get("/games", params={"search": name, "page_size": 10})
         best = _best_rawg_match(name, results.get("results") or [])
@@ -1131,12 +1439,15 @@ def sync_rawg_image_single(game_id):
 
     rawg_id = best["id"]
     new_bg = best["background_image"]
+    new_mc = best.get("metacritic")
 
     screenshots_added = 0
     with get_db() as conn:
         with conn.cursor() as cur:
-            # Update background_image
+            # Update background_image and metacritic
             gd["background_image"] = new_bg
+            if new_mc is not None:
+                gd["metacritic"] = new_mc
             cur.execute(
                 "UPDATE entries SET game_data = %s::jsonb, updated_at = NOW() WHERE game_id = %s",
                 (json.dumps(gd), game_id)
@@ -1167,7 +1478,84 @@ def sync_rawg_image_single(game_id):
             cur.execute("SELECT id FROM entry_images WHERE game_id = %s ORDER BY seq", (game_id,))
             new_ids = [r[0] for r in cur.fetchall()]
 
-    return jsonify({"background_image": new_bg, "screenshots_added": screenshots_added, "extraImageIds": new_ids})
+    return jsonify({"background_image": new_bg, "screenshots_added": screenshots_added, "extraImageIds": new_ids, "metacritic": new_mc})
+
+
+@app.route("/api/list/<int:game_id>/sync-psn-image", methods=["POST"])
+def sync_psn_image(game_id):
+    """
+    Fetch PSN cover art for a game. Works for any entry — PSN games by title_id,
+    others by searching the PSN library by game name.
+    Updates game_data.background_image. Custom cover_image is never touched.
+    """
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT game_data FROM entries WHERE game_id = %s", (game_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Not found"}), 404
+
+    gd = dict(row["game_data"])
+    slug = gd.get("slug", "")
+    name = gd.get("name", "")
+
+    # Extract title_id from slug for PSN games; other games will match by name.
+    target_title_id = slug[4:] if slug.startswith("psn-") else None
+
+    try:
+        psnawp = _get_psn_client()
+        client = psnawp.me()
+        image_url = None
+
+        for t in client.title_stats():
+            tid = str(t.title_id or "")
+            t_name = str(t.name or "")
+            t_img = str(t.image_url) if t.image_url else None
+
+            if not t_img:
+                continue
+
+            if target_title_id:
+                # PSN game: match by title_id exactly
+                if tid == target_title_id:
+                    image_url = t_img
+                    break
+            else:
+                # Non-PSN game: match by name similarity
+                if name and _name_similarity(name.lower(), t_name.lower()) >= 0.85:
+                    image_url = t_img
+                    break
+
+    except Exception as e:
+        return jsonify({"error": f"PSN sync failed: {str(e)}"}), 500
+
+    if not image_url:
+        return jsonify({"error": "PSN image not found for this title"}), 404
+
+    # Download the image bytes so we can store them as cover_image.
+    # This ensures the card shows the PSN art regardless of whether a custom
+    # cover was already set (background_image is invisible when cover_image exists).
+    try:
+        img_resp = requests.get(image_url, timeout=15)
+        img_resp.raise_for_status()
+        img_data = img_resp.content
+        img_mime = img_resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+    except Exception as e:
+        return jsonify({"error": f"Failed to download PSN image: {str(e)}"}), 500
+
+    gd["background_image"] = image_url
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE entries
+                   SET game_data = %s::jsonb,
+                       cover_image = %s,
+                       cover_mime  = %s,
+                       updated_at  = NOW()
+                   WHERE game_id = %s""",
+                (json.dumps(gd), psycopg2.Binary(img_data), img_mime, game_id)
+            )
+    return jsonify({"background_image": image_url, "hasCover": True})
 
 
 @app.route("/api/list/<int:game_id>/sync-both-images", methods=["POST"])
@@ -1682,6 +2070,256 @@ def sync_rawg_images():
                     skipped += 1
 
     return jsonify({"updated": updated, "screenshots_added": screenshots_added, "skipped": skipped})
+
+
+@app.route("/api/backup/download", methods=["GET"])
+def backup_download():
+    """Stream a gzipped pg_dump of the database as a file download."""
+    import subprocess
+    from urllib.parse import urlparse
+
+    parsed = urlparse(DB_URL)
+    host     = parsed.hostname or "localhost"
+    port     = str(parsed.port or 5432)
+    dbname   = parsed.path.lstrip("/")
+    user     = parsed.username or "gamilist"
+    password = parsed.password or ""
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename  = f"gamilist_{timestamp}.sql.gz"
+
+    env = os.environ.copy()
+    env["PGPASSWORD"] = password
+
+    try:
+        dump_proc = subprocess.Popen(
+            ["pg_dump", "-h", host, "-p", port, "-U", user, dbname],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+
+        def generate():
+            try:
+                cobj = zlib.compressobj(6, zlib.DEFLATED, zlib.MAX_WBITS | 16)
+                while True:
+                    chunk = dump_proc.stdout.read(65536)
+                    if not chunk:
+                        break
+                    yield cobj.compress(chunk)
+                yield cobj.flush()
+            finally:
+                dump_proc.stdout.close()
+                dump_proc.terminate()
+                dump_proc.wait()
+
+        headers = {
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "application/gzip",
+        }
+        return Response(generate(), headers=headers, status=200)
+
+    except FileNotFoundError:
+        return jsonify({"error": "pg_dump not found on server"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _pg_conn_parts():
+    from urllib.parse import urlparse
+    p = urlparse(DB_URL)
+    return p.hostname or "localhost", str(p.port or 5432), p.path.lstrip("/"), p.username or "gamilist", p.password or ""
+
+
+def _extract_platform_name(game_data):
+    if not game_data:
+        return ""
+    slug = game_data.get("slug", "")
+    if slug.startswith("steam-"):
+        return "Steam"
+    platforms = game_data.get("platforms") or []
+    for p in platforms:
+        name = (p.get("platform") or {}).get("name", "")
+        if name:
+            return name
+    return ""
+
+
+def _parse_entries_from_dump(sql_text):
+    """Parse the entries COPY block from a pg_dump and return {game_id: {...}}."""
+    import re, json as _json
+
+    m = re.search(
+        r'COPY\s+(?:public\.)?entries\s+\(([^)]+)\)\s+FROM\s+stdin;\n(.*?)\n\\\.',
+        sql_text, re.DOTALL,
+    )
+    if not m:
+        return {}
+
+    cols = [c.strip() for c in m.group(1).split(",")]
+    result = {}
+
+    for line in m.group(2).split("\n"):
+        if not line:
+            continue
+        vals = line.split("\t")
+        if len(vals) != len(cols):
+            continue
+        row = dict(zip(cols, vals))
+
+        try:
+            game_id = int(row["game_id"])
+        except (KeyError, ValueError):
+            continue
+
+        raw_gd = row.get("game_data", r"\N")
+        game_data = {}
+        if raw_gd != r"\N":
+            try:
+                game_data = _json.loads(raw_gd.replace(r"\t", "\t").replace(r"\n", "\n").replace(r"\\", "\\")) or {}
+            except Exception:
+                pass
+
+        def _int(v):
+            return int(v) if v not in (r"\N", "", None) else None
+
+        def _float(v):
+            return float(v) if v not in (r"\N", "", None) else None
+
+        custom_name = row.get("custom_name", r"\N")
+        name = (custom_name if custom_name not in (r"\N", "") else None) or game_data.get("name") or f"Game #{game_id}"
+
+        result[game_id] = {
+            "game_id":         game_id,
+            "name":            name,
+            "platform":        _extract_platform_name(game_data),
+            "status":          _int(row.get("status", r"\N")),
+            "user_rating":     _float(row.get("user_rating", r"\N")),
+            "favourite":       row.get("favourite", "f") == "t",
+            "playtime_minutes": _int(row.get("playtime_minutes", r"\N")),
+        }
+
+    return result
+
+
+@app.route("/api/backup/verify", methods=["POST"])
+def backup_verify():
+    """Decompress and diff a .sql.gz backup against the live database."""
+    import gzip as _gz
+
+    if "file" not in request.files:
+        return jsonify({"valid": False, "error": "No file provided"}), 400
+
+    raw = request.files["file"].read()
+    try:
+        sql_text = _gz.decompress(raw).decode("utf-8")
+    except Exception:
+        return jsonify({"valid": False, "error": "Cannot decompress — not a valid .sql.gz backup"}), 200
+
+    backup = _parse_entries_from_dump(sql_text)
+    if not backup and "entries" not in sql_text:
+        return jsonify({"valid": False, "error": "No entries table found in this backup"}), 200
+
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT game_id, game_data, status, user_rating, favourite, playtime_minutes, custom_name FROM entries"
+            )
+            rows = cur.fetchall()
+
+    current = {}
+    for r in rows:
+        gd = r["game_data"] or {}
+        name = r.get("custom_name") or gd.get("name") or f"Game #{r['game_id']}"
+        current[r["game_id"]] = {
+            "game_id":          r["game_id"],
+            "name":             name,
+            "platform":         _extract_platform_name(gd),
+            "status":           r["status"],
+            "user_rating":      r["user_rating"],
+            "favourite":        r["favourite"],
+            "playtime_minutes": r["playtime_minutes"],
+        }
+
+    b_ids = set(backup)
+    c_ids = set(current)
+
+    added   = sorted([backup[g]  for g in b_ids - c_ids], key=lambda x: x["name"].lower())
+    removed = sorted([current[g] for g in c_ids - b_ids], key=lambda x: x["name"].lower())
+
+    modified = []
+    unchanged = 0
+    for gid in b_ids & c_ids:
+        b, c = backup[gid], current[gid]
+        changes = {}
+        for field in ("status", "user_rating", "favourite", "playtime_minutes"):
+            bv, cv = b.get(field), c.get(field)
+            if bv != cv:
+                changes[field] = {"backup": bv, "current": cv}
+        if changes:
+            modified.append({"game_id": gid, "name": b["name"], "platform": b["platform"], "changes": changes})
+        else:
+            unchanged += 1
+
+    modified.sort(key=lambda x: x["name"].lower())
+
+    return jsonify({
+        "valid": True,
+        "stats": {
+            "backup_count": len(b_ids),
+            "db_count":     len(c_ids),
+            "added":        len(added),
+            "removed":      len(removed),
+            "modified":     len(modified),
+            "unchanged":    unchanged,
+        },
+        "added":    added,
+        "removed":  removed,
+        "modified": modified,
+    })
+
+
+@app.route("/api/backup/restore", methods=["POST"])
+def backup_restore():
+    """Replace the live database with the contents of a .sql.gz backup."""
+    import gzip as _gz, subprocess, tempfile
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    raw = request.files["file"].read()
+    try:
+        sql_bytes = _gz.decompress(raw)
+    except Exception:
+        return jsonify({"error": "Cannot decompress backup"}), 400
+
+    host, port, dbname, user, password = _pg_conn_parts()
+    env = os.environ.copy()
+    env["PGPASSWORD"] = password
+
+    with tempfile.NamedTemporaryFile(suffix=".sql", delete=False) as tmp:
+        tmp.write(sql_bytes)
+        tmp_path = tmp.name
+
+    try:
+        # Wipe existing schema, then replay the dump
+        subprocess.run(
+            ["psql", "-h", host, "-p", port, "-U", user, "-d", dbname,
+             "-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"],
+            env=env, check=True, capture_output=True,
+        )
+        result = subprocess.run(
+            ["psql", "-h", host, "-p", port, "-U", user, "-d", dbname, "-f", tmp_path],
+            env=env, capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            return jsonify({"error": result.stderr[:2000]}), 500
+        return jsonify({"ok": True})
+    except subprocess.CalledProcessError as e:
+        err = e.stderr.decode() if isinstance(e.stderr, bytes) else str(e.stderr)
+        return jsonify({"error": err[:2000]}), 500
+    finally:
+        os.unlink(tmp_path)
 
 
 if __name__ == "__main__":

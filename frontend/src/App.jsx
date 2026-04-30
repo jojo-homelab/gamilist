@@ -14,6 +14,9 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } fr
 // Falls back to localhost:5001 only when the var is not set at all (local dev).
 const API = (import.meta.env.VITE_API_URL ?? "http://localhost:5001") + "/api";
 
+// Normalise a game title for fuzzy matching: lowercase, drop non-alphanumeric.
+const normName = s => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
 const STATUSES = [
   { id: 0, label: "Playing",        color: "#7c6ef7", bg: "#1a1730" },
   { id: 1, label: "Played",         color: "#4caf80", bg: "#112418" },
@@ -70,6 +73,18 @@ const ALL_PLATFORMS = [
 
 const PLATFORM_SHORT = Object.fromEntries(ALL_PLATFORMS.map(p => [p.slug, p.short]));
 
+// RAWG numeric platform IDs used for the Search browse/filter feature
+const RAWG_PLATFORM_IDS = {
+  "pc": 4, "playstation5": 187, "playstation4": 18, "playstation3": 16,
+  "playstation2": 15, "playstation": 27, "xbox-series-x": 186, "xbox-one": 1,
+  "xbox360": 14, "xbox-old": 80, "nintendo-switch": 7, "wii-u": 10, "wii": 11,
+  "gamecube": 105, "nintendo-64": 83, "super-nintendo": 79, "nes": 49,
+  "game-boy-advance": 24, "game-boy-color": 43, "game-boy": 43,
+  "nintendo-3ds": 8, "nintendo-ds": 77, "psp": 17, "ps-vita": 19,
+  "ios": 3, "android": 21, "macos": 5, "linux": 6,
+  "sega-genesis": 167, "sega-saturn": 107, "sega-dreamcast": 106,
+};
+
 const rawgImgSrc = (url) => url ? `${API}/image-proxy?url=${encodeURIComponent(url)}` : null;
 const coverSrc   = (id)  => `${API}/list/${id}/cover`;
 
@@ -100,7 +115,86 @@ function StarRating({ rating }) {
   );
 }
 
-function RatingInput({ value, onChange }) {
+function FitTitle({ children, targetSize, style }) {
+  const ref = useRef();
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.fontSize = targetSize + "px";
+    let size = targetSize;
+    while (el.scrollWidth > el.clientWidth && size > 8) {
+      size -= 0.5;
+      el.style.fontSize = size + "px";
+    }
+  });
+  return (
+    <div ref={ref} style={{ whiteSpace: "nowrap", overflow: "hidden", ...style }}>
+      {children}
+    </div>
+  );
+}
+
+const SETTINGS_LOCK_PW = "230737";
+
+function LockableSection({ sectionId, title, description, children, locked, onToggle }) {
+  const [showPw, setShowPw] = useState(false);
+  const [pw, setPw]         = useState("");
+  const [pwErr, setPwErr]   = useState(false);
+  const inputRef = useRef();
+
+  useEffect(() => { if (showPw && inputRef.current) inputRef.current.focus(); }, [showPw]);
+
+  const handleLockClick = () => {
+    if (locked) { setShowPw(true); setPw(""); setPwErr(false); }
+    else        { onToggle(sectionId, true); }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (pw === SETTINGS_LOCK_PW) { onToggle(sectionId, false); setShowPw(false); }
+    else { setPwErr(true); setPw(""); }
+  };
+
+  return (
+    <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: `1px solid ${locked ? "#e05c7a33" : "#1a1a2e"}`, borderRadius: 12, padding: "24px 28px", position: "relative", transition: "border-color 0.2s" }}>
+      {/* Panel header with lock button */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: description ? 6 : 18 }}>
+        <div style={{ fontSize: 32, fontWeight: 800, color: "#eeeeff" }}>{title}</div>
+        <button onClick={handleLockClick} title={locked ? "Locked — click to enter password" : "Lock this section"}
+          style={{ background: "transparent", border: `1px solid ${locked ? "#e05c7a55" : "#2a2a4044"}`, borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 26, color: "#ffffff", fontWeight: 800, lineHeight: 1, transition: "all 0.15s" }}>
+          {locked ? "🔒" : "🔓"}
+        </button>
+      </div>
+      {description && <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>{description}</div>}
+
+      {/* Controls — dimmed + non-interactive when locked */}
+      <div style={{ opacity: locked ? 0.38 : 1, pointerEvents: locked ? "none" : "auto", userSelect: locked ? "none" : "auto", transition: "opacity 0.2s" }}>
+        {children}
+      </div>
+
+      {/* Password overlay */}
+      {showPw && (
+        <div style={{ position: "absolute", inset: 0, background: "rgba(6,6,18,0.94)", borderRadius: 12, zIndex: 30, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
+          <div style={{ fontSize: 28 }}>🔒</div>
+          <div style={{ fontSize: 12, color: "#888", fontWeight: 700, letterSpacing: 0.5 }}>Enter password to unlock</div>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <input ref={inputRef} type="password" value={pw}
+              onChange={e => { setPw(e.target.value); setPwErr(false); }}
+              placeholder="Password"
+              style={{ background: "#080814", border: `1px solid ${pwErr ? "#e05c7a" : "#2a2a50"}`, borderRadius: 7, padding: "7px 14px", color: "#e0e0f0", fontSize: 14, outline: "none", fontFamily: "inherit", width: 140, textAlign: "center", letterSpacing: 2 }} />
+            {pwErr && <div style={{ fontSize: 11, color: "#e05c7a", marginTop: -4 }}>Incorrect password</div>}
+            <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+              <button type="submit" style={{ padding: "6px 18px", borderRadius: 7, border: "1px solid #7c6ef766", background: "#1a1730", color: "#a78bfa", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Unlock</button>
+              <button type="button" onClick={() => setShowPw(false)} style={{ padding: "6px 14px", borderRadius: 7, border: "1px solid #1e1e35", background: "transparent", color: "#444", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RatingInput({ value, onChange, size = 11, starColor = "#e6a63a", textColor = "#e6a63a" }) {
   const [editing, setEditing] = useState(false);
   const [input, setInput]     = useState("");
   const ref = useRef();
@@ -117,12 +211,15 @@ function RatingInput({ value, onChange }) {
       placeholder="0–10"
       style={{ width: 52, background: "#0a0a14", border: "1px solid #7c6ef7", borderRadius: 4, color: "#e0e0f0", fontSize: 12, padding: "2px 5px", outline: "none", fontFamily: "inherit" }} />
   );
-  return (
-    <span onClick={e => { e.stopPropagation(); setInput(value != null ? String(value) : ""); setEditing(true); }}
-      style={{ cursor: "pointer", fontSize: 12, color: value != null ? "#e6a63a" : "#444", border: "1px solid #222", borderRadius: 4, padding: "2px 7px", background: "#0a0a14", whiteSpace: "nowrap", userSelect: "none" }}>
-      {value != null ? `⭐ ${value}/10` : "+ Rate"}
-    </span>
-  );
+  return value != null
+    ? <span onClick={e => { e.stopPropagation(); setInput(String(value)); setEditing(true); }}
+        style={{ cursor: "pointer", fontSize: size + 2, fontWeight: 800, whiteSpace: "nowrap", userSelect: "none", letterSpacing: 0.2, display: "inline-flex", alignItems: "baseline", gap: 3 }}>
+        <span style={{ color: starColor }}>★</span><span style={{ color: textColor }}>{value}</span>
+      </span>
+    : <span onClick={e => { e.stopPropagation(); setInput(""); setEditing(true); }}
+        style={{ cursor: "pointer", fontSize: size, color: "#444", border: "1px solid #1e1e30", borderRadius: 4, padding: "2px 7px", background: "#0a0a14", whiteSpace: "nowrap", userSelect: "none" }}>
+        + Rate
+      </span>;
 }
 
 function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
@@ -156,7 +253,10 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
  * status dropdown is always at the same vertical position in every card
  * regardless of how many optional fields (rating bar, genres, score) are present.
  */
-function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null, showGalleryNav = true }) {
+function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null, showGalleryNav = true, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, ratingColors = {} }) {
+  const ratingKeyFor = v => (v < 5 ? "lt5" : String(v));
+  const ratingStarColor = v => ratingColors[ratingKeyFor(v)] || { "10":"#FFD700","9.5":"#f0c020","9":"#e8b030","8.5":"#e0a040","8":"#d89050","7.5":"#cc8060","7":"#c07070","6.5":"#aa6080","6":"#9060a0","5.5":"#7050b0","5":"#6040c0","lt5":"#e05c7a" }[ratingKeyFor(v)] || "#e6a63a";
+  const ratingTextColor = v => ratingStarColor(v);
   const statusProps = (id) => getStatusProps ? getStatusProps(id) : (STATUSES[id] || STATUSES[6]);
   const [hover, setHover]           = useState(false);
   const [arrowHover, setArrowHover] = useState(false);
@@ -182,7 +282,7 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
   // Build image list with extra images and customImagesOnly support
   const customImagesOnly = listEntry?.customImagesOnly || false;
   const extraImageUrls = (listEntry?.extraImageIds || []).map(id => `${API}/images/${id}`);
-  const coverUrl = hasCover ? `${coverSrc(game.id)}?v=${coverKey}` : null;
+  const coverUrl = hasCover ? `${coverSrc(game.id)}?v=${coverKey}-${listEntry?.coverVersion ?? 0}` : null;
   const rawgCover = rawgImgSrc(game.background_image);
 
   let baseImages;
@@ -191,13 +291,15 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
   } else {
     baseImages = [coverUrl || rawgCover, ...extraImageUrls].filter(Boolean);
   }
-  const allImages = [...baseImages, ...(screenshots || []).map(u => rawgImgSrc(u))].filter(Boolean);
+  // Don't append hover-loaded screenshots when stored extra images already exist (avoids duplicates)
+  const hoverScreenshots = extraImageUrls.length > 0 ? [] : (screenshots || []).map(u => rawgImgSrc(u));
+  const allImages = [...baseImages, ...hoverScreenshots].filter(Boolean);
   const displayImg = allImages[imgIndex] || coverUrl || rawgCover;
 
   const handleMouseEnter = async () => {
     setHover(true);
-    // Lazy-load screenshots for RAWG games (not steam imports) on first hover
-    if (screenshots === null && game.id && !(game.slug || "").startsWith("steam-")) {
+    // Lazy-load screenshots only when: RAWG game, not Steam/PSN import, not Dropped, no stored extra images
+    if (screenshots === null && game.id && !(game.slug || "").startsWith("steam-") && listEntry?.status !== 6 && !(listEntry?.extraImageIds?.length > 0)) {
       setScreenshots([]); // mark as loading
       try {
         const shots = await apiFetch(`/games/${game.id}/screenshots`);
@@ -223,24 +325,34 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
     background: "#10101e",
   };
 
-  const openMeta = (e) => { if (listEntry && onOpenMetadata) { e.stopPropagation(); onOpenMetadata(game.id); } };
+  const openMeta = (e) => {
+    if (!onOpenMetadata) return;
+    e.stopPropagation();
+    if (listEntry) {
+      onOpenMetadata(game.id);
+    } else if (onAdd) {
+      // Auto-add as Backlog then open metadata — React batches both state updates
+      onAdd(game, 3);
+      onOpenMetadata(game.id);
+    }
+  };
 
   return (
-    <div onMouseEnter={handleMouseEnter} onMouseLeave={() => setHover(false)}
+    <div onMouseEnter={handleMouseEnter} onMouseLeave={() => { setHover(false); setImgIndex(0); }}
       onClick={openMeta}
       style={{
         borderRadius: 12, overflow: "visible", position: "relative",
         display: "flex", flexDirection: "column",
         transition: "transform 0.15s, box-shadow 0.15s, border-color 0.15s",
         transform: hover ? "translateY(-4px)" : "none",
-        cursor: listEntry && onOpenMetadata ? "pointer" : "default",
+        cursor: onOpenMetadata ? "pointer" : "default",
         ...glowStyle,
       }}>
 
       {/* Cover image — fixed height with screenshot gallery navigation */}
       <div style={{ height: cardH, borderRadius: "12px 12px 0 0", overflow: "hidden", background: "#080814", position: "relative", flexShrink: 0 }}>
         {displayImg && !imgErr
-          ? <img src={displayImg} alt={game.name} onError={() => setImgErr(true)} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${listEntry?.imgPosX ?? 50}% ${listEntry?.imgPosY ?? 50}%`, display: "block", transition: "opacity 0.2s" }} />
+          ? <img src={displayImg} alt={game.name} onError={() => setImgErr(true)} style={{ width: "100%", height: "100%", objectFit: listEntry?.imgFit ?? "cover", objectPosition: `${listEntry?.imgPosX ?? 50}% ${listEntry?.imgPosY ?? 50}%`, display: "block", transition: "opacity 0.2s" }} />
           : <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <span style={{ fontSize: 36 }}>🎮</span>
               <span style={{ fontSize: 11, color: "#333", textAlign: "center", padding: "0 12px", lineHeight: 1.4 }}>{listEntry?.customName || game.name}</span>
@@ -267,7 +379,7 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
               style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10, lineHeight: 1 }}>›</button>
           </>
         )}
-        {listEntry && (
+        {listEntry && !hideFav && (
           <button onClick={e => { e.stopPropagation(); onToggleFav(game.id); }}
             style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.65)", border: "none", borderRadius: 6, width: 30, height: 30, cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", color: isFav ? "#e6a63a" : "#666" }}>
             {isFav ? "★" : "☆"}
@@ -283,28 +395,34 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
 
       {/* Card body */}
       <div style={{ padding: "12px 14px 14px", display: "flex", flexDirection: "column", flex: 1 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#eeeeff", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={listEntry?.customName || game.name}>{listEntry?.customName || game.name}</div>
+        {autoFitTitle
+          ? <FitTitle targetSize={statsTextSize + nameOffset} style={{ fontWeight: 700, color: "#eeeeff", marginBottom: 4 }} title={listEntry?.customName || game.name}>{listEntry?.customName || game.name}</FitTitle>
+          : <div style={{ fontSize: statsTextSize + nameOffset, fontWeight: 700, color: "#eeeeff", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={listEntry?.customName || game.name}>{listEntry?.customName || game.name}</div>
+        }
 
         {/* Platform badges */}
         {(() => {
           const played = listEntry?.platformsPlayed || [];
           const gameSlugs = (game.platforms || []).map(p => p.platform.slug);
           const extraPlayedSlugs = played.filter(s => !gameSlugs.includes(s));
-          const allBadgeSlugs = [...gameSlugs, ...extraPlayedSlugs];
-          if (!allBadgeSlugs.length) return null;
-          const isDefault = played.length === 0 && gameSlugs.length === 1;
+          // In list mode: only show selected platforms. In search mode: show all.
+          const badgeSlugs = listMode
+            ? played
+            : [...gameSlugs, ...extraPlayedSlugs];
+          if (!badgeSlugs.length) return null;
+          const isDefault = !listMode && played.length === 0 && gameSlugs.length === 1;
           return (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 6 }} onClick={e => e.stopPropagation()}>
-              {allBadgeSlugs.map(slug => {
+              {badgeSlugs.map(slug => {
                 const pInfo = (game.platforms || []).find(p => p.platform.slug === slug)?.platform
                            || ALL_PLATFORMS.find(p => p.slug === slug)
                            || { name: slug };
-                const active = played.includes(slug) || (isDefault && gameSlugs[0] === slug);
+                const active = listMode || played.includes(slug) || (isDefault && gameSlugs[0] === slug);
                 const pc = getPlatformColor ? getPlatformColor(slug) : "#7c6ef7";
                 return (
                   <span key={slug} title={pInfo.name}
                     onClick={e => { e.stopPropagation(); if (listEntry && onTogglePlatform) onTogglePlatform(game.id, slug); }}
-                    style={{ fontSize: 9, fontWeight: 700,
+                    style={{ fontSize: Math.max(7, statsTextSize - 2), fontWeight: 700,
                       padding: "2px 5px", borderRadius: 3,
                       background: active ? pc + "28" : "#141420",
                       border: `1px solid ${active ? pc + "77" : "#222238"}`,
@@ -319,45 +437,52 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
         })()}
 
         {listEntry && (
-          <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
-            <RatingInput value={listEntry.userRating ?? null} onChange={v => onRate(game.id, v)} />
-            {formatPlaytime(listEntry.playtimeMinutes) && (
-              <span style={{ fontSize: 11, color: "#555", whiteSpace: "nowrap" }}>
-                ⏱ {formatPlaytime(listEntry.playtimeMinutes)}
-              </span>
-            )}
+          <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
+            <RatingInput value={listEntry.userRating ?? null} onChange={v => onRate(game.id, v)} size={statsTextSize}
+              starColor={listEntry.userRating != null ? ratingStarColor(listEntry.userRating) : "#e6a63a"}
+              textColor={listEntry.userRating != null ? ratingTextColor(listEntry.userRating) : "#e6a63a"} />
+            {formatPlaytime(listEntry.playtimeMinutes) && <>
+              <span style={{ color: "#2a2a3a", fontSize: statsTextSize + 1, userSelect: "none" }}>|</span>
+              <span style={{ fontSize: statsTextSize, color: "#eeeeff", fontWeight: 700, whiteSpace: "nowrap" }}>⏱ {formatPlaytime(listEntry.playtimeMinutes)}</span>
+            </>}
+            {listEntry.replayCount > 0 && <>
+              <span style={{ color: "#2a2a3a", fontSize: statsTextSize + 1, userSelect: "none" }}>|</span>
+              <span style={{ fontSize: statsTextSize, color: "#eeeeff", fontWeight: 700, whiteSpace: "nowrap" }}>↺ ×{listEntry.replayCount}</span>
+            </>}
           </div>
         )}
 
         <div style={{ flex: 1 }} />
 
-        <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
-          <button onClick={e => { e.stopPropagation(); setShowMenu(v => !v); }}
-            style={{ width: "100%", padding: "7px 11px", borderRadius: 8, border: `1px solid ${status !== null ? statusProps(status).color + "44" : "#1e1e35"}`, background: status !== null ? statusProps(status).bg : "#0a0a14", color: status !== null ? statusProps(status).color : "#555", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "inherit" }}>
-            <span>{status !== null ? STATUSES[status].label : "＋ Add to list"}</span>
-            <span style={{ opacity: 0.6, fontSize: 9 }}>▾</span>
-          </button>
-          {showMenu && (
-            <div style={{ position: "absolute", bottom: "calc(100% + 5px)", left: 0, right: 0, background: "#10101e", border: "1px solid #2a2a40", borderRadius: 10, overflow: "hidden", zIndex: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}>
-              {STATUSES.map(s => {
-                const sp = statusProps(s.id);
-                return (
-                  <button key={s.id} onClick={e => { e.stopPropagation(); onAdd(game, s.id); setShowMenu(false); }}
-                    style={{ width: "100%", padding: "8px 14px", border: "none", background: status === s.id ? sp.bg : "transparent", color: sp.color, cursor: "pointer", fontSize: 12, textAlign: "left", fontWeight: status === s.id ? 700 : 400, display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit" }}>
-                    <span style={{ fontSize: 10, opacity: status === s.id ? 1 : 0 }}>✓</span>{s.label}
+        {!hideMenu && (
+          <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
+            <button onClick={e => { e.stopPropagation(); setShowMenu(v => !v); }}
+              style={{ width: "100%", padding: "7px 11px", borderRadius: 8, border: `1px solid ${status !== null ? statusProps(status).color + "44" : "#1e1e35"}`, background: status !== null ? statusProps(status).bg : "#0a0a14", color: status !== null ? statusProps(status).color : "#555", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "inherit" }}>
+              <span>{status !== null ? STATUSES[status].label : "＋ Add to list"}</span>
+              <span style={{ opacity: 0.6, fontSize: 9 }}>▾</span>
+            </button>
+            {showMenu && (
+              <div style={{ position: "absolute", bottom: "calc(100% + 5px)", left: 0, right: 0, background: "#10101e", border: "1px solid #2a2a40", borderRadius: 10, overflow: "hidden", zIndex: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}>
+                {STATUSES.map(s => {
+                  const sp = statusProps(s.id);
+                  return (
+                    <button key={s.id} onClick={e => { e.stopPropagation(); onAdd(game, s.id); setShowMenu(false); }}
+                      style={{ width: "100%", padding: "8px 14px", border: "none", background: status === s.id ? sp.bg : "transparent", color: sp.color, cursor: "pointer", fontSize: 12, textAlign: "left", fontWeight: status === s.id ? 700 : 400, display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit" }}>
+                      <span style={{ fontSize: 10, opacity: status === s.id ? 1 : 0 }}>✓</span>{s.label}
+                    </button>
+                  );
+                })}
+                {status !== null && <>
+                  <div style={{ height: 1, background: "#1a1a30" }} />
+                  <button onClick={e => { e.stopPropagation(); onRemove(game.id); setShowMenu(false); }}
+                    style={{ width: "100%", padding: "8px 14px", border: "none", background: "transparent", color: "#ff6060", cursor: "pointer", fontSize: 12, textAlign: "left", fontFamily: "inherit" }}>
+                    Remove from list
                   </button>
-                );
-              })}
-              {status !== null && <>
-                <div style={{ height: 1, background: "#1a1a30" }} />
-                <button onClick={e => { e.stopPropagation(); onRemove(game.id); setShowMenu(false); }}
-                  style={{ width: "100%", padding: "8px 14px", border: "none", background: "transparent", color: "#ff6060", cursor: "pointer", fontSize: 12, textAlign: "left", fontFamily: "inherit" }}>
-                  Remove from list
-                </button>
-              </>}
-            </div>
-          )}
-        </div>
+                </>}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -372,29 +497,62 @@ function Spinner({ text = "Loading…" }) {
   );
 }
 
-function Grid({ games, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, showGalleryNav }) {
+function Grid({ games, myList, importedNameMap, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, showGalleryNav, hideMenu = false, listMode = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
+  const gridRef = useRef();
+  useEffect(() => {
+    if (!gridRef.current || !onActualCardW) return;
+    const gap = 20;
+    const measure = () => {
+      const containerW = gridRef.current.offsetWidth;
+      const colCount = effectiveCardCount > 0
+        ? effectiveCardCount
+        : Math.max(1, Math.floor((containerW + gap) / (cardW + gap)));
+      onActualCardW(Math.floor((containerW - (colCount - 1) * gap) / colCount));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(gridRef.current);
+    return () => ro.disconnect();
+  }, [effectiveCardCount, cardW, onActualCardW]);
   return (
-    <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20, alignItems: "start" }}>
+    <div ref={gridRef} style={{ display: "grid", gridTemplateColumns: cols, gap: 20, alignItems: "start" }}>
       {games.map((g, i) => (
-        <GameCard key={g.id} game={g} listEntry={myList[g.id] || null} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
+        <GameCard key={g.id} game={g} listEntry={myList[g.id] || importedNameMap?.[normName(g.name)] || null} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
           onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
-          onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav} />
+          onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav}
+          hideMenu={hideMenu} listMode={listMode} statsTextSize={statsTextSize} nameOffset={nameOffset} autoFitTitle={autoFitTitle} ratingColors={ratingColors} />
       ))}
     </div>
   );
 }
 
-function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, favMults = [2, 2, 2], onReorder, showGalleryNav }) {
+function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, favMults = [2, 2, 2], onReorder, showGalleryNav, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
   const [dragOverId, setDragOverId] = useState(null);
   const dragId = useRef(null);
+  const gridRef = useRef();
+  useEffect(() => {
+    if (!gridRef.current || !onActualCardW) return;
+    const gap = 20;
+    const measure = () => {
+      const containerW = gridRef.current.offsetWidth;
+      const colCount = effectiveCardCount > 0
+        ? effectiveCardCount
+        : Math.max(1, Math.floor((containerW + gap) / (cardW + gap)));
+      onActualCardW(Math.floor((containerW - (colCount - 1) * gap) / colCount));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(gridRef.current);
+    return () => ro.disconnect();
+  }, [effectiveCardCount, cardW, onActualCardW]);
   if (!entries.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>No favourites yet. Add games to your list and star them!</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   // Max columns for capping span (avoid overflowing a 1-col layout)
   const maxCols = effectiveCardCount > 0 ? effectiveCardCount : 12;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20, alignItems: "start" }}>
+    <div ref={gridRef} style={{ display: "grid", gridTemplateColumns: cols, gap: 20, alignItems: "start" }}>
       {entries.map((e, i) => {
         const glow = i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null;
         const mult = i < 3 ? (favMults[i] ?? 2) : 1;
@@ -410,7 +568,8 @@ function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, on
             style={{ gridColumn: span > 1 ? `span ${span}` : undefined, opacity: dragOverId === e.game.id ? 0.5 : 1, outline: dragOverId === e.game.id ? "2px dashed #7c6ef755" : "none", borderRadius: 12, cursor: "grab", transition: "opacity 0.15s" }}>
             <GameCard game={e.game} listEntry={e} cardH={thisCardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText} glowColor={glow}
               onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
-              onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav} />
+              onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav}
+              hideMenu={hideMenu} listMode={listMode} hideFav={hideFav} statsTextSize={statsTextSize} nameOffset={nameOffset} autoFitTitle={autoFitTitle} ratingColors={ratingColors} />
           </div>
         );
       })}
@@ -512,7 +671,7 @@ function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 10, color: "#555", marginTop: 6 }}>{total} edit{total !== 1 ? "s" : ""} in the last year</div>
+      <div style={{ fontSize: 10, color: "#fff", fontWeight: 800, marginTop: 6 }}>{total} edit{total !== 1 ? "s" : ""} in the last year</div>
     </div>
   );
 }
@@ -521,9 +680,11 @@ function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
 // Metadata modal — playtime, replays, tags, metacritic, activity
 // ---------------------------------------------------------------------------
 
-function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, onSyncRawg, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255 }) {
+function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, onSyncRawg, onSyncPsn, onCoverPromoted, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255, modalWidthMult = 1.0 }) {
   const game = entry?.game;
-  const [replayCount, setReplayCount]   = useState(entry?.replayCount ?? 0);
+  const [replayCount, setReplayCount]     = useState(entry?.replayCount ?? 0);
+  const [userRating, setUserRating]       = useState(entry?.userRating ?? null);
+  const [metacriticLocal, setMetacriticLocal] = useState(null);
   const [tags, setTags]                 = useState(entry?.tags ?? []);
   const [tagInput, setTagInput]         = useState("");
   const [platforms, setPlatforms]       = useState(entry?.platformsPlayed ?? []);
@@ -532,29 +693,98 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
   const [playtime, setPlaytime]         = useState(entry?.playtimeMinutes != null ? Math.round(entry.playtimeMinutes / 60 * 10) / 10 : "");
   const [customImagesOnly, setCustomImagesOnly] = useState(entry?.customImagesOnly || false);
   const [extraImageIds, setExtraImageIds]       = useState(entry?.extraImageIds || []);
+  // short_screenshots from RAWG — deduplicated against background_image, deleteable
+  const [shortScreenshots, setShortScreenshots] = useState(
+    (game?.short_screenshots || []).filter(ss => ss.image !== game?.background_image)
+  );
   const [uploadingImg, setUploadingImg]         = useState(false);
   const [imgPosX, setImgPosX]                   = useState(entry?.imgPosX ?? 50);
   const [imgPosY, setImgPosY]                   = useState(entry?.imgPosY ?? 50);
+  const [imgFit,  setImgFit]                    = useState(entry?.imgFit  ?? "cover");
   const [customName, setCustomName]               = useState(entry?.customName || "");
+  const isPlayedWithRating = (entry?.status === 4 || entry?.status === 5) && entry?.userRating != null;
+  const [selectedStatus, setSelectedStatus]      = useState(isPlayedWithRating ? 1 : (entry?.status ?? 0));
+  const [replayStatus, setReplayStatus]          = useState(isPlayedWithRating ? (entry?.status ?? null) : null);
   const [confirmDelete, setConfirmDelete]        = useState(false);
   const [syncingSteam, setSyncingSteam]          = useState(false);
   const [steamSynced, setSteamSynced]            = useState(false);
+  const [steamError, setSteamError]              = useState(null);
   const [syncingRawg, setSyncingRawg]            = useState(false);
   const [rawgSynced, setRawgSynced]              = useState(false);
+  const [syncingPsn, setSyncingPsn]              = useState(false);
+  const [psnSynced, setPsnSynced]                = useState(false);
+  const [psnError, setPsnError]                  = useState(null);
 
   const [dragOverIdx, setDragOverIdx]            = useState(null);
+  const [coverDropOver, setCoverDropOver]        = useState(false);
+  const [promotingCover, setPromotingCover]      = useState(false);
+  const [hasCoverLocal, setHasCoverLocal]        = useState(entry?.hasCover || false);
+  const [previewKey, setPreviewKey]              = useState(0);
+  const [coverWasPromoted, setCoverWasPromoted]  = useState(false);
+  const [confirmClose, setConfirmClose]          = useState(false);
+  const [framingOpen, setFramingOpen]            = useState(false);
+  const [imagesOpen, setImagesOpen]              = useState(false);
+  const [framingImgIdx, setFramingImgIdx]        = useState(0);
+  const [topImgIdx, setTopImgIdx]                = useState(0);
   const dragIdxRef                               = useRef(null);
   const imageUploadRef = useRef();
+
+  // Snapshot of values at open-time for dirty detection
+  const initialRef = useRef({
+    customName:       entry?.customName || "",
+    effectiveStatus:  entry?.status ?? 0,
+    userRating:       entry?.userRating ?? null,
+    replayCount:      entry?.replayCount ?? 0,
+    playtime:         entry?.playtimeMinutes != null ? String(Math.round(entry.playtimeMinutes / 60 * 10) / 10) : "",
+    tags:             JSON.stringify(entry?.tags ?? []),
+    platforms:        JSON.stringify(entry?.platformsPlayed ?? []),
+    customImagesOnly: entry?.customImagesOnly || false,
+    imgPosX:          entry?.imgPosX ?? 50,
+    imgPosY:          entry?.imgPosY ?? 50,
+    imgFit:           entry?.imgFit  ?? "cover",
+    yearInput:        game?.released ? game.released.slice(0, 4) : "",
+    shortScreenshots: JSON.stringify((game?.short_screenshots || []).filter(ss => ss.image !== game?.background_image)),
+  });
+
+  const isDirty =
+    customName       !== initialRef.current.customName       ||
+    (replayStatus ?? selectedStatus) !== initialRef.current.effectiveStatus ||
+    userRating       !== initialRef.current.userRating       ||
+    replayCount      !== initialRef.current.replayCount      ||
+    String(playtime) !== initialRef.current.playtime         ||
+    JSON.stringify(tags)      !== initialRef.current.tags    ||
+    JSON.stringify(platforms) !== initialRef.current.platforms ||
+    customImagesOnly !== initialRef.current.customImagesOnly ||
+    imgPosX          !== initialRef.current.imgPosX          ||
+    imgPosY          !== initialRef.current.imgPosY          ||
+    imgFit           !== initialRef.current.imgFit           ||
+    yearInput        !== initialRef.current.yearInput        ||
+    JSON.stringify(shortScreenshots) !== initialRef.current.shortScreenshots ||
+    coverWasPromoted;
+
+  const handleRequestClose = () => {
+    if (confirmClose) return;
+    if (isDirty) { setConfirmClose(true); } else { onClose(); }
+  };
 
   const isSteamGame = (entry?.game?.slug || "").startsWith("steam-");
 
   const handleSyncSteam = async () => {
     if (!onSyncSteam) return;
     setSyncingSteam(true);
-    await onSyncSteam(gameId);
-    setSyncingSteam(false);
-    setSteamSynced(true);
-    setTimeout(() => setSteamSynced(false), 2000);
+    setSteamError(null);
+    try {
+      await onSyncSteam(gameId);
+      setSteamSynced(true);
+      setTimeout(() => setSteamSynced(false), 2000);
+    } catch (e) {
+      const msg = e.message.includes("404")
+        ? "No Steam images found — this game may not be available on Steam."
+        : "Steam sync failed.";
+      setSteamError(msg);
+    } finally {
+      setSyncingSteam(false);
+    }
   };
 
   const handleSyncRawg = async () => {
@@ -564,14 +794,57 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
     setSyncingRawg(false);
     if (result) {
       if (result.extraImageIds) setExtraImageIds(result.extraImageIds);
+      if (result.metacritic != null) setMetacriticLocal(result.metacritic);
+      setShortScreenshots([]);
       setRawgSynced(true);
       setTimeout(() => setRawgSynced(false), 2000);
     }
   };
 
+  const handleSyncPsn = async () => {
+    if (!onSyncPsn) return;
+    setSyncingPsn(true);
+    setPsnError(null);
+    try {
+      const result = await onSyncPsn(gameId);
+      if (result?.hasCover) {
+        setHasCoverLocal(true);
+        setPreviewKey(k => k + 1);
+      }
+      setPsnSynced(true);
+      setTimeout(() => setPsnSynced(false), 2000);
+    } catch (e) {
+      const msg = e.message.includes("404")
+        ? "Not found in your PSN library — the game may be under a different title."
+        : "PSN sync failed.";
+      setPsnError(msg);
+    } finally {
+      setSyncingPsn(false);
+    }
+  };
+
+  const promoteImageToCover = async (fromIdx) => {
+    const imageId = extraImageIds[fromIdx];
+    setPromotingCover(true);
+    try {
+      const result = await apiFetch(`/list/${gameId}/images/${imageId}/promote-to-cover`, { method: "POST" });
+      const newExtraIds = result.extraImageIds || [];
+      setExtraImageIds(newExtraIds);
+      setHasCoverLocal(true);
+      setCoverWasPromoted(true);
+      setPreviewKey(k => k + 1);
+      setImgPosX(50);
+      setImgPosY(50);
+      // Immediately update the card in the list so it shows the new cover without waiting for Save
+      if (onCoverPromoted) onCoverPromoted(gameId, newExtraIds);
+    } finally {
+      setPromotingCover(false);
+    }
+  };
+
   const handleDragStart = (idx) => { dragIdxRef.current = idx; };
   const handleDragOver  = (e, idx) => { e.preventDefault(); setDragOverIdx(idx); };
-  const handleDragEnd   = () => { dragIdxRef.current = null; setDragOverIdx(null); };
+  const handleDragEnd   = () => { dragIdxRef.current = null; setDragOverIdx(null); setCoverDropOver(false); };
   const handleDrop      = async (e, toIdx) => {
     e.preventDefault();
     const fromIdx = dragIdxRef.current;
@@ -597,6 +870,20 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
   });
   const [selectedAddPlatform, setSelectedAddPlatform] = useState("");
 
+  // Image list for auto-rotating top preview — computed before early return so the effect can use it
+  const framingImages = [
+    hasCoverLocal ? `${coverSrc(gameId)}?v=prev-${previewKey}` : rawgImgSrc(entry?.game?.background_image),
+    ...extraImageIds.map(id => `${API}/images/${id}`),
+    ...shortScreenshots.map(ss => rawgImgSrc(ss.image)),
+  ].filter(Boolean);
+
+  // Auto-advance top image every 30 s
+  useEffect(() => {
+    if (framingImages.length <= 1) return;
+    const t = setInterval(() => setTopImgIdx(i => (i + 1) % framingImages.length), 15000);
+    return () => clearInterval(t);
+  }, [framingImages.length]);
+
   if (!entry || !game) return null;
 
   const addTag = (t) => {
@@ -615,7 +902,10 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
 
   const addExtraPlatform = () => {
     if (!selectedAddPlatform) return;
-    if (!extraPlatformSlugs.includes(selectedAddPlatform)) {
+    if (gamePlatformSlugs.includes(selectedAddPlatform)) {
+      // Re-selecting a game's own platform — just toggle it into the played list
+      setPlatforms(prev => prev.includes(selectedAddPlatform) ? prev : [...prev, selectedAddPlatform]);
+    } else if (!extraPlatformSlugs.includes(selectedAddPlatform)) {
       setExtraPlatformSlugs(prev => [...prev, selectedAddPlatform]);
       setPlatforms(prev => prev.includes(selectedAddPlatform) ? prev : [...prev, selectedAddPlatform]);
     }
@@ -627,9 +917,18 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
     setPlatforms(prev => prev.filter(s => s !== slug));
   };
 
-  // Platforms available to add (not already shown)
+  const handleSetStatus = (newStatus) => {
+    setSelectedStatus(newStatus);
+    setReplayStatus(null);
+  };
+
+  const hasSelectedPlatforms = platforms.length > 0;
   const allShownSlugs = [...gamePlatformSlugs, ...extraPlatformSlugs];
-  const addablePlatforms = ALL_PLATFORMS.filter(p => !allShownSlugs.includes(p.slug));
+  // When platforms are selected: dropdown lists everything not already played/shown
+  // When none selected: dropdown lists everything not already shown as a badge
+  const addablePlatforms = hasSelectedPlatforms
+    ? ALL_PLATFORMS.filter(p => !platforms.includes(p.slug) && !extraPlatformSlugs.includes(p.slug))
+    : ALL_PLATFORMS.filter(p => !allShownSlugs.includes(p.slug));
 
   const handleImageUpload = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -652,319 +951,468 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
   };
 
   const handleSave = () => {
-    const updatedGame = yearInput !== origYear
-      ? { ...game, released: yearInput ? `${yearInput}-01-01` : null }
-      : game;
+    const isDropped = selectedStatus === 6;
+    const updatedGame = {
+      ...(yearInput !== origYear ? { ...game, released: yearInput ? `${yearInput}-01-01` : null } : game),
+      short_screenshots: isDropped ? [] : shortScreenshots,
+    };
     onSave(gameId, {
       game: updatedGame,
       replayCount,
+      userRating,
       tags,
       platformsPlayed: platforms,
       playtimeMinutes: playtime !== "" ? Math.round(parseFloat(playtime) * 60) : (entry.playtimeMinutes ?? null),
       customImagesOnly,
       imgPosX,
       imgPosY,
-      customName: customName.trim() || null,
+      imgFit,
+      customName: customName.trim() && customName.trim() !== game.name.trim() ? customName.trim() : null,
+      status: replayStatus ?? selectedStatus,
+      hasCover: hasCoverLocal,
+      extraImageIds,
+      coverWasPromoted,
     });
     onClose();
   };
 
+  const modalMaxW = Math.round(600 * modalWidthMult);
+  // Content width = maxWidth minus left+right padding (28*2=56). Used for layout decisions.
+  const contentW = modalMaxW - 56;
+  // Show all rating buttons in a single row when wide enough
+  const singleRowRatings = contentW >= 680;
+
+  // Preview dimensions — 2× card size, capped to content width
+  const previewW = Math.min(cardW * 2, contentW);
+  const previewH = Math.round(previewW * cardH / cardW);
+
+  // Displayed metacritic — prefer post-sync value over stored
+  const metacriticDisplay = metacriticLocal ?? game.metacritic;
+
+  const ratingColor = (v) => ({ "10":"#FFD700","9.5":"#f0c020","9":"#e8b030","8.5":"#e0a040","8":"#d89050","7.5":"#cc8060","7":"#c07070","6.5":"#aa6080","6":"#9060a0","5.5":"#7050b0","5":"#6040c0","4":"#e05c7a","3":"#e05c7a","2":"#e05c7a","1":"#e05c7a","0":"#e05c7a" }[String(v)] || "#e6a63a");
+  const LBL = { fontSize: 10, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 };
+  const SEC = { fontSize: 20, color: "#eeeeff", fontWeight: 800, marginBottom: 14, letterSpacing: 0.3 };
+  const dashSvg = (rx) => `url("data:image/svg+xml,${encodeURIComponent(`<svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="none" rx="${rx}" ry="${rx}" stroke="rgba(255,255,255,0.4)" stroke-width="2.5" stroke-dasharray="11 6" stroke-linecap="round"/></svg>`)}")`;
+  const BOX = { backgroundImage: dashSvg(12), backgroundColor: "#09091a", borderRadius: 12, padding: "16px 18px", marginBottom: 14 };
+  const Pencil = () => (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ display: "inline", verticalAlign: "middle" }}>
+      <path d="M9.5 2L12 4.5L4.5 12H2V9.5L9.5 2Z" stroke="white" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M7.8 3.7L10.3 6.2" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  );
+  const DownRightArrow = () => (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0 }}>
+      <polyline points="5,2 5,12 15,12" stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+      <polyline points="12,9 15,12 12,15" stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+    <div onClick={handleRequestClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: "#0c0c1c", border: "1px solid #1e1e35", borderRadius: 16, width: "100%", maxWidth: 600, maxHeight: "90vh", overflowY: "auto", padding: 28, position: "relative" }}>
+        style={{ background: "#0c0c1c", border: "1px solid #1e1e35", borderRadius: 16, width: "100%", maxWidth: modalMaxW, maxHeight: "90vh", overflowY: "auto", padding: 24, position: "relative" }}>
 
-        {/* Header */}
-        <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#444", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 12, paddingRight: 24 }}>{customName.trim() || game.name}</div>
+        {/* Header bar */}
+        <button onClick={handleRequestClose} style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#444", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
+        <div style={{ fontSize: 40, fontWeight: 800, color: "#eeeeff", marginBottom: 14, paddingRight: 24, lineHeight: 1.1 }}>
+          {customName.trim() && customName.trim() !== game.name.trim() ? customName.trim() : game.name}
+        </div>
 
-        {/* Name override */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Name</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              value={customName}
-              onChange={e => setCustomName(e.target.value)}
-              placeholder={game.name}
-              style={{ flex: 1, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "5px 9px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }}
-            />
-            {customName && (
-              <button onClick={() => setCustomName("")}
-                style={{ padding: "5px 10px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#888", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
-                title="Reset to original name">×</button>
-            )}
+        {/* Cover image — full width, outside sections, auto-rotates every 15 s */}
+        <div style={{ position: "relative", width: "100%", height: Math.round(contentW * cardH / cardW), borderRadius: 10, overflow: "hidden", background: "#080814", marginBottom: 14 }}>
+          {framingImages[topImgIdx]
+            ? <img src={framingImages[topImgIdx]} alt="" style={{ width: "100%", height: "100%", objectFit: imgFit, objectPosition: `${imgPosX}% ${imgPosY}%`, display: "block" }} />
+            : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>🎮</div>}
+          {framingImages.length > 1 && (
+            <div style={{ position: "absolute", bottom: 6, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 4 }}>
+              {framingImages.map((_, i) => (
+                <div key={i} onClick={() => setTopImgIdx(i)}
+                  style={{ width: i === topImgIdx ? 14 : 5, height: 5, borderRadius: 3, background: i === topImgIdx ? "#fff" : "rgba(255,255,255,0.35)", cursor: "pointer", transition: "all 0.3s", flexShrink: 0 }} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── GAME METADATA section ─────────────────────── */}
+        <div style={BOX}>
+          <div style={SEC}>Game Metadata</div>
+
+          {/* Name */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={LBL}>Name</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input value={customName} onChange={e => setCustomName(e.target.value)}
+                onFocus={() => { if (!customName) setCustomName(game.name); }}
+                placeholder={game.name}
+                style={{ flex: 1, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "5px 9px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
+              {customName && (
+                <button onClick={() => setCustomName("")}
+                  style={{ padding: "5px 10px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#888", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                  title="Reset to original name">×</button>
+              )}
+            </div>
+          </div>
+
+          {/* Year · Metacritic · Playtime · Replays */}
+          <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap" }}>
+            <div style={{ flexShrink: 0 }}>
+              <div style={LBL}>Year</div>
+              {origYear
+                ? <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 6, background: "#161622", border: "1px solid #2a2a40", color: "#aaa", fontSize: 13, fontWeight: 700 }}>{origYear}</span>
+                : <input type="number" min="1970" max="2030" value={yearInput} onChange={e => setYearInput(e.target.value)} placeholder="Year"
+                    style={{ width: 75, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "3px 8px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
+              }
+            </div>
+            <div style={{ flexShrink: 0 }}>
+              <div style={LBL}>Metacritic</div>
+              {metacriticDisplay > 0
+                ? <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 6,
+                    background: metacriticDisplay >= 75 ? "#1a3a1a" : metacriticDisplay >= 50 ? "#2a2a0a" : "#2a1010",
+                    border: `1px solid ${metacriticDisplay >= 75 ? "#4caf8066" : metacriticDisplay >= 50 ? "#e6a63a66" : "#ff606066"}`,
+                    color: metacriticDisplay >= 75 ? "#4caf80" : metacriticDisplay >= 50 ? "#e6a63a" : "#ff8080",
+                    fontSize: 13, fontWeight: 800 }}>{metacriticDisplay}</span>
+                : onSyncRawg
+                  ? <button onClick={handleSyncRawg} disabled={syncingRawg}
+                      style={{ padding: "3px 10px", borderRadius: 6, background: "transparent", border: "1px solid #2a2a40", color: syncingRawg ? "#444" : "#a78bfa", fontSize: 11, cursor: syncingRawg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {syncingRawg ? "…" : "Sync"}
+                    </button>
+                  : <span style={{ color: "#444", fontSize: 12 }}>—</span>
+              }
+            </div>
+            <div style={{ flexShrink: 0 }}>
+              <div style={LBL}>Playtime (h)</div>
+              <input type="number" min="0" step="0.1" value={playtime} onChange={e => setPlaytime(e.target.value)} placeholder="0.0"
+                style={{ width: 80, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "3px 8px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
+              {entry.playtimeMinutes != null && <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>~{formatPlaytime(entry.playtimeMinutes)}</div>}
+            </div>
+            <div style={{ flexShrink: 0 }}>
+              <div style={LBL}>Replays</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => setReplayCount(c => Math.max(0, c - 1))}
+                  style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                <span style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", minWidth: 20, textAlign: "center" }}>{replayCount}</span>
+                <button onClick={() => setReplayCount(c => c + 1)}
+                  style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+              </div>
+            </div>
+            {/* Rating — label on left, two heat-map rows: all colors visible, selected glows */}
+            <div style={{ flex: 1, minWidth: 0, display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ ...LBL, marginBottom: 0, writingMode: "vertical-lr", transform: "rotate(180deg)", flexShrink: 0, letterSpacing: 2 }}>Rating</div>
+              <div style={{ flex: 1 }}>
+                {[[10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5], [6, 5.5, 5, 4, 3, 2, 1, 0]].map((row, ri) => (
+                  <div key={ri} style={{ display: "flex", gap: 3, marginBottom: ri === 0 ? 3 : 0 }}>
+                    {row.map(v => {
+                      const c = ratingColor(v);
+                      const sel = userRating === v;
+                      return (
+                        <button key={v} onClick={() => setUserRating(sel ? null : v)}
+                          style={{ flex: 1, padding: "3px 0", borderRadius: 4,
+                            border: `1px solid ${sel ? c + "dd" : c + "44"}`,
+                            background: sel ? c + "30" : c + "10",
+                            color: sel ? c : c + "77",
+                            fontSize: 9, cursor: "pointer",
+                            fontWeight: sel ? 800 : 500,
+                            fontFamily: "inherit", transition: "all 0.15s",
+                            boxShadow: sel ? `0 0 7px ${c}88` : "none" }}>
+                          {v}
+                        </button>
+                      );
+                    })}
+                    {ri === 1 && userRating !== null && (
+                      <button onClick={() => setUserRating(null)}
+                        style={{ flex: 1, padding: "3px 0", borderRadius: 4, border: "1px solid #2a2a40",
+                          background: "transparent", color: "#555", fontSize: 9, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Tags + Platforms */}
+          <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={LBL}>Tags</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: tags.length ? 6 : 0 }}>
+                {tags.map(t => (
+                  <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "#161628", border: "1px solid #2a2a50", borderRadius: 20, padding: "2px 8px", fontSize: 10, color: "#a0a0cc" }}>
+                    {t}
+                    <button onClick={() => removeTag(t)} style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 11, padding: 0, lineHeight: 1 }}>×</button>
+                  </span>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 5 }}>
+                <input value={tagInput} onChange={e => setTagInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(tagInput); } }}
+                  placeholder="Add tag…"
+                  style={{ flex: 1, background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "3px 8px", color: "#e0e0f0", fontSize: 11, outline: "none", fontFamily: "inherit" }} />
+                <button onClick={() => addTag(tagInput)} style={{ padding: "3px 10px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#7c6ef7", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Add</button>
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={LBL}>Platforms</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+                {(hasSelectedPlatforms
+                  ? (game.platforms || []).filter(gp => platforms.includes(gp.platform.slug))
+                  : (game.platforms || [])
+                ).map(gp => {
+                  const slug = gp.platform.slug;
+                  const pInfo = ALL_PLATFORMS.find(ap => ap.slug === slug) || { short: slug.slice(0, 4), name: gp.platform.name };
+                  const active = platforms.includes(slug);
+                  return (
+                    <span key={slug} onClick={() => togglePlatform(slug)} title={pInfo.name}
+                      style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
+                        background: active ? platformHighlightColor + "25" : "#0e0e1e",
+                        border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
+                        color: active ? platformHighlightColor : "#444", cursor: "pointer", userSelect: "none" }}>
+                      {pInfo.short}
+                    </span>
+                  );
+                })}
+                {extraPlatformSlugs.map(slug => {
+                  const pInfo = ALL_PLATFORMS.find(ap => ap.slug === slug) || { short: slug.slice(0, 4), name: slug };
+                  const active = platforms.includes(slug);
+                  return (
+                    <span key={slug} style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
+                      background: active ? platformHighlightColor + "25" : "#0e0e1e",
+                      border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
+                      color: active ? platformHighlightColor : "#444", userSelect: "none" }}>
+                      <span onClick={() => togglePlatform(slug)} style={{ cursor: "pointer" }} title={pInfo.name}>{pInfo.short}</span>
+                      <button onClick={() => removeExtraPlatform(slug)} style={{ background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 10, padding: 0, lineHeight: 1 }}>×</button>
+                    </span>
+                  );
+                })}
+              </div>
+              {addablePlatforms.length > 0 && (
+                <div style={{ display: "flex", gap: 5 }}>
+                  <select value={selectedAddPlatform} onChange={e => setSelectedAddPlatform(e.target.value)}
+                    style={{ flex: 1, background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "3px 6px", color: "#e0e0f0", fontSize: 11, outline: "none", fontFamily: "inherit" }}>
+                    <option value="">Add platform…</option>
+                    {addablePlatforms.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+                  </select>
+                  <button onClick={addExtraPlatform} disabled={!selectedAddPlatform}
+                    style={{ padding: "3px 10px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: selectedAddPlatform ? "#7c6ef7" : "#333", fontSize: 11, cursor: selectedAddPlatform ? "pointer" : "not-allowed", fontFamily: "inherit" }}>Add</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* ── STATUS section ────────────────────────────── */}
+        <div style={BOX}>
+          <div style={SEC}>Status</div>
 
-          {/* Year + Metacritic row */}
-          <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-            <div>
-              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Release Year</div>
-              {origYear
-                ? <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 6, background: "#161622", border: "1px solid #2a2a40", color: "#888", fontSize: 14, fontWeight: 700 }}>{origYear}</span>
-                : <input type="number" min="1970" max="2030" value={yearInput} onChange={e => setYearInput(e.target.value)}
-                    placeholder="e.g. 2023"
-                    style={{ width: 90, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "5px 8px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
-              }
-            </div>
-            {game.metacritic > 0 && (
-              <div>
-                <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Metacritic</div>
-                <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 6, background: game.metacritic >= 75 ? "#1a3a1a" : game.metacritic >= 50 ? "#2a2a0a" : "#2a1010", border: `1px solid ${game.metacritic >= 75 ? "#4caf8066" : game.metacritic >= 50 ? "#e6a63a66" : "#ff606066"}`, color: game.metacritic >= 75 ? "#4caf80" : game.metacritic >= 50 ? "#e6a63a" : "#ff8080", fontSize: 14, fontWeight: 800 }}>
-                  {game.metacritic}
-                </span>
+          {/* Status buttons — Replaying (id=4) excluded; accessible via the Played replay bubble */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: selectedStatus === 1 && userRating !== null ? 10 : 0 }}>
+            {STATUSES.filter(s => s.id !== 4).map(s => (
+              <button key={s.id} onClick={() => handleSetStatus(s.id)}
+                style={{ padding: "4px 10px", borderRadius: 6,
+                  border: `1px solid ${selectedStatus === s.id ? s.color + "99" : "#2a2a40"}`,
+                  background: selectedStatus === s.id ? s.bg : "transparent",
+                  color: selectedStatus === s.id ? s.color : "#555",
+                  fontSize: 11, cursor: "pointer", fontWeight: selectedStatus === s.id ? 700 : 400,
+                  fontFamily: "inherit", transition: "all 0.1s" }}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Arrow + replay bubble — appear under the Played button, right before Next to Play */}
+          {selectedStatus === 1 && userRating !== null && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 72 }}>
+              <DownRightArrow />
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px",
+                backgroundImage: dashSvg(8), backgroundColor: "#0a0a18", borderRadius: 8 }}>
+                {[STATUSES[4], STATUSES[5]].map(s => {
+                  const isActive = replayStatus === s.id;
+                  return (
+                    <button key={s.id}
+                      onClick={() => {
+                        if (isActive) {
+                          setReplayStatus(null);
+                          if (s.id === 4 && isPlayedWithRating && entry?.status === 4) setReplayCount(c => c + 1);
+                        } else { setReplayStatus(s.id); }
+                      }}
+                      title={s.id === 4 && isActive && isPlayedWithRating && entry?.status === 4 ? "Removing will add 1 replay" : undefined}
+                      style={{ padding: "3px 10px", borderRadius: 6,
+                        border: `1px solid ${isActive ? s.color + "99" : "#2a2a40"}`,
+                        background: isActive ? s.bg : "transparent",
+                        color: isActive ? s.color : "#555",
+                        fontSize: 10, cursor: "pointer", fontWeight: isActive ? 700 : 400, fontFamily: "inherit", transition: "all 0.1s" }}>
+                      {s.label}
+                    </button>
+                  );
+                })}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Playtime + Replays row */}
-          <div style={{ display: "flex", gap: 16 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Playtime (hours)</div>
-              <input type="number" min="0" step="0.1" value={playtime} onChange={e => setPlaytime(e.target.value)}
-                placeholder="e.g. 12.5"
-                style={{ width: "100%", background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "5px 8px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
-              {entry.playtimeMinutes != null && <div style={{ fontSize: 10, color: "#333", marginTop: 4 }}>Stored: {formatPlaytime(entry.playtimeMinutes)}</div>}
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Replays</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button onClick={() => setReplayCount(c => Math.max(0, c - 1))}
-                  style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                <span style={{ fontSize: 18, fontWeight: 800, color: "#eeeeff", minWidth: 24, textAlign: "center" }}>{replayCount}</span>
-                <button onClick={() => setReplayCount(c => c + 1)}
-                  style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
-              </div>
-            </div>
-          </div>
+        </div>
 
-          {/* Tags */}
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Tags</span>
-              {(game.genres || []).length > 0 && (
-                <button onClick={importGenres} style={{ fontSize: 10, color: "#7c6ef7", background: "transparent", border: "1px solid #7c6ef744", borderRadius: 4, padding: "2px 7px", cursor: "pointer", fontFamily: "inherit" }}>
-                  + from genres
-                </button>
-              )}
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-              {tags.map(t => (
-                <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#161628", border: "1px solid #2a2a50", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#a0a0cc" }}>
-                  {t}
-                  <button onClick={() => removeTag(t)} style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 12, padding: 0, lineHeight: 1 }}>×</button>
-                </span>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <input value={tagInput} onChange={e => setTagInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(tagInput); } }}
-                placeholder="Add tag…"
-                style={{ flex: 1, background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "5px 9px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }} />
-              <button onClick={() => addTag(tagInput)} style={{ padding: "5px 12px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#7c6ef7", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Add</button>
-            </div>
-          </div>
-
-          {/* Platforms — game's platforms + user-added extras */}
-          <div>
-            <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Platforms Played On</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
-              {/* Game's official platforms */}
-              {(game.platforms || []).map(gp => {
-                const slug = gp.platform.slug;
-                const pInfo = ALL_PLATFORMS.find(ap => ap.slug === slug) || { short: slug.slice(0, 4), name: gp.platform.name };
-                const active = platforms.includes(slug);
-                return (
-                  <span key={slug} onClick={() => togglePlatform(slug)} title={pInfo.name}
-                    style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
-                      background: active ? platformHighlightColor + "25" : "#0e0e1e",
-                      border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
-                      color: active ? platformHighlightColor : "#444",
-                      cursor: "pointer", userSelect: "none" }}>
-                    {pInfo.short}
-                  </span>
-                );
-              })}
-              {/* User-added extra platforms */}
-              {extraPlatformSlugs.map(slug => {
-                const pInfo = ALL_PLATFORMS.find(ap => ap.slug === slug) || { short: slug.slice(0, 4), name: slug };
-                const active = platforms.includes(slug);
-                return (
-                  <span key={slug} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
-                    background: active ? platformHighlightColor + "25" : "#0e0e1e",
-                    border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
-                    color: active ? platformHighlightColor : "#444", userSelect: "none" }}>
-                    <span onClick={() => togglePlatform(slug)} style={{ cursor: "pointer" }} title={pInfo.name}>{pInfo.short}</span>
-                    <button onClick={() => removeExtraPlatform(slug)} style={{ background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 11, padding: 0, lineHeight: 1, marginLeft: 2 }}>×</button>
-                  </span>
-                );
-              })}
-            </div>
-            {/* Add platform dropdown */}
-            {addablePlatforms.length > 0 && (
-              <div style={{ display: "flex", gap: 6 }}>
-                <select value={selectedAddPlatform} onChange={e => setSelectedAddPlatform(e.target.value)}
-                  style={{ flex: 1, background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "4px 8px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }}>
-                  <option value="">Add platform…</option>
-                  {addablePlatforms.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
-                </select>
-                <button onClick={addExtraPlatform} disabled={!selectedAddPlatform}
-                  style={{ padding: "4px 12px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: selectedAddPlatform ? "#7c6ef7" : "#333", fontSize: 12, cursor: selectedAddPlatform ? "pointer" : "not-allowed", fontFamily: "inherit" }}>Add</button>
-              </div>
-            )}
-          </div>
+        {/* ── IMAGES section ────────────────────────────── */}
+        <div style={BOX}>
+          <div style={SEC}>Images</div>
 
           {/* Image Framing */}
-          <div>
-            <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Image Framing</div>
-            <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-              {/* Live preview */}
-              {(() => {
-                // Scale card dimensions down to fit the modal, preserving the exact aspect ratio
-                const maxPreviewW = 160;
-                const ratio = cardH / cardW;
-                const previewW = Math.min(maxPreviewW, cardW);
-                const previewH = Math.round(previewW * ratio);
-                const previewSrc = entry.hasCover ? `${coverSrc(gameId)}?v=modal` : rawgImgSrc(game.background_image);
-                return (
-                  <div style={{ width: previewW, height: previewH, borderRadius: 6, overflow: "hidden", background: "#080814", border: "1px solid #2a2a40", flexShrink: 0 }}>
-                    {previewSrc
-                      ? <img src={previewSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `${imgPosX}% ${imgPosY}%` }} />
-                      : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🎮</div>}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: framingOpen ? 14 : 0 }}>
+              <div style={{ ...LBL, marginBottom: 0 }}>Image Framing</div>
+              <button onClick={() => setFramingOpen(v => !v)}
+                style={{ display: "flex", alignItems: "center", gap: 4, background: "transparent", border: "none", cursor: "pointer", color: "#fff", padding: "2px 4px" }}>
+                <Pencil />
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#fff" }}>Edit</span>
+              </button>
+            </div>
+            {framingOpen && (
+              <div>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                  <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid #1e1e35" }}>
+                    {["cover", "contain"].map(mode => (
+                      <button key={mode} onClick={() => setImgFit(mode)}
+                        style={{ padding: "3px 10px", fontSize: 10, fontWeight: 700, fontFamily: "inherit", border: "none", cursor: "pointer", background: imgFit === mode ? "#7c6ef7" : "transparent", color: imgFit === mode ? "#fff" : "#555", transition: "background 0.15s, color 0.15s" }}>
+                        {mode === "cover" ? "Fill" : "Fit"}
+                      </button>
+                    ))}
                   </div>
-                );
-              })()}
-              {/* Controls */}
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
-                {[
-                  { label: "Horizontal", value: imgPosX, set: setImgPosX, color: "#7c6ef7" },
-                  { label: "Vertical",   value: imgPosY, set: setImgPosY, color: "#38bdf8" },
-                ].map(({ label, value, set, color }) => (
-                  <div key={label}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, color: "#666" }}>{label}</span>
-                      <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value}%</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {[
+                    { label: "H", value: imgPosX, set: setImgPosX, color: "#7c6ef7" },
+                    { label: "V", value: imgPosY, set: setImgPosY, color: "#38bdf8" },
+                  ].map(({ label, value, set, color }) => (
+                    <div key={label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 10, color: "#555", fontWeight: 700, width: 10, flexShrink: 0 }}>{label}</span>
+                      <input type="range" min={0} max={100} step={1} value={value}
+                        onChange={e => set(parseFloat(e.target.value))}
+                        style={{ flex: 1, accentColor: color, cursor: "pointer", height: 4 }} />
+                      <span style={{ fontSize: 10, color, fontWeight: 700, width: 28, textAlign: "right", flexShrink: 0 }}>{value}%</span>
                     </div>
-                    <input type="range" min={0} max={100} step={1} value={value}
-                      onChange={e => set(parseFloat(e.target.value))}
-                      style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
-                  </div>
-                ))}
-                <button onClick={() => { setImgPosX(50); setImgPosY(50); }}
-                  style={{ fontSize: 10, color: "#444", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-start" }}>
-                  Reset
-                </button>
+                  ))}
+                  <button onClick={() => { setImgPosX(50); setImgPosY(50); }}
+                    style={{ fontSize: 10, color: "#444", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "2px 8px", cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-start", marginTop: 2 }}>
+                    Reset
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Images */}
+          {/* Gallery */}
           <div>
-            <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Images</div>
-
-            {/* Custom images only toggle */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Custom images only (skip RAWG cover)</span>
-              <button onClick={() => setCustomImagesOnly(v => !v)}
-                style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: customImagesOnly ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-                <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: customImagesOnly ? 19 : 3, transition: "left 0.2s" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: imagesOpen ? 16 : 0 }}>
+              <div style={{ ...LBL, marginBottom: 0 }}>Gallery</div>
+              <button onClick={() => setImagesOpen(v => !v)}
+                style={{ display: "flex", alignItems: "center", gap: 4, background: "transparent", border: "none", cursor: "pointer", color: "#fff", padding: "2px 4px" }}>
+                <Pencil />
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#fff" }}>Edit</span>
               </button>
             </div>
-
-            {/* Thumbnails: cover (fixed) + extra images (draggable) */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-              {/* Main cover: custom blob or background_image */}
-              {(() => {
-                const src = entry.hasCover ? `${coverSrc(gameId)}?v=modal` : rawgImgSrc(game.background_image);
-                if (!src) return null;
-                return (
-                  <div style={{ position: "relative" }}>
-                    <img src={src} alt="cover" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #7c6ef766" }} />
-                    <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#7c6ef7", fontWeight: 700 }}>cover</div>
-                  </div>
-                );
-              })()}
-              {extraImageIds.map((id, idx) => (
-                <div key={id}
-                  draggable
-                  onDragStart={() => handleDragStart(idx)}
-                  onDragOver={e => handleDragOver(e, idx)}
-                  onDrop={e => handleDrop(e, idx)}
-                  onDragEnd={handleDragEnd}
-                  style={{
-                    position: "relative", cursor: "grab",
-                    outline: dragOverIdx === idx ? "2px solid #7c6ef7" : "none",
-                    borderRadius: 6,
-                    opacity: dragIdxRef.current === idx ? 0.4 : 1,
-                    transition: "outline 0.1s",
-                  }}>
-                  <img src={`${API}/images/${id}`} alt="" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #2a2a40", display: "block" }} />
-                  <button onClick={() => deleteExtraImage(id)}
-                    style={{ position: "absolute", top: -6, right: -6, width: 16, height: 16, borderRadius: "50%", background: "#2a0a0a", border: "1px solid #ff606066", color: "#ff6060", cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>×</button>
-                  <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#555" }}>#{idx + 1}</div>
+            {imagesOpen && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                  <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Custom images only (skip RAWG cover)</span>
+                  <button onClick={() => setCustomImagesOnly(v => !v)}
+                    style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: customImagesOnly ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                    <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: customImagesOnly ? 19 : 3, transition: "left 0.2s" }} />
+                  </button>
                 </div>
-              ))}
-              {/* RAWG short_screenshots — shown when no extra images have been synced yet */}
-              {extraImageIds.length === 0 && (game.short_screenshots || []).map((ss, idx) => (
-                <div key={ss.id ?? idx} style={{ position: "relative" }}>
-                  <img src={rawgImgSrc(ss.image)} alt="" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #1a1a30", display: "block", opacity: 0.7 }} onError={e => e.target.style.display = "none"} />
-                  <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#555" }}>rawg</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                  {(() => {
+                    const src = hasCoverLocal ? `${coverSrc(gameId)}?v=cover-${previewKey}` : rawgImgSrc(game.background_image);
+                    if (!src) return null;
+                    return (
+                      <div onDragOver={e => { e.preventDefault(); setCoverDropOver(true); }} onDragLeave={() => setCoverDropOver(false)}
+                        onDrop={e => { e.preventDefault(); setCoverDropOver(false); if (dragIdxRef.current !== null) promoteImageToCover(dragIdxRef.current); }}
+                        style={{ position: "relative", borderRadius: 6, outline: coverDropOver ? "2px dashed #7c6ef7" : "none", outlineOffset: 2 }}>
+                        <img src={src} alt="cover" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: `1px solid ${coverDropOver ? "#7c6ef7" : "#7c6ef766"}`, display: "block" }} />
+                        <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#7c6ef7", fontWeight: 700 }}>cover</div>
+                        {promotingCover && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.65)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#fff" }}>…</div>}
+                        {coverDropOver && !promotingCover && <div style={{ position: "absolute", inset: 0, background: "rgba(124,110,247,0.15)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, pointerEvents: "none" }}>⇥</div>}
+                      </div>
+                    );
+                  })()}
+                  {extraImageIds.map((id, idx) => (
+                    <div key={id} draggable onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(e, idx)} onDrop={e => handleDrop(e, idx)} onDragEnd={handleDragEnd}
+                      style={{ position: "relative", cursor: "grab", outline: dragOverIdx === idx ? "2px solid #7c6ef7" : "none", borderRadius: 6, opacity: dragIdxRef.current === idx ? 0.4 : 1 }}>
+                      <img src={`${API}/images/${id}`} alt="" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #2a2a40", display: "block" }} />
+                      <button onClick={() => deleteExtraImage(id)} style={{ position: "absolute", top: -6, right: -6, width: 16, height: 16, borderRadius: "50%", background: "#2a0a0a", border: "1px solid #ff606066", color: "#ff6060", cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>×</button>
+                      <button onClick={() => promoteImageToCover(idx)} disabled={promotingCover} title="Set as cover" style={{ position: "absolute", top: -6, left: -6, width: 16, height: 16, borderRadius: "50%", background: "#0a1a2a", border: "1px solid #7c6ef766", color: "#7c6ef7", cursor: promotingCover ? "not-allowed" : "pointer", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>⭳</button>
+                      <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#555" }}>#{idx + 1}</div>
+                    </div>
+                  ))}
+                  {shortScreenshots.map((ss, idx) => (
+                    <div key={ss.id ?? idx} style={{ position: "relative" }}>
+                      <img src={rawgImgSrc(ss.image)} alt="" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #1a1a30", display: "block", opacity: 0.7 }} onError={e => e.target.style.display = "none"} />
+                      <button onClick={() => setShortScreenshots(prev => prev.filter((_, i) => i !== idx))} style={{ position: "absolute", top: -6, right: -6, width: 16, height: 16, borderRadius: "50%", background: "#2a0a0a", border: "1px solid #ff606066", color: "#ff6060", cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>×</button>
+                      <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#555" }}>rawg</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-
-            {/* Upload + Steam sync */}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <input ref={imageUploadRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleImageUpload} />
-              <button onClick={() => imageUploadRef.current?.click()} disabled={uploadingImg}
-                style={{ padding: "5px 14px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: uploadingImg ? "#333" : "#7c6ef7", fontSize: 12, cursor: uploadingImg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                {uploadingImg ? "Uploading…" : "+ Upload Image(s)"}
-              </button>
-              {isSteamGame && onSyncSteam && (
-                <button onClick={handleSyncSteam} disabled={syncingSteam}
-                  style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${steamSynced ? "#4caf80" : "#3a4a5a"}`, borderRadius: 6, color: steamSynced ? "#4caf80" : syncingSteam ? "#333" : "#88aacc", fontSize: 12, cursor: syncingSteam ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                  {steamSynced ? "Synced!" : syncingSteam ? "Syncing…" : "Sync from Steam"}
-                </button>
-              )}
-              {onSyncRawg && (
-                <button onClick={handleSyncRawg} disabled={syncingRawg}
-                  style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${rawgSynced ? "#4caf80" : "#a78bfa44"}`, borderRadius: 6, color: rawgSynced ? "#4caf80" : syncingRawg ? "#333" : "#a78bfa", fontSize: 12, cursor: syncingRawg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                  {rawgSynced ? "Synced!" : syncingRawg ? "Syncing…" : "Sync from RAWG"}
-                </button>
-              )}
-            </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input ref={imageUploadRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleImageUpload} />
+                  <button onClick={() => imageUploadRef.current?.click()} disabled={uploadingImg}
+                    style={{ padding: "5px 14px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: uploadingImg ? "#333" : "#7c6ef7", fontSize: 12, cursor: uploadingImg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                    {uploadingImg ? "Uploading…" : "+ Upload Image(s)"}
+                  </button>
+                  {onSyncSteam && (
+                    <button onClick={handleSyncSteam} disabled={syncingSteam}
+                      style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${steamSynced ? "#4caf80" : steamError ? "#ff606066" : "#3a4a5a"}`, borderRadius: 6, color: steamSynced ? "#4caf80" : steamError ? "#ff8080" : syncingSteam ? "#333" : "#88aacc", fontSize: 12, cursor: syncingSteam ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {steamSynced ? "Synced!" : syncingSteam ? "Syncing…" : "Sync from Steam"}
+                    </button>
+                  )}
+                  {steamError && <div style={{ fontSize: 11, color: "#ff8080", marginTop: 4, width: "100%" }}>{steamError}</div>}
+                  {onSyncRawg && (
+                    <button onClick={handleSyncRawg} disabled={syncingRawg}
+                      style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${rawgSynced ? "#4caf80" : "#a78bfa44"}`, borderRadius: 6, color: rawgSynced ? "#4caf80" : syncingRawg ? "#333" : "#a78bfa", fontSize: 12, cursor: syncingRawg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {rawgSynced ? "Synced!" : syncingRawg ? "Syncing…" : "Sync from RAWG"}
+                    </button>
+                  )}
+                  {onSyncPsn && (
+                    <button onClick={handleSyncPsn} disabled={syncingPsn}
+                      style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${psnSynced ? "#4caf80" : psnError ? "#ff606066" : "#003f8844"}`, borderRadius: 6, color: psnSynced ? "#4caf80" : psnError ? "#ff8080" : syncingPsn ? "#333" : "#006FCD", fontSize: 12, cursor: syncingPsn ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {psnSynced ? "Synced!" : syncingPsn ? "Syncing…" : "Sync from PSN"}
+                    </button>
+                  )}
+                  {psnError && <div style={{ fontSize: 11, color: "#ff8080", marginTop: 4, width: "100%" }}>{psnError}</div>}
+                </div>
+              </>
+            )}
           </div>
-
         </div>
 
         {/* Footer */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 24, paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
-          {/* Delete zone */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, paddingTop: 8 }}>
           {onDelete && (
             confirmDelete
               ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 12, color: "#e05a5a" }}>Remove from list?</span>
-                  <button onClick={() => { onDelete(gameId); onClose(); }}
-                    style={{ padding: "5px 14px", background: "#e05a5a", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-                    Yes, delete
-                  </button>
-                  <button onClick={() => setConfirmDelete(false)}
-                    style={{ padding: "5px 12px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#666", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-                    Cancel
-                  </button>
+                  <button onClick={() => { onDelete(gameId); onClose(); }} style={{ padding: "5px 14px", background: "#e05a5a", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Yes, delete</button>
+                  <button onClick={() => setConfirmDelete(false)} style={{ padding: "5px 12px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#666", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                 </div>
-              : <button onClick={() => setConfirmDelete(true)}
-                  style={{ padding: "5px 14px", background: "transparent", border: "1px solid #e05a5a", borderRadius: 6, color: "#e05a5a", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-                  Delete entry
-                </button>
+              : <button onClick={() => setConfirmDelete(true)} style={{ padding: "5px 14px", background: "transparent", border: "1px solid #e05a5a", borderRadius: 6, color: "#e05a5a", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Delete entry</button>
           )}
           <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-            <button onClick={onClose} style={{ padding: "7px 16px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 8, color: "#666", cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>Cancel</button>
-            <button onClick={handleSave} style={{ padding: "7px 20px", background: "#7c6ef7", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+            <button onClick={handleRequestClose} style={{ padding: "7px 16px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 8, color: "#666", cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>Cancel</button>
+            <button onClick={handleSave} disabled={uploadingImg} style={{ padding: "7px 20px", background: uploadingImg ? "#4a4a6a" : "#7c6ef7", border: "none", borderRadius: 8, color: uploadingImg ? "#888" : "#fff", fontWeight: 700, fontSize: 13, cursor: uploadingImg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+              {uploadingImg ? "Uploading…" : "Save"}
+            </button>
           </div>
         </div>
+
+        {confirmClose && (
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.72)", borderRadius: 16, zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "#0e0e20", border: "1px solid #2a2a45", borderRadius: 14, padding: "28px 32px", maxWidth: 340, width: "100%", textAlign: "center" }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#eeeeff", marginBottom: 8 }}>Unsaved changes</div>
+              <div style={{ fontSize: 12, color: "#666", marginBottom: 24, lineHeight: 1.6 }}>You have unsaved changes. Save them before closing or discard them.</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <button onClick={handleSave} style={{ padding: "9px 0", background: "#7c6ef7", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Save & Close</button>
+                <button onClick={onClose} style={{ padding: "9px 0", background: "transparent", border: "1px solid #e05c7a55", borderRadius: 8, color: "#e05c7a", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Discard changes</button>
+                <button onClick={() => setConfirmClose(false)} style={{ padding: "9px 0", background: "transparent", border: "1px solid #2a2a40", borderRadius: 8, color: "#666", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Keep editing</button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -1242,6 +1690,18 @@ export default function App() {
   const [tab, setTab]                     = useState("mylist");
   const [cardWMult, setCardWMult]         = useState(1.5);
   const [cardHMult, setCardHMult]         = useState(1.5);
+  const [modalWidthMult, setModalWidthMult] = useState(1.0);
+  const [lockedSections, setLockedSections] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("gamilist-locks") || "{}"); }
+    catch { return {}; }
+  });
+  const toggleSectionLock = (id, locked) => {
+    setLockedSections(prev => {
+      const next = { ...prev, [id]: locked };
+      localStorage.setItem("gamilist-locks", JSON.stringify(next));
+      return next;
+    });
+  };
   const [cardH2Mult, setCardH2Mult]       = useState(1.0);
   const [altCardMode, setAltCardMode]           = useState(false);
   const [showGalleryNav, setShowGalleryNav]     = useState(true);
@@ -1262,6 +1722,11 @@ export default function App() {
   const [fav1Mult, setFav1Mult]           = useState(2.0);
   const [fav2Mult, setFav2Mult]           = useState(2.0);
   const [fav3Mult, setFav3Mult]           = useState(2.0);
+  const [listStatsSize,   setListStatsSize]   = useState(11);
+  const [favStatsSize,    setFavStatsSize]    = useState(11);
+  const [listNameOffset,  setListNameOffset]  = useState(0);
+  const [favNameOffset,   setFavNameOffset]   = useState(0);
+  const [autoFitTitle,    setAutoFitTitle]    = useState(false);
   const [steamApiKey, setSteamApiKey] = useState("");
   const [steamId, setSteamId]         = useState("");
   const [steamLibrary, setSteamLibrary] = useState(null);
@@ -1271,7 +1736,16 @@ export default function App() {
   const [psnLibrary, setPsnLibrary]   = useState(null);
   const [psnSyncing, setPsnSyncing]   = useState(false);
   const [psnError, setPsnError]       = useState(null);
+  const [verifyResult, setVerifyResult]   = useState(null);
+  const [verifyFile, setVerifyFile]       = useState(null);
+  const [verifying, setVerifying]         = useState(false);
+  const [restoring, setRestoring]         = useState(false);
+  const [restoreConfirm, setRestoreConfirm] = useState(false);
+  const [downloading, setDownloading]     = useState(false);
   const [metadataGameId, setMetadataGameId]               = useState(null);
+  const metadataIsNewRef                                  = useRef(false); // true when auto-added from search
+  const [rawgCallsCount, setRawgCallsCount]               = useState(0);
+  const [rawgCallsMonth, setRawgCallsMonth]               = useState("");
   const [platformDefaultColor, setPlatformDefaultColor]   = useState("#7c6ef7");
   const [platformColors, setPlatformColors]               = useState({ pc: "#ffffff" });
   const [statusColors, setStatusColors]                   = useState({});
@@ -1289,6 +1763,9 @@ export default function App() {
   const [duplicateGroups, setDuplicateGroups]             = useState(null);
   const [duplicateKeep, setDuplicateKeep]                 = useState({});  // game_id → bool (true=keep)
   const [platformFilterSlugs, setPlatformFilterSlugs]     = useState([]);
+  const [platDropOpen, setPlatDropOpen]   = useState(false);
+  const [platSearch, setPlatSearch]       = useState("");
+  const platDropRef                       = useRef(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [saving, setSaving]               = useState(false);
   const [toast, setToast]                 = useState(null);
@@ -1304,10 +1781,11 @@ export default function App() {
   });
 
   const dbSettings = useRef({
-    cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, showGalleryNav: true, favCardCustom: false, favCardWMult: 1.5, favCardHMult: 1.5, favCardCount: 0, favAltCardMode: false, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0,
+    cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, showGalleryNav: true, favCardCustom: false, favCardWMult: 1.5, favCardHMult: 1.5, favCardCount: 0, favAltCardMode: false, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0, modalWidthMult: 1.0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
     steamApiKey: "", steamId: "", psnNpsso: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {}, ratingColors: {},
     fav1Mult: 2.0, fav2Mult: 2.0, fav3Mult: 2.0,
+    listStatsSize: 11, favStatsSize: 11, listNameOffset: 0, favNameOffset: 0, autoFitTitle: false,
   });
 
   const [query, setQuery]               = useState("");
@@ -1315,6 +1793,14 @@ export default function App() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError]   = useState(null);
   const [searched, setSearched]         = useState(false);
+  const [searchPage, setSearchPage]     = useState(1);
+  const [searchTotal, setSearchTotal]   = useState(0);
+  const [searchPlatSlug, setSearchPlatSlug] = useState("");
+  const [searchPlatDropOpen, setSearchPlatDropOpen] = useState(false);
+  const [searchPlatSearch, setSearchPlatSearch]     = useState("");
+  const searchPlatDropRef = useRef(null);
+  const [trendingGames, setTrendingGames]   = useState([]);
+  const [trendingLoading, setTrendingLoading] = useState(false);
   const [myList, setMyList]             = useState({});
   const [listLoading, setListLoading]   = useState(true);
   const [backendOk, setBackendOk]       = useState(null);
@@ -1333,6 +1819,29 @@ export default function App() {
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
   }, []);
+
+  useEffect(() => {
+    if (!platDropOpen) return;
+    const handler = (e) => { if (platDropRef.current && !platDropRef.current.contains(e.target)) setPlatDropOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [platDropOpen]);
+
+  useEffect(() => {
+    if (!searchPlatDropOpen) return;
+    const h = e => { if (searchPlatDropRef.current && !searchPlatDropRef.current.contains(e.target)) setSearchPlatDropOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [searchPlatDropOpen]);
+
+  useEffect(() => {
+    if (tab !== "search" || searched || trendingGames.length > 0 || trendingLoading) return;
+    setTrendingLoading(true);
+    apiFetch("/games/trending")
+      .then(data => setTrendingGames(data.results || []))
+      .catch(() => {}) // silently skip trending on errors (including rate limit)
+      .finally(() => setTrendingLoading(false));
+  }, [tab, searched, trendingGames.length, trendingLoading]);
 
   useEffect(() => {
     apiFetch("/settings").then(s => {
@@ -1357,6 +1866,7 @@ export default function App() {
         steamId:       s.steamId       ?? "",
         psnNpsso:      s.psnNpsso      ?? "",
       };
+      setModalWidthMult(s.modalWidthMult ?? 1.0);
       setCardWMult(loaded.cardWMult);   setCardHMult(loaded.cardHMult);
       setCardH2Mult(loaded.cardH2Mult); setAltCardMode(loaded.altCardMode); setShowGalleryNav(loaded.showGalleryNav);
       setFavCardCustom(loaded.favCardCustom); setFavCardWMult(loaded.favCardWMult); setFavCardHMult(loaded.favCardHMult); setFavCardCount(loaded.favCardCount); setFavAltCardMode(loaded.favAltCardMode);
@@ -1366,13 +1876,32 @@ export default function App() {
       setGlow2Enabled(loaded.glow2Enabled); setGlow2Color(loaded.glow2Color);
       setGlow3Enabled(loaded.glow3Enabled); setGlow3Color(loaded.glow3Color);
       setFav1Mult(s.fav1Mult ?? 2.0); setFav2Mult(s.fav2Mult ?? 2.0); setFav3Mult(s.fav3Mult ?? 2.0);
+      setListStatsSize(s.listStatsSize ?? 11); setFavStatsSize(s.favStatsSize ?? 11); setListNameOffset(s.listNameOffset ?? 0); setFavNameOffset(s.favNameOffset ?? 0); setAutoFitTitle(s.autoFitTitle ?? false);
       setSteamApiKey(loaded.steamApiKey); setSteamId(loaded.steamId); setPsnNpsso(loaded.psnNpsso);
       setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
       setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
       setStatusColors(s.statusColors || {});
       setActivityColors(s.activityColors || {});
       setRatingColors(s.ratingColors || {});
-      dbSettings.current = { ...loaded, platformHighlightColor: s.platformHighlightColor ?? "#7c6ef7", platformColors: { pc: "#ffffff", ...(s.platformColors || {}) }, statusColors: s.statusColors || {}, activityColors: s.activityColors || {}, ratingColors: s.ratingColors || {} };
+      setRawgCallsCount(s.rawgCallsCount || 0);
+      setRawgCallsMonth(s.rawgCallsMonth || "");
+      dbSettings.current = {
+        ...loaded,
+        platformHighlightColor: s.platformHighlightColor ?? "#7c6ef7",
+        platformColors: { pc: "#ffffff", ...(s.platformColors || {}) },
+        statusColors:   s.statusColors   || {},
+        activityColors: s.activityColors || {},
+        ratingColors:   s.ratingColors   || {},
+        fav1Mult:        s.fav1Mult        ?? 2.0,
+        fav2Mult:        s.fav2Mult        ?? 2.0,
+        fav3Mult:        s.fav3Mult        ?? 2.0,
+        listStatsSize:   s.listStatsSize   ?? 11,
+        favStatsSize:    s.favStatsSize    ?? 11,
+        listNameOffset:  s.listNameOffset  ?? 0,
+        favNameOffset:   s.favNameOffset   ?? 0,
+        autoFitTitle:    s.autoFitTitle    ?? false,
+        modalWidthMult:  s.modalWidthMult  ?? 1.0,
+      };
     }).catch(() => {});
 
     apiFetch("/list")
@@ -1401,6 +1930,7 @@ export default function App() {
 
   const cancelSettings = useCallback(() => {
     const s = dbSettings.current;
+    setModalWidthMult(s.modalWidthMult ?? 1.0);
     setCardWMult(s.cardWMult);   setCardHMult(s.cardHMult);
     setCardH2Mult(s.cardH2Mult ?? 1.0); setAltCardMode(s.altCardMode ?? false); setShowGalleryNav(s.showGalleryNav ?? true);
     setFavCardCustom(s.favCardCustom ?? false); setFavCardWMult(s.favCardWMult ?? 1.5); setFavCardHMult(s.favCardHMult ?? 1.5); setFavCardCount(s.favCardCount ?? 0); setFavAltCardMode(s.favAltCardMode ?? false);
@@ -1410,6 +1940,8 @@ export default function App() {
     setGlow2Enabled(s.glow2Enabled); setGlow2Color(s.glow2Color);
     setGlow3Enabled(s.glow3Enabled); setGlow3Color(s.glow3Color);
     setFav1Mult(s.fav1Mult ?? 2.0); setFav2Mult(s.fav2Mult ?? 2.0); setFav3Mult(s.fav3Mult ?? 2.0);
+    setListStatsSize(s.listStatsSize ?? 11); setFavStatsSize(s.favStatsSize ?? 11);
+    setListNameOffset(s.listNameOffset ?? 0); setFavNameOffset(s.favNameOffset ?? 0); setAutoFitTitle(s.autoFitTitle ?? false);
     setSteamApiKey(s.steamApiKey); setSteamId(s.steamId); setPsnNpsso(s.psnNpsso ?? "");
     setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
     setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
@@ -1420,9 +1952,10 @@ export default function App() {
   }, []);
 
   const handleSave = () => saveSettings({
-    cardWMult, cardHMult, cardH2Mult, altCardMode, showGalleryNav, favCardCustom, favCardWMult, favCardHMult, favCardCount, favAltCardMode, uploadBtnMult, uploadBtnText, cardCount,
+    cardWMult, cardHMult, cardH2Mult, altCardMode, showGalleryNav, favCardCustom, favCardWMult, favCardHMult, favCardCount, favAltCardMode, uploadBtnMult, uploadBtnText, cardCount, modalWidthMult,
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
     fav1Mult, fav2Mult, fav3Mult,
+    listStatsSize, favStatsSize, listNameOffset, favNameOffset, autoFitTitle,
     steamApiKey, steamId, psnNpsso, platformHighlightColor: platformDefaultColor,
     platformColors, statusColors, activityColors, ratingColors,
   });
@@ -1444,6 +1977,7 @@ export default function App() {
           customImagesOnly: entry.customImagesOnly ?? false,
           imgPosX:          entry.imgPosX ?? 50,
           imgPosY:          entry.imgPosY ?? 50,
+          imgFit:           entry.imgFit  ?? "cover",
           customName:       entry.customName ?? null,
         }),
       });
@@ -1498,6 +2032,22 @@ export default function App() {
     }
   };
 
+  const syncPsnImage = async (id) => {
+    const result = await apiFetch(`/list/${id}/sync-psn-image`, { method: "POST" });
+    setMyList(p => {
+      const entry = p[id];
+      if (!entry) return p;
+      const updates = { ...entry, game: { ...entry.game } };
+      if (result.background_image) updates.game.background_image = result.background_image;
+      if (result.hasCover) {
+        updates.hasCover = true;
+        updates.coverVersion = (entry.coverVersion ?? 0) + 1;
+      }
+      return { ...p, [id]: updates };
+    });
+    return result;
+  };
+
   const toggleFav = (id) => {
     const entry = myList[id];
     if (!entry) return;
@@ -1517,14 +2067,27 @@ export default function App() {
 
   const handleCoverUploaded = (id) => setMyList(p => ({ ...p, [id]: { ...p[id], hasCover: true } }));
 
-  const doSearch = async () => {
-    if (!query.trim()) return;
+  const doSearch = async (page = 1, platSlug = searchPlatSlug) => {
+    const q = query.trim();
+    const rawgId = platSlug ? RAWG_PLATFORM_IDS[platSlug] : null;
+    if (!q && !rawgId) return;
     setTab("search"); setSearched(true); setSearchLoading(true); setSearchError(null); setSearchResults([]);
+    setSearchPage(page);
     try {
-      const games = await apiFetch(`/games/search?q=${encodeURIComponent(query)}`);
-      if (!games.length) throw new Error("No results.");
-      setSearchResults(games);
-    } catch { setSearchError("Could not reach the backend."); }
+      const params = new URLSearchParams({ page, page_size: 50 });
+      if (q) params.set("q", q);
+      if (rawgId) params.set("platforms", rawgId);
+      const data = await apiFetch(`/games/search?${params}`);
+      const results = Array.isArray(data) ? data : (data.results || []);
+      const count   = Array.isArray(data) ? data.length : (data.count || 0);
+      setSearchResults(results);
+      setSearchTotal(count);
+    } catch (e) {
+      const msg = e.message.includes("429") || e.message.includes("401")
+        ? "RAWG API limit reached — your monthly quota may be exhausted. Check Settings for usage."
+        : "Could not reach the backend.";
+      setSearchError(msg);
+    }
     finally { setSearchLoading(false); }
   };
 
@@ -1591,9 +2154,11 @@ export default function App() {
   const saveMetadata = useCallback((gameId, updates) => {
     const entry = myList[gameId];
     if (!entry) return;
-    const next = { ...entry, ...updates };
+    const { coverWasPromoted, ...rest } = updates;
+    const next = { ...entry, ...rest };
     // If moved to Dropped and has no rating, default to 1
     if (next.status === 6 && next.userRating == null) next.userRating = 1;
+    if (coverWasPromoted) next.coverVersion = (entry.coverVersion ?? 0) + 1;
     setMyList(p => ({ ...p, [gameId]: next }));
     persist(gameId, next);
   }, [myList, persist]);
@@ -1711,9 +2276,10 @@ export default function App() {
   }, [allEntries]);
 
   const listEntries = useMemo(() => {
-    // Dropped (6) and Demo (7) are hidden from the main list unless explicitly selected
+    // Dropped (6) and Demo (7) are hidden unless explicitly selected via status filter.
+    // Exception: when a rating filter is active, dropped games that match the rating are included.
     let filtered = statusFilter === null
-      ? allEntries.filter(e => e.status !== 6 && e.status !== 7)
+      ? allEntries.filter(e => e.status !== 7 && (e.status !== 6 || ratingFilter !== null))
       : allEntries.filter(e => e.status === statusFilter);
     if (platformFilterSlugs.length > 0) {
       filtered = filtered.filter(e => {
@@ -1849,7 +2415,28 @@ export default function App() {
     { enabled: glow3Enabled, color: glow3Color },
   ];
 
-  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: setMetadataGameId, onTogglePlatform: togglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, showGalleryNav };
+  const [actualCardW, setActualCardW] = useState(null);
+
+  // Opens metadata modal; marks entry as "new" (auto-added) when game wasn't already in list
+  const handleOpenMetadata = useCallback((gameId) => {
+    metadataIsNewRef.current = !myList[gameId];
+    setMetadataGameId(gameId);
+  }, [myList]);
+
+  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: handleOpenMetadata, onTogglePlatform: togglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, showGalleryNav, onActualCardW: setActualCardW, ratingColors };
+
+  // Name-keyed lookup for PSN/Steam entries so search results can match them by title.
+  const importedNameMap = useMemo(() => {
+    const map = {};
+    Object.values(myList).forEach(entry => {
+      const slug = entry?.game?.slug || "";
+      if (slug.startsWith("psn-") || slug.startsWith("steam-")) {
+        const key = normName(entry.game?.name || "");
+        if (key) map[key] = entry;
+      }
+    });
+    return map;
+  }, [myList]);
   const previewEntries = orderedFavEntries.length ? orderedFavEntries : allEntries;
 
   const credentialsReady = steamApiKey.trim() && steamId.trim();
@@ -1872,14 +2459,24 @@ export default function App() {
         <MetadataModal
           gameId={metadataGameId}
           entry={myList[metadataGameId]}
-          onClose={() => setMetadataGameId(null)}
-          onSave={saveMetadata}
+          onClose={() => {
+            if (metadataIsNewRef.current) removeFromList(metadataGameId);
+            metadataIsNewRef.current = false;
+            setMetadataGameId(null);
+          }}
+          onSave={(id, data) => { metadataIsNewRef.current = false; saveMetadata(id, data); }}
           onDelete={removeFromList}
           onSyncSteam={syncSteamImage}
           onSyncRawg={syncRawgImage}
+          onSyncPsn={psnNpsso ? syncPsnImage : undefined}
+          onCoverPromoted={(id, newExtraIds) => setMyList(p => ({
+            ...p,
+            [id]: { ...p[id], hasCover: true, coverVersion: (p[id]?.coverVersion ?? 0) + 1, extraImageIds: newExtraIds },
+          }))}
           platformHighlightColor={platformDefaultColor}
-          cardW={cardW}
+          cardW={actualCardW ?? cardW}
           cardH={cardH}
+          modalWidthMult={modalWidthMult}
         />
       )}
 
@@ -1895,10 +2492,16 @@ export default function App() {
               </button>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-            <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && doSearch()} placeholder="Search any game…"
-              style={{ width: 230, background: "#12121e", border: "1px solid #1e1e35", borderRadius: 8, padding: "8px 14px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
-            <button onClick={doSearch} disabled={searchLoading}
+          <div style={{ display: "flex", gap: 8, marginLeft: "auto", alignItems: "center" }}>
+            <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+              <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && doSearch()} placeholder="Search any game…"
+                style={{ width: 230, background: "#12121e", border: "1px solid #1e1e35", borderRadius: 8, padding: "8px 32px 8px 14px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
+              {query && (
+                <button onClick={() => { setQuery(""); if (searched && !searchPlatSlug) { setSearched(false); setSearchResults([]); setSearchTotal(0); } }}
+                  style={{ position: "absolute", right: 8, background: "none", border: "none", color: "#555", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>
+              )}
+            </div>
+            <button onClick={() => doSearch(1)} disabled={searchLoading}
               style={{ padding: "8px 18px", background: "#7c6ef7", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: searchLoading ? "not-allowed" : "pointer", opacity: searchLoading ? 0.6 : 1, whiteSpace: "nowrap", fontFamily: "inherit" }}>
               Search
             </button>
@@ -1935,8 +2538,8 @@ export default function App() {
             {/* Sort + filter toolbar + Activity (same row) */}
             <div style={{ display: "flex", alignItems: "stretch", gap: 16, marginBottom: 20 }}>
               {/* Sort + filter toolbar */}
-              <div style={{ flex: 1, minWidth: 0, background: "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "12px 16px" }}>
-                {/* Row 1: status active + sort */}
+              <div style={{ flex: 1, minWidth: 0, background: "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "8px 12px" }}>
+                {/* Row 1: status chip | sort | platform dropdown | count */}
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   {statusFilter !== null && (
                     <>
@@ -1945,9 +2548,9 @@ export default function App() {
                       <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
                     </>
                   )}
-                  <span style={{ fontSize: 11, color: "#444", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>Sort</span>
+                  <span style={{ fontSize: 11, color: "#fff", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8 }}>Sort</span>
                   <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-                    style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+                    style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "3px 6px", color: "#a0a0cc", fontSize: 11, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
                     <option value="rating_desc">Rating ↓</option>
                     <option value="rating_asc">Rating ↑</option>
                     <option value="name_asc">Name A→Z</option>
@@ -1956,7 +2559,73 @@ export default function App() {
                     <option value="unrated">Unrated first</option>
                   </select>
                   <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
-                  <div style={{ position: "relative", display: "flex", alignItems: "center", flex: 1, minWidth: 120 }}>
+                  <span style={{ fontSize: 11, color: "#fff", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8 }}>Filter</span>
+                  {/* Platform searchable dropdown */}
+                  {activePlatformSlugs.length > 0 && (
+                    <div ref={platDropRef} style={{ position: "relative" }}>
+                      <button
+                        onClick={() => { setPlatDropOpen(o => !o); setPlatSearch(""); }}
+                        style={{ background: "#080814", border: `1px solid ${platformFilterSlugs.length > 0 ? "#7c6ef755" : "#1a1a2e"}`, borderRadius: 5, padding: "4px 24px 4px 8px", color: platformFilterSlugs.length > 0 ? "#a090ff" : "#666", fontSize: 12, fontFamily: "inherit", cursor: "pointer", minWidth: 120, textAlign: "left", position: "relative", whiteSpace: "nowrap" }}>
+                        {platformFilterSlugs.length === 0
+                          ? "All Platforms"
+                          : platformFilterSlugs.length === 1
+                            ? (ALL_PLATFORMS.find(p => p.slug === platformFilterSlugs[0])?.name || platformFilterSlugs[0])
+                            : `${platformFilterSlugs.length} platforms`}
+                        <span style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", fontSize: 9, color: "#555" }}>{platDropOpen ? "▲" : "▼"}</span>
+                      </button>
+                      {platDropOpen && (
+                        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 7, minWidth: 180, boxShadow: "0 6px 24px #00000088", padding: "6px 0" }}>
+                          <div style={{ padding: "4px 8px 6px" }}>
+                            <input
+                              autoFocus
+                              value={platSearch}
+                              onChange={e => setPlatSearch(e.target.value)}
+                              placeholder="Type to filter…"
+                              style={{ width: "100%", background: "#080814", border: "1px solid #1a1a2e", borderRadius: 4, padding: "4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+                            />
+                          </div>
+                          <div style={{ maxHeight: 220, overflowY: "auto" }}>
+                            {activePlatformSlugs
+                              .filter(slug => {
+                                const name = ALL_PLATFORMS.find(p => p.slug === slug)?.name || slug;
+                                return name.toLowerCase().includes(platSearch.toLowerCase());
+                              })
+                              .map(slug => {
+                                const pInfo = ALL_PLATFORMS.find(p => p.slug === slug);
+                                const active = platformFilterSlugs.includes(slug);
+                                const pc = getPlatformColor(slug);
+                                return (
+                                  <div key={slug}
+                                    onClick={() => { setPlatformFilterSlugs(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]); }}
+                                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer", background: active ? pc + "14" : "transparent", color: active ? pc : "#888", fontSize: 12, fontFamily: "inherit", transition: "background 0.1s" }}
+                                    onMouseEnter={e => { if (!active) e.currentTarget.style.background = "#ffffff08"; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = active ? pc + "14" : "transparent"; }}>
+                                    <span style={{ fontSize: 10, width: 12, color: active ? pc : "#333" }}>{active ? "✓" : ""}</span>
+                                    {pInfo?.name || slug}
+                                  </div>
+                                );
+                              })}
+                          </div>
+                          {platformFilterSlugs.length > 0 && (
+                            <div style={{ borderTop: "1px solid #1a1a2e", margin: "4px 0 0" }}>
+                              <div onClick={() => setPlatformFilterSlugs([])}
+                                style={{ padding: "5px 12px", cursor: "pointer", color: "#555", fontSize: 11, fontFamily: "inherit" }}
+                                onMouseEnter={e => e.currentTarget.style.color = "#888"}
+                                onMouseLeave={e => e.currentTarget.style.color = "#555"}>
+                                Clear filter
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <span style={{ fontSize: 11, color: "#fff", fontWeight: 800, marginLeft: "auto" }}>{listEntries.length} / {allEntries.length} games</span>
+                </div>
+
+                {/* Row 2: Search */}
+                <div style={{ display: "flex", alignItems: "center", marginTop: 10 }}>
+                  <div style={{ position: "relative", display: "flex", alignItems: "center", flex: 1 }}>
                     <input
                       value={listSearch}
                       onChange={e => setListSearch(e.target.value)}
@@ -1968,38 +2637,13 @@ export default function App() {
                         style={{ position: "absolute", right: 6, background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
                     )}
                   </div>
-                  <span style={{ fontSize: 11, color: "#333", marginLeft: "auto" }}>{listEntries.length} / {allEntries.length} games</span>
                 </div>
-
-                {/* Row 2: Platform filter (only show platforms present in list) */}
-                {activePlatformSlugs.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 11, color: "#444", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, minWidth: 48 }}>Platform</span>
-                    {activePlatformSlugs.map(slug => {
-                      const pInfo = ALL_PLATFORMS.find(p => p.slug === slug);
-                      const active = platformFilterSlugs.includes(slug);
-                      const pc = getPlatformColor(slug);
-                      return (
-                        <button key={slug} onClick={() => setPlatformFilterSlugs(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug])}
-                          title={pInfo?.name || slug}
-                          style={{ fontSize: 10, padding: "3px 7px", borderRadius: 4, border: `1px solid ${active ? pc + "66" : "#1e1e30"}`,
-                            background: active ? pc + "18" : "transparent", color: active ? pc : "#555",
-                            cursor: "pointer", fontFamily: "inherit" }}>
-                          {pInfo?.name || pInfo?.short || slug}
-                        </button>
-                      );
-                    })}
-                    {platformFilterSlugs.length > 0 && (
-                      <button onClick={() => setPlatformFilterSlugs([])} style={{ fontSize: 10, color: "#444", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "3px 7px", cursor: "pointer", fontFamily: "inherit" }}>Clear</button>
-                    )}
-                  </div>
-                )}
               </div>
 
               {/* Global activity heatmap */}
               {allEntries.length > 0 && (
-                <div style={{ flexShrink: 0, background: activityColors.bg || "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "14px 18px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                  <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Activity</div>
+                <div style={{ flexShrink: 0, background: activityColors.bg || "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "8px 12px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                  <div style={{ fontSize: 11, color: "#fff", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Activity</div>
                   <ActivityGraph activityLog={globalActivityLog} colors={activityColors} />
                 </div>
               )}
@@ -2016,9 +2660,9 @@ export default function App() {
                 "5.5": "#7050b0", "5": "#6040c0", "lt5": "#e05c7a",
               };
               const getRatingColor = key => ratingColors[key] || DEFAULT_RATING_COLORS[key] || "#7c6ef7";
-              // Count from status-filtered pool (respects category selection)
+              // Count from status-filtered pool; include dropped when computing rating counts
               const pool = statusFilter === null
-                ? allEntries.filter(e => e.status !== 6 && e.status !== 7)
+                ? allEntries.filter(e => e.status !== 7)
                 : allEntries.filter(e => e.status === statusFilter);
               return (
                 <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "nowrap", overflowX: "auto" }}>
@@ -2051,7 +2695,7 @@ export default function App() {
               );
             })()}
 
-            {listLoading ? <Spinner text="Loading your list…" /> : <Grid games={listEntries.map(e => e.game)} {...gridProps} emptyMsg="Nothing here yet — search for games to add them!" />}
+            {listLoading ? <Spinner text="Loading your list…" /> : <Grid games={listEntries.filter(e => e.game).map(e => e.game)} {...gridProps} emptyMsg="Nothing here yet — search for games to add them!" hideMenu listMode statsTextSize={listStatsSize} nameOffset={listNameOffset} autoFitTitle={autoFitTitle} />}
           </>
         )}
 
@@ -2060,11 +2704,11 @@ export default function App() {
           <>
             <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 4, fontFamily: "'Gloria Hallelujah', cursive" }}>Favourites</div>
             <div style={{ fontSize: 13, color: "#444", marginBottom: 28 }}>Star ★ any game to add it here. Drag cards to reorder.</div>
-            <FavGrid entries={orderedFavEntries} glowConfig={glowConfig} {...gridProps}
+            <FavGrid entries={orderedFavEntries.filter(e => e.game)} glowConfig={glowConfig} {...gridProps} hideMenu listMode hideFav
               cardW={favCardCustom ? favCardW : cardW} cardH={favCardCustom ? favCardH : cardH}
               altCardMode={favCardCustom ? favAltCardMode : gridProps.altCardMode}
               effectiveCardCount={favCardCustom && favEffectiveCardCount > 0 ? favEffectiveCardCount : (favCardCustom ? 0 : gridProps.effectiveCardCount)}
-              favMults={[fav1Mult, fav2Mult, fav3Mult]} onReorder={reorderFavs} />
+              favMults={[fav1Mult, fav2Mult, fav3Mult]} onReorder={reorderFavs} statsTextSize={favStatsSize} nameOffset={favNameOffset} autoFitTitle={autoFitTitle} />
           </>
         )}
 
@@ -2073,7 +2717,7 @@ export default function App() {
           <>
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: saving ? 8 : 28, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", fontFamily: "'Gloria Hallelujah', cursive" }}>Settings</div>
+              <div style={{ fontSize: 48, fontWeight: 800, color: "#eeeeff", fontFamily: "'Gloria Hallelujah', cursive" }}>Settings</div>
               <button onClick={handleSave} disabled={!settingsDirty || saving}
                 style={{ padding: "8px 20px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 13, cursor: settingsDirty && !saving ? "pointer" : "not-allowed", background: settingsDirty && !saving ? "#7c6ef7" : "#1a1a2e", color: settingsDirty && !saving ? "#fff" : "#444", transition: "background 0.2s, color 0.2s", fontFamily: "inherit" }}>
                 {saving ? "Saving…" : "Save Settings"}
@@ -2098,11 +2742,9 @@ export default function App() {
             <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap", marginBottom: 40 }}>
 
               {/* Card Settings */}
-              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Card Settings</div>
-                <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-                  Control card dimensions and grid layout. Columns sets a fixed count — Auto fills based on width. The max adjusts live to fit your screen.
-                </div>
+              <LockableSection sectionId="card" title="Card Settings"
+                description="Control card dimensions and grid layout. Columns sets a fixed count — Auto fills based on width. The max adjusts live to fit your screen."
+                locked={!!lockedSections.card} onToggle={toggleSectionLock}>
                 {[
                   { label: "Width",  value: cardWMult, onChange: updateW, color: "#7c6ef7" },
                   { label: "Height", value: cardHMult, onChange: updateH, color: "#38bdf8" },
@@ -2167,6 +2809,73 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Metadata Modal Width */}
+                <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Metadata Width</span>
+                    <span style={{ fontSize: 12, color: "#e05c7a", fontWeight: 700 }}>{modalWidthMult.toFixed(1)}×</span>
+                  </div>
+                  <input type="range" min="0.8" max="2.0" step="0.1" value={modalWidthMult}
+                    onChange={e => { setModalWidthMult(parseFloat(e.target.value)); setSettingsDirty(true); }}
+                    style={{ width: "100%", accentColor: "#e05c7a", cursor: "pointer" }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
+                    <span>0.8×</span><span>1.0×</span><span>1.5×</span><span>2.0×</span>
+                  </div>
+                </div>
+
+                {/* Stats Text Size */}
+                <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
+                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Text Size</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                    <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Auto-shrink title to fit card</span>
+                    <button onClick={() => { setAutoFitTitle(v => !v); setSettingsDirty(true); }}
+                      style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: autoFitTitle ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                      <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: autoFitTitle ? 19 : 3, transition: "left 0.2s" }} />
+                    </button>
+                  </div>
+                  {[
+                    { label: "My List", sizeVal: listStatsSize, sizeSetter: setListStatsSize, offsetVal: listNameOffset, offsetSetter: setListNameOffset, color: "#7c6ef7" },
+                    { label: "Favourites", sizeVal: favStatsSize, sizeSetter: setFavStatsSize, offsetVal: favNameOffset, offsetSetter: setFavNameOffset, color: "#e6a63a" },
+                  ].map(({ label, sizeVal, sizeSetter, offsetVal, offsetSetter, color }) => (
+                    <div key={label} style={{ marginBottom: 20 }}>
+                      <div style={{ fontSize: 11, color, fontWeight: 700, marginBottom: 10 }}>{label}</div>
+                      {/* Live preview */}
+                      <div style={{ background: "#070710", border: "1px solid #1a1a2e", borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
+                        {autoFitTitle
+                          ? <FitTitle targetSize={sizeVal + offsetVal} style={{ fontWeight: 700, color: "#eeeeff", marginBottom: 4 }}>A Very Long Game Title That May Not Fit</FitTitle>
+                          : <div style={{ fontSize: sizeVal + offsetVal, fontWeight: 700, color: "#eeeeff", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>A Very Long Game Title That May Not Fit</div>
+                        }
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 6 }}>
+                          {["PC","PS5","NSW"].map(p => (
+                            <span key={p} style={{ fontSize: Math.max(7, sizeVal - 2), fontWeight: 700, padding: "2px 5px", borderRadius: 3, background: color + "28", border: `1px solid ${color}77`, color, userSelect: "none" }}>{p}</span>
+                          ))}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: sizeVal + 2, fontWeight: 800, color: "#e6a63a", userSelect: "none" }}>★ 8.5</span>
+                          <span style={{ color: "#2a2a3a", fontSize: sizeVal + 1, userSelect: "none" }}>|</span>
+                          <span style={{ fontSize: sizeVal, color: "#eeeeff", fontWeight: 700, whiteSpace: "nowrap" }}>⏱ 42h</span>
+                          <span style={{ color: "#2a2a3a", fontSize: sizeVal + 1, userSelect: "none" }}>|</span>
+                          <span style={{ fontSize: sizeVal, color: "#eeeeff", fontWeight: 700, whiteSpace: "nowrap" }}>↺ ×2</span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, color: "#666" }}>Base size</span>
+                        <span style={{ fontSize: 10, color, fontWeight: 700 }}>{sizeVal}px</span>
+                      </div>
+                      <input type="range" min="8" max="20" step="1" value={sizeVal}
+                        onChange={e => { sizeSetter(parseInt(e.target.value)); setSettingsDirty(true); }}
+                        style={{ width: "100%", accentColor: color, cursor: "pointer", marginBottom: 10 }} />
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, color: "#666" }}>Name offset</span>
+                        <span style={{ fontSize: 10, color, fontWeight: 700 }}>{offsetVal >= 0 ? `+${offsetVal}` : offsetVal}px</span>
+                      </div>
+                      <input type="range" min="0" max="10" step="1" value={offsetVal}
+                        onChange={e => { offsetSetter(parseInt(e.target.value)); setSettingsDirty(true); }}
+                        style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
+                    </div>
+                  ))}
+                </div>
+
                 {/* Custom Favourites Layout */}
                 <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
                   <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Favourites Layout</div>
@@ -2211,11 +2920,11 @@ export default function App() {
                     </>
                   )}
                 </div>
-              </div>
+              </LockableSection>
 
               {/* Colors — Glow + Platform + Status merged */}
-              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 18 }}>Colors</div>
+              <LockableSection sectionId="colors" title="Colors"
+                locked={!!lockedSections.colors} onToggle={toggleSectionLock}>
 
                 {/* Status Colors */}
                 <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 18, marginBottom: 10 }}>
@@ -2329,7 +3038,7 @@ export default function App() {
                       };
                       const sel = selectedRatingColorKey;
                       const currentColor = ratingColors[sel] || DEFAULT_RATING_COLORS[sel] || "#7c6ef7";
-                      const hasOverride = !!ratingColors[sel];
+                      const hasOverride  = !!ratingColors[sel];
                       return (
                         <div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -2343,7 +3052,7 @@ export default function App() {
                               style={{ width: 28, height: 24, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
                             {hasOverride && (
                               <button onClick={() => resetRatingColor(sel)}
-                                style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset">↺</button>
+                                style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset to default">↺</button>
                             )}
                           </div>
                           <div style={{ display: "flex", gap: 3 }}>
@@ -2360,14 +3069,12 @@ export default function App() {
                     })()}
                   </div>
                 </div>
-              </div>
+              </LockableSection>
 
               {/* Activity Graph Colors + Favourite Settings (merged) */}
-              <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Activity Graph</div>
-                <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
-                  Customize the contribution heatmap colors shown on the My List tab.
-                </div>
+              <LockableSection sectionId="activity" title="Activity Graph"
+                description="Customize the contribution heatmap colors shown on the My List tab."
+                locked={!!lockedSections.activity} onToggle={toggleSectionLock}>
                 {[
                   { key: "bg",    label: "Background",  default: "#0c0c1c" },
                   { key: "empty", label: "Empty cell",  default: "#0d0d1a" },
@@ -2428,7 +3135,7 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-              </div>
+              </LockableSection>
 
             </div>
 
@@ -2495,6 +3202,38 @@ export default function App() {
                       {steamError && <div style={{ fontSize: 12, color: "#ff8080", lineHeight: 1.5 }}>{steamError}</div>}
                     </div>
                   )}
+                </div>
+
+                {/* RAWG API Usage */}
+                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>RAWG API Usage</div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
+                    Free tier: 20,000 requests / month. Resets automatically on the 1st of each month.
+                  </div>
+                  {(() => {
+                    const pct = Math.min(100, Math.round((rawgCallsCount / 20000) * 100));
+                    const barColor = pct >= 90 ? "#ff6060" : pct >= 70 ? "#e6a63a" : "#4caf80";
+                    return (
+                      <>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                          <span style={{ fontSize: 28, fontWeight: 800, color: pct >= 90 ? "#ff6060" : "#eeeeff" }}>{rawgCallsCount.toLocaleString()}</span>
+                          <span style={{ fontSize: 12, color: "#555" }}>/ 20,000</span>
+                        </div>
+                        <div style={{ height: 6, borderRadius: 3, background: "#1a1a2e", overflow: "hidden", marginBottom: 8 }}>
+                          <div style={{ height: "100%", width: `${pct}%`, borderRadius: 3, background: barColor, transition: "width 0.3s" }} />
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#555" }}>
+                          <span>{pct}% used</span>
+                          {rawgCallsMonth && <span>Month: {rawgCallsMonth}</span>}
+                        </div>
+                        {pct >= 90 && (
+                          <div style={{ marginTop: 10, fontSize: 11, color: "#ff8080", lineHeight: 1.5 }}>
+                            ⚠ Near limit — RAWG searches are paused automatically on 401 errors.
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Platform Data resync + RAWG image sync */}
@@ -2669,7 +3408,7 @@ export default function App() {
                 <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>PSN Account</div>
                   <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-                    Log into your PlayStation account, then visit <span style={{ color: "#0070cc" }}>ca.account.sony.com/api/v1/ssocookie</span> and paste the <strong style={{ color: "#888" }}>npsso</strong> value. Token is valid for ~60 days. Playtime only available for PS5 games.
+                    Log into your PlayStation account, then visit <a href="https://ca.account.sony.com/api/v1/ssocookie" target="_blank" rel="noopener noreferrer" style={{ color: "#0070cc" }}>ca.account.sony.com/api/v1/ssocookie</a> and paste the <strong style={{ color: "#888" }}>npsso</strong> value. Token is valid for ~60 days. Playtime only available for PS5 games.
                   </div>
                   <div>
                     <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>NPSSO Token</div>
@@ -2709,20 +3448,383 @@ export default function App() {
               </div>
             </div>
 
+            {/* ── Backup ── */}
+            <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
+              <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>Backup</div>
+
+              <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap" }}>
+
+                {/* Database Backup */}
+                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Database Backup</div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
+                    Download a full compressed backup of your game list database. Save it to iCloud, a USB drive, or wherever you like.
+                  </div>
+                  <button
+                    disabled={downloading}
+                    onClick={async () => {
+                      setDownloading(true);
+                      try {
+                        const res = await fetch("/api/backup/download");
+                        if (!res.ok) throw new Error("Backup failed");
+                        const disposition = res.headers.get("Content-Disposition") || "";
+                        const match = disposition.match(/filename="([^"]+)"/);
+                        const filename = match ? match[1] : "gamilist_backup.sql.gz";
+                        const blob = await res.blob();
+                        if (window.showSaveFilePicker) {
+                          try {
+                            const handle = await window.showSaveFilePicker({
+                              suggestedName: filename,
+                              types: [{ description: "GZip archive", accept: { "application/gzip": [".gz"] } }],
+                            });
+                            const writable = await handle.createWritable();
+                            await writable.write(blob);
+                            await writable.close();
+                            setToast({ msg: `Backup saved: ${filename}`, ok: true });
+                            return;
+                          } catch (e) {
+                            if (e.name === "AbortError") return;
+                            // fall through to blob download
+                          }
+                        }
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = filename;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        setToast({ msg: `Backup downloaded: ${filename}`, ok: true });
+                      } catch {
+                        setToast({ msg: "Backup failed", ok: false });
+                      } finally {
+                        setDownloading(false);
+                      }
+                    }}
+                    style={{ width: "100%", padding: "9px 0", background: "#0a1020", border: "1px solid #7c6ef744", borderRadius: 8, color: downloading ? "#555" : "#7c6ef7", fontWeight: 700, fontSize: 13, cursor: downloading ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                    {downloading ? "Downloading…" : "Download Backup"}
+                  </button>
+                </div>
+
+                {/* Database Import / Verify */}
+                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Database Import / Verify</div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
+                    Load a <code style={{ color: "#666" }}>.sql.gz</code> backup to verify its integrity and preview what would change before restoring.
+                  </div>
+                  <input
+                    id="backup-file-input"
+                    type="file"
+                    accept=".sql.gz,.gz"
+                    style={{ display: "none" }}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setVerifyFile(file);
+                      setVerifyResult(null);
+                      setRestoreConfirm(false);
+                      setVerifying(true);
+                      try {
+                        const fd = new FormData();
+                        fd.append("file", file);
+                        const res = await fetch("/api/backup/verify", { method: "POST", body: fd });
+                        const data = await res.json();
+                        setVerifyResult(data);
+                      } catch {
+                        setVerifyResult({ valid: false, error: "Network error contacting server" });
+                      } finally {
+                        setVerifying(false);
+                        e.target.value = "";
+                      }
+                    }}
+                  />
+                  <button
+                    disabled={verifying}
+                    onClick={() => document.getElementById("backup-file-input").click()}
+                    style={{ width: "100%", padding: "9px 0", background: "#0a1a10", border: "1px solid #4caf8044", borderRadius: 8, color: verifying ? "#444" : "#4caf80", fontWeight: 700, fontSize: 13, cursor: verifying ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                    {verifying ? "Analysing…" : "Choose Backup File"}
+                  </button>
+                  {verifyFile && !verifying && (
+                    <div style={{ marginTop: 10, fontSize: 11, color: "#555", textAlign: "center" }}>
+                      {verifyFile.name}
+                    </div>
+                  )}
+                </div>
+
+                {/* Verify result panel (modal) */}
+                {verifyResult && (
+                  <div onClick={() => { setVerifyResult(null); setVerifyFile(null); setRestoreConfirm(false); }}
+                    style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.80)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+                    <div onClick={e => e.stopPropagation()}
+                      style={{ background: "#0c0c1c", border: "1px solid #1e1e35", borderRadius: 16, width: "100%", maxWidth: 640, maxHeight: "88vh", overflowY: "auto", padding: 32, position: "relative" }}>
+
+                      {/* Header */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: "#eeeeff", flex: 1 }}>Backup Verification</div>
+                        {verifyFile && <div style={{ fontSize: 11, color: "#555" }}>{verifyFile.name}</div>}
+                        <button onClick={() => { setVerifyResult(null); setVerifyFile(null); setRestoreConfirm(false); }}
+                          style={{ background: "none", border: "none", color: "#555", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: 0 }}>✕</button>
+                      </div>
+
+                      {/* Valid / invalid badge */}
+                      {!verifyResult.valid ? (
+                        <div style={{ background: "#1a0808", border: "1px solid #ff606055", borderRadius: 10, padding: "16px 20px", color: "#ff8080", fontSize: 13 }}>
+                          <strong>Invalid backup</strong> — {verifyResult.error}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Summary row */}
+                          <div style={{ display: "flex", gap: 10, marginBottom: 24, flexWrap: "wrap" }}>
+                            {[
+                              { label: "Added",     count: verifyResult.stats.added,     color: "#4caf80", bg: "#0a1a10" },
+                              { label: "Removed",   count: verifyResult.stats.removed,   color: "#e05c7a", bg: "#1a0812" },
+                              { label: "Modified",  count: verifyResult.stats.modified,  color: "#e6a63a", bg: "#1a1208" },
+                              { label: "Unchanged", count: verifyResult.stats.unchanged, color: "#555",    bg: "#0c0c14" },
+                            ].map(({ label, count, color, bg }) => (
+                              <div key={label} style={{ flex: 1, minWidth: 110, background: bg, border: `1px solid ${color}33`, borderRadius: 10, padding: "12px 16px", textAlign: "center" }}>
+                                <div style={{ fontSize: 22, fontWeight: 800, color }}>{count}</div>
+                                <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{label}</div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Added */}
+                          {verifyResult.added.length > 0 && (
+                            <div style={{ marginBottom: 20 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "#4caf80", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
+                                Added ({verifyResult.added.length}) — in backup, not in current DB
+                              </div>
+                              <div style={{ border: "1px solid #1a1a2e", borderRadius: 8, overflow: "hidden" }}>
+                                {verifyResult.added.map((g, i) => (
+                                  <div key={g.game_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: i < verifyResult.added.length - 1 ? "1px solid #0e0e1e" : "none", background: i % 2 === 0 ? "#080812" : "transparent" }}>
+                                    <div style={{ flex: 1, fontSize: 12, color: "#ccc" }}>{g.name}</div>
+                                    {g.platform && <div style={{ fontSize: 10, color: "#555" }}>{g.platform}</div>}
+                                    {g.status != null && <div style={{ fontSize: 10, color: STATUSES[g.status]?.color || "#888", minWidth: 70, textAlign: "right" }}>{STATUSES[g.status]?.label}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Removed */}
+                          {verifyResult.removed.length > 0 && (
+                            <div style={{ marginBottom: 20 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "#e05c7a", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
+                                Removed ({verifyResult.removed.length}) — in current DB, not in backup
+                              </div>
+                              <div style={{ border: "1px solid #1a1a2e", borderRadius: 8, overflow: "hidden" }}>
+                                {verifyResult.removed.map((g, i) => (
+                                  <div key={g.game_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: i < verifyResult.removed.length - 1 ? "1px solid #0e0e1e" : "none", background: i % 2 === 0 ? "#080812" : "transparent" }}>
+                                    <div style={{ flex: 1, fontSize: 12, color: "#ccc" }}>{g.name}</div>
+                                    {g.platform && <div style={{ fontSize: 10, color: "#555" }}>{g.platform}</div>}
+                                    {g.status != null && <div style={{ fontSize: 10, color: STATUSES[g.status]?.color || "#888", minWidth: 70, textAlign: "right" }}>{STATUSES[g.status]?.label}</div>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Modified */}
+                          {verifyResult.modified.length > 0 && (
+                            <div style={{ marginBottom: 20 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "#e6a63a", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
+                                Modified ({verifyResult.modified.length}) — field changes
+                              </div>
+                              <div style={{ border: "1px solid #1a1a2e", borderRadius: 8, overflow: "hidden" }}>
+                                {verifyResult.modified.map((g, i) => (
+                                  <div key={g.game_id} style={{ padding: "10px 14px", borderBottom: i < verifyResult.modified.length - 1 ? "1px solid #0e0e1e" : "none", background: i % 2 === 0 ? "#080812" : "transparent" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
+                                      <div style={{ flex: 1, fontSize: 12, color: "#ccc" }}>{g.name}</div>
+                                      {g.platform && <div style={{ fontSize: 10, color: "#555" }}>{g.platform}</div>}
+                                    </div>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                      {Object.entries(g.changes).map(([field, { backup: bv, current: cv }]) => {
+                                        const label = { status: "Status", user_rating: "Rating", favourite: "Favourite", playtime_minutes: "Playtime" }[field] || field;
+                                        const fmtStatus = v => v != null ? (STATUSES[v]?.label ?? v) : "—";
+                                        const fmtVal = (f, v) => {
+                                          if (v == null) return "—";
+                                          if (f === "status") return fmtStatus(v);
+                                          if (f === "favourite") return v ? "Yes" : "No";
+                                          if (f === "playtime_minutes") return `${Math.round(v / 60)}h`;
+                                          if (f === "user_rating") return `${v}`;
+                                          return String(v);
+                                        };
+                                        return (
+                                          <div key={field} style={{ fontSize: 10, background: "#0e0e1e", border: "1px solid #1a1a2e", borderRadius: 5, padding: "3px 8px", color: "#888" }}>
+                                            <span style={{ color: "#666" }}>{label}: </span>
+                                            <span style={{ color: "#e05c7a" }}>{fmtVal(field, cv)}</span>
+                                            <span style={{ color: "#555" }}> → </span>
+                                            <span style={{ color: "#4caf80" }}>{fmtVal(field, bv)}</span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {verifyResult.stats.added === 0 && verifyResult.stats.removed === 0 && verifyResult.stats.modified === 0 && (
+                            <div style={{ padding: "16px 20px", background: "#080814", border: "1px solid #1a1a2e", borderRadius: 10, color: "#555", fontSize: 13, textAlign: "center", marginBottom: 20 }}>
+                              Backup is identical to the current database — no changes would be made.
+                            </div>
+                          )}
+
+                          {/* Restore section */}
+                          <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 20, marginTop: 4 }}>
+                            {!restoreConfirm ? (
+                              <button onClick={() => setRestoreConfirm(true)}
+                                style={{ width: "100%", padding: "10px 0", background: "#1a0808", border: "1px solid #e05c7a55", borderRadius: 8, color: "#e05c7a", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                                Restore Database from this Backup
+                              </button>
+                            ) : (
+                              <div style={{ background: "#1a0808", border: "1px solid #e05c7a55", borderRadius: 10, padding: "16px 20px" }}>
+                                <div style={{ fontSize: 12, color: "#e05c7a", marginBottom: 14, lineHeight: 1.6 }}>
+                                  This will <strong>permanently replace</strong> your current database with the backup. This cannot be undone.
+                                </div>
+                                <div style={{ display: "flex", gap: 10 }}>
+                                  <button onClick={() => setRestoreConfirm(false)}
+                                    style={{ flex: 1, padding: "8px 0", background: "transparent", border: "1px solid #333", borderRadius: 7, color: "#666", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                                    Cancel
+                                  </button>
+                                  <button
+                                    disabled={restoring}
+                                    onClick={async () => {
+                                      if (!verifyFile) return;
+                                      setRestoring(true);
+                                      try {
+                                        const fd = new FormData();
+                                        fd.append("file", verifyFile);
+                                        const res = await fetch("/api/backup/restore", { method: "POST", body: fd });
+                                        const data = await res.json();
+                                        if (data.ok) {
+                                          setVerifyResult(null);
+                                          setVerifyFile(null);
+                                          setRestoreConfirm(false);
+                                          setToast({ msg: "Database restored — reloading…", ok: true });
+                                          setTimeout(() => window.location.reload(), 1800);
+                                        } else {
+                                          setToast({ msg: `Restore failed: ${data.error}`, ok: false });
+                                          setRestoreConfirm(false);
+                                        }
+                                      } catch {
+                                        setToast({ msg: "Restore failed — network error", ok: false });
+                                        setRestoreConfirm(false);
+                                      } finally {
+                                        setRestoring(false);
+                                      }
+                                    }}
+                                    style={{ flex: 2, padding: "8px 0", background: restoring ? "#1a0808" : "#2a0808", border: "1px solid #e05c7a", borderRadius: 7, color: restoring ? "#555" : "#e05c7a", fontWeight: 700, fontSize: 12, cursor: restoring ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                                    {restoring ? "Restoring…" : "Yes, Restore Now"}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+
+              </div>
+            </div>
+
           </>
         )}
 
         {/* ── Search ── */}
         {tab === "search" && (
           <>
-            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 6, fontFamily: "'Gloria Hallelujah', cursive" }}>
-              {searched ? `Results for "${query}"` : "Search Games"}
+            {/* Toolbar: platform filter + page info */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+              {/* Platform dropdown */}
+              <div ref={searchPlatDropRef} style={{ position: "relative" }}>
+                <button onClick={() => { setSearchPlatDropOpen(o => !o); setSearchPlatSearch(""); }}
+                  style={{ background: "#0c0c1c", border: `1px solid ${searchPlatSlug ? "#7c6ef755" : "#1a1a2e"}`, borderRadius: 6, padding: "5px 26px 5px 10px", color: searchPlatSlug ? "#a090ff" : "#666", fontSize: 12, fontFamily: "inherit", cursor: "pointer", minWidth: 140, textAlign: "left", position: "relative", whiteSpace: "nowrap" }}>
+                  {searchPlatSlug ? (ALL_PLATFORMS.find(p => p.slug === searchPlatSlug)?.name || searchPlatSlug) : "All Platforms"}
+                  <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 9, color: "#555" }}>{searchPlatDropOpen ? "▲" : "▼"}</span>
+                </button>
+                {searchPlatDropOpen && (
+                  <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 300, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 7, minWidth: 200, boxShadow: "0 6px 24px #00000088", padding: "6px 0" }}>
+                    <div style={{ padding: "4px 8px 6px" }}>
+                      <input autoFocus value={searchPlatSearch} onChange={e => setSearchPlatSearch(e.target.value)}
+                        placeholder="Type to filter…"
+                        style={{ width: "100%", background: "#080814", border: "1px solid #1a1a2e", borderRadius: 4, padding: "4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ maxHeight: 260, overflowY: "auto" }}>
+                      {/* All platforms option */}
+                      <div onClick={() => { setSearchPlatSlug(""); setSearchPlatDropOpen(false); setSearched(false); setSearchResults([]); setSearchTotal(0); }}
+                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer", background: !searchPlatSlug ? "#7c6ef714" : "transparent", color: !searchPlatSlug ? "#a090ff" : "#888", fontSize: 12, fontFamily: "inherit" }}
+                        onMouseEnter={e => { if (searchPlatSlug) e.currentTarget.style.background = "#ffffff08"; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = !searchPlatSlug ? "#7c6ef714" : "transparent"; }}>
+                        <span style={{ fontSize: 10, width: 12 }}>{!searchPlatSlug ? "✓" : ""}</span>All Platforms
+                      </div>
+                      {ALL_PLATFORMS
+                        .filter(p => RAWG_PLATFORM_IDS[p.slug] !== undefined)
+                        .filter(p => p.name.toLowerCase().includes(searchPlatSearch.toLowerCase()))
+                        .map(p => {
+                          const active = searchPlatSlug === p.slug;
+                          return (
+                            <div key={p.slug}
+                              onClick={() => {
+                                setSearchPlatSlug(p.slug);
+                                setSearchPlatDropOpen(false);
+                                // Auto-trigger browse for selected platform
+                                const rawgId = RAWG_PLATFORM_IDS[p.slug];
+                                setSearched(true); setSearchLoading(true); setSearchError(null); setSearchResults([]); setSearchPage(1);
+                                apiFetch(`/games/search?platforms=${rawgId}&page=1&page_size=50`)
+                                  .then(data => { setSearchResults(Array.isArray(data) ? data : (data.results || [])); setSearchTotal(Array.isArray(data) ? data.length : (data.count || 0)); })
+                                  .catch(() => setSearchError("Could not reach the backend."))
+                                  .finally(() => setSearchLoading(false));
+                              }}
+                              style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer", background: active ? "#7c6ef714" : "transparent", color: active ? "#a090ff" : "#888", fontSize: 12, fontFamily: "inherit" }}
+                              onMouseEnter={e => { if (!active) e.currentTarget.style.background = "#ffffff08"; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = active ? "#7c6ef714" : "transparent"; }}>
+                              <span style={{ fontSize: 10, width: 12 }}>{active ? "✓" : ""}</span>{p.name}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Title / count */}
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 20, fontWeight: 800, color: "#eeeeff", fontFamily: "'Gloria Hallelujah', cursive" }}>
+                  {!searched ? "New & Trending" : query.trim() ? `"${query.trim()}"` : ALL_PLATFORMS.find(p => p.slug === searchPlatSlug)?.name || "Browse"}
+                </span>
+                {searched && !searchLoading && (
+                  <span style={{ fontSize: 12, color: "#444", marginLeft: 12 }}>
+                    {searchTotal > 0 ? `${searchTotal.toLocaleString()} games` : `${searchResults.length} games`}
+                    {searchTotal > 50 && ` — page ${searchPage} of ${Math.ceil(searchTotal / 50)}`}
+                  </span>
+                )}
+              </div>
+
+              {/* Pagination */}
+              {searched && searchTotal > 50 && !searchLoading && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <button onClick={() => doSearch(searchPage - 1)} disabled={searchPage <= 1}
+                    style={{ padding: "4px 12px", background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 5, color: searchPage <= 1 ? "#333" : "#a0a0cc", fontSize: 12, cursor: searchPage <= 1 ? "not-allowed" : "pointer", fontFamily: "inherit" }}>← Prev</button>
+                  <span style={{ fontSize: 12, color: "#555" }}>{searchPage} / {Math.ceil(searchTotal / 50)}</span>
+                  <button onClick={() => doSearch(searchPage + 1)} disabled={searchPage >= Math.ceil(searchTotal / 50)}
+                    style={{ padding: "4px 12px", background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 5, color: searchPage >= Math.ceil(searchTotal / 50) ? "#333" : "#a0a0cc", fontSize: 12, cursor: searchPage >= Math.ceil(searchTotal / 50) ? "not-allowed" : "pointer", fontFamily: "inherit" }}>Next →</button>
+                </div>
+              )}
             </div>
-            <div style={{ fontSize: 13, color: "#444", marginBottom: 28 }}>
-              {searched && !searchLoading ? `${searchResults.length} games found` : "Type a game title, genre, or keyword above."}
-            </div>
+
             {searchError && <div style={{ color: "#ff6060", background: "#1e0c0c", border: "1px solid #ff333322", borderRadius: 8, padding: "10px 16px", marginBottom: 20, fontSize: 13 }}>{searchError}</div>}
-            {searchLoading ? <Spinner text="Searching games…" /> : <Grid games={searchResults} {...gridProps} emptyMsg="Use the search bar above to find games." />}
+            {searchLoading
+              ? <Spinner text="Loading games…" />
+              : searched
+                ? <Grid games={searchResults} {...gridProps} importedNameMap={importedNameMap} emptyMsg="No games found." />
+                : trendingLoading
+                  ? <Spinner text="Loading trending games…" />
+                  : <Grid games={trendingGames} {...gridProps} importedNameMap={importedNameMap} emptyMsg="Search for a game or select a platform above." />
+            }
           </>
         )}
 
