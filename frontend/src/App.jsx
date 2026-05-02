@@ -156,16 +156,19 @@ function LockableSection({ sectionId, title, description, children, locked, onTo
   };
 
   return (
-    <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: `1px solid ${locked ? "#e05c7a33" : "#1a1a2e"}`, borderRadius: 12, padding: "24px 28px", position: "relative", transition: "border-color 0.2s" }}>
+    <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: `1px solid ${locked ? "#e05c7a33" : "#1a1a2e"}`, borderRadius: 12, padding: "24px 28px", position: "relative", transition: "border-color 0.2s" }}>
       {/* Panel header with lock button */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: description ? 6 : 18 }}>
-        <div style={{ fontSize: 32, fontWeight: 800, color: "#eeeeff" }}>{title}</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff" }}>{title}</div>
         <button onClick={handleLockClick} title={locked ? "Locked — click to enter password" : "Lock this section"}
-          style={{ background: "transparent", border: `1px solid ${locked ? "#e05c7a55" : "#2a2a4044"}`, borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 26, color: "#ffffff", fontWeight: 800, lineHeight: 1, transition: "all 0.15s" }}>
-          {locked ? "🔒" : "🔓"}
+          style={{ background: "transparent", border: "none", padding: "2px", cursor: "pointer", lineHeight: 1, display: "flex", alignItems: "center" }}>
+          {locked
+            ? <svg width="28" height="32" viewBox="0 0 14 16" fill="none"><rect x="1" y="7" width="12" height="9" rx="2" fill="white"/><path d="M3.5 7V5.5a3.5 3.5 0 1 1 7 0V7" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
+            : <svg width="28" height="32" viewBox="0 0 14 16" fill="none"><rect x="1" y="7" width="12" height="9" rx="2" fill="white"/><path d="M3.5 7V5.5a3.5 3.5 0 1 1 7 0" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
+          }
         </button>
       </div>
-      {description && <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>{description}</div>}
+      {description && <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.6 }}>{description}</div>}
 
       {/* Controls — dimmed + non-interactive when locked */}
       <div style={{ opacity: locked ? 0.38 : 1, pointerEvents: locked ? "none" : "auto", userSelect: locked ? "none" : "auto", transition: "opacity 0.2s" }}>
@@ -175,7 +178,7 @@ function LockableSection({ sectionId, title, description, children, locked, onTo
       {/* Password overlay */}
       {showPw && (
         <div style={{ position: "absolute", inset: 0, background: "rgba(6,6,18,0.94)", borderRadius: 12, zIndex: 30, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
-          <div style={{ fontSize: 28 }}>🔒</div>
+          <svg width="28" height="32" viewBox="0 0 14 16" fill="none"><rect x="1" y="7" width="12" height="9" rx="2" fill="white"/><path d="M3.5 7V5.5a3.5 3.5 0 1 1 7 0V7" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
           <div style={{ fontSize: 12, color: "#888", fontWeight: 700, letterSpacing: 0.5 }}>Enter password to unlock</div>
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
             <input ref={inputRef} type="password" value={pw}
@@ -190,6 +193,21 @@ function LockableSection({ sectionId, title, description, children, locked, onTo
           </form>
         </div>
       )}
+    </div>
+  );
+}
+
+function CollapseSection({ title, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 12, paddingTop: 2 }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+          background: "none", border: "none", padding: "8px 0", cursor: "pointer", fontFamily: "inherit" }}>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, color: "#eeeeff" }}>{title}</span>
+        <span style={{ fontSize: 9, color: "#555" }}>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && <div style={{ paddingBottom: 8 }}>{children}</div>}
     </div>
   );
 }
@@ -253,7 +271,7 @@ function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
  * status dropdown is always at the same vertical position in every card
  * regardless of how many optional fields (rating bar, genres, score) are present.
  */
-function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardH = 255, uploadBtnMult = 1, uploadBtnText = "", glowColor = null, showGalleryNav = true, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, ratingColors = {} }) {
+function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardH = 255, glowColor = null, showGalleryNav = true, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, ratingColors = {} }) {
   const ratingKeyFor = v => (v < 5 ? "lt5" : String(v));
   const ratingStarColor = v => ratingColors[ratingKeyFor(v)] || { "10":"#FFD700","9.5":"#f0c020","9":"#e8b030","8.5":"#e0a040","8":"#d89050","7.5":"#cc8060","7":"#c07070","6.5":"#aa6080","6":"#9060a0","5.5":"#7050b0","5":"#6040c0","lt5":"#e05c7a" }[ratingKeyFor(v)] || "#e6a63a";
   const ratingTextColor = v => ratingStarColor(v);
@@ -497,7 +515,7 @@ function Spinner({ text = "Loading…" }) {
   );
 }
 
-function Grid({ games, myList, importedNameMap, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, showGalleryNav, hideMenu = false, listMode = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
+function Grid({ games, myList, importedNameMap, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, cardH2, altCardMode, effectiveCardCount, showGalleryNav, hideMenu = false, listMode = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   const gridRef = useRef();
@@ -519,7 +537,7 @@ function Grid({ games, myList, importedNameMap, onAdd, onRemove, onToggleFav, on
   return (
     <div ref={gridRef} style={{ display: "grid", gridTemplateColumns: cols, gap: 20, alignItems: "start" }}>
       {games.map((g, i) => (
-        <GameCard key={g.id} game={g} listEntry={myList[g.id] || importedNameMap?.[normName(g.name)] || null} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
+        <GameCard key={g.id} game={g} listEntry={myList[g.id] || importedNameMap?.[normName(g.name)] || null} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH}
           onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
           onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav}
           hideMenu={hideMenu} listMode={listMode} statsTextSize={statsTextSize} nameOffset={nameOffset} autoFitTitle={autoFitTitle} ratingColors={ratingColors} />
@@ -528,7 +546,7 @@ function Grid({ games, myList, importedNameMap, onAdd, onRemove, onToggleFav, on
   );
 }
 
-function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, favMults = [2, 2, 2], onReorder, showGalleryNav, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
+function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, effectiveCardCount, favMults = [2, 2, 2], onReorder, showGalleryNav, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
   const [dragOverId, setDragOverId] = useState(null);
   const dragId = useRef(null);
   const gridRef = useRef();
@@ -566,7 +584,7 @@ function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, on
             onDragLeave={() => setDragOverId(null)}
             onDrop={() => { setDragOverId(null); if (dragId.current != null && dragId.current !== e.game.id) onReorder(dragId.current, e.game.id); }}
             style={{ gridColumn: span > 1 ? `span ${span}` : undefined, opacity: dragOverId === e.game.id ? 0.5 : 1, outline: dragOverId === e.game.id ? "2px dashed #7c6ef755" : "none", borderRadius: 12, cursor: "grab", transition: "opacity 0.15s" }}>
-            <GameCard game={e.game} listEntry={e} cardH={thisCardH} uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText} glowColor={glow}
+            <GameCard game={e.game} listEntry={e} cardH={thisCardH} glowColor={glow}
               onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
               onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav}
               hideMenu={hideMenu} listMode={listMode} hideFav={hideFav} statsTextSize={statsTextSize} nameOffset={nameOffset} autoFitTitle={autoFitTitle} ratingColors={ratingColors} />
@@ -604,7 +622,7 @@ function GlowRow({ rank, label, enabled, color, onToggle, onColor }) {
 // Activity graph — GitHub-style contribution heatmap
 // ---------------------------------------------------------------------------
 
-function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
+function ActivityGraph({ activityLog, colors = {}, numWeeks = 52, editsSize = 10, editsWeight = 800 }) {
   const emptyColor = colors.empty || "#0d0d1a";
   const lowColor   = colors.low   || "#2d1f6b";
   const midColor   = colors.mid   || "#5040a0";
@@ -671,7 +689,7 @@ function ActivityGraph({ activityLog, colors = {}, numWeeks = 52 }) {
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 10, color: "#fff", fontWeight: 800, marginTop: 6 }}>{total} edit{total !== 1 ? "s" : ""} in the last year</div>
+      <div style={{ fontSize: editsSize, color: "#fff", fontWeight: editsWeight, marginTop: 6 }}>{total} edit{total !== 1 ? "s" : ""} in the last year</div>
     </div>
   );
 }
@@ -703,8 +721,10 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
   const [imgFit,  setImgFit]                    = useState(entry?.imgFit  ?? "cover");
   const [customName, setCustomName]               = useState(entry?.customName || "");
   const isPlayedWithRating = (entry?.status === 4 || entry?.status === 5) && entry?.userRating != null;
-  const [selectedStatus, setSelectedStatus]      = useState(isPlayedWithRating ? 1 : (entry?.status ?? 0));
+  const isPausedEntry = entry?.status === 8;
+  const [selectedStatus, setSelectedStatus]      = useState(isPlayedWithRating ? 1 : isPausedEntry ? 0 : (entry?.status ?? 0));
   const [replayStatus, setReplayStatus]          = useState(isPlayedWithRating ? (entry?.status ?? null) : null);
+  const [pauseActive, setPauseActive]            = useState(isPausedEntry);
   const [confirmDelete, setConfirmDelete]        = useState(false);
   const [syncingSteam, setSyncingSteam]          = useState(false);
   const [steamSynced, setSteamSynced]            = useState(false);
@@ -748,7 +768,7 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
 
   const isDirty =
     customName       !== initialRef.current.customName       ||
-    (replayStatus ?? selectedStatus) !== initialRef.current.effectiveStatus ||
+    (replayStatus ?? (pauseActive ? 8 : selectedStatus)) !== initialRef.current.effectiveStatus ||
     userRating       !== initialRef.current.userRating       ||
     replayCount      !== initialRef.current.replayCount      ||
     String(playtime) !== initialRef.current.playtime         ||
@@ -920,6 +940,7 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
   const handleSetStatus = (newStatus) => {
     setSelectedStatus(newStatus);
     setReplayStatus(null);
+    setPauseActive(false);
   };
 
   const hasSelectedPlatforms = platforms.length > 0;
@@ -968,7 +989,7 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
       imgPosY,
       imgFit,
       customName: customName.trim() && customName.trim() !== game.name.trim() ? customName.trim() : null,
-      status: replayStatus ?? selectedStatus,
+      status: replayStatus ?? (pauseActive ? 8 : selectedStatus),
       hasCover: hasCoverLocal,
       extraImageIds,
       coverWasPromoted,
@@ -1083,7 +1104,7 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
               <div style={LBL}>Playtime (h)</div>
               <input type="number" min="0" step="0.1" value={playtime} onChange={e => setPlaytime(e.target.value)} placeholder="0.0"
                 style={{ width: 80, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "3px 8px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
-              {entry.playtimeMinutes != null && <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>~{formatPlaytime(entry.playtimeMinutes)}</div>}
+              {entry.playtimeMinutes != null && <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>~{formatPlaytime(entry.playtimeMinutes)}</div>}
             </div>
             <div style={{ flexShrink: 0 }}>
               <div style={LBL}>Replays</div>
@@ -1202,22 +1223,49 @@ function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, 
         <div style={BOX}>
           <div style={SEC}>Status</div>
 
-          {/* Status buttons — Replaying (id=4) excluded; accessible via the Played replay bubble */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: selectedStatus === 1 && userRating !== null ? 10 : 0 }}>
-            {STATUSES.filter(s => s.id !== 4).map(s => (
+          {/* Status buttons — Replaying (4), Plan to Replay (5), Paused (8) excluded; sub-status accessible via bubbles */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: (selectedStatus === 1 && userRating !== null) || selectedStatus === 0 ? 10 : 0 }}>
+            {STATUSES
+              .filter(s => pauseActive ? [0, 1, 6].includes(s.id) : ![4, 5, 8].includes(s.id))
+              .map(s => (
               <button key={s.id} onClick={() => handleSetStatus(s.id)}
                 style={{ padding: "4px 10px", borderRadius: 6,
-                  border: `1px solid ${selectedStatus === s.id ? s.color + "99" : "#2a2a40"}`,
-                  background: selectedStatus === s.id ? s.bg : "transparent",
-                  color: selectedStatus === s.id ? s.color : "#555",
-                  fontSize: 11, cursor: "pointer", fontWeight: selectedStatus === s.id ? 700 : 400,
+                  border: `1px solid ${selectedStatus === s.id && !pauseActive ? s.color + "99" : "#2a2a40"}`,
+                  background: selectedStatus === s.id && !pauseActive ? s.bg : "transparent",
+                  color: selectedStatus === s.id && !pauseActive ? s.color : "#555",
+                  fontSize: 11, cursor: "pointer", fontWeight: selectedStatus === s.id && !pauseActive ? 700 : 400,
                   fontFamily: "inherit", transition: "all 0.1s" }}>
                 {s.label}
               </button>
             ))}
           </div>
 
-          {/* Arrow + replay bubble — appear under the Played button, right before Next to Play */}
+          {/* Paused bubble — sub-status of Playing */}
+          {selectedStatus === 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 0 }}>
+              <DownRightArrow />
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px",
+                backgroundImage: dashSvg(8), backgroundColor: "#0a0a18", borderRadius: 8 }}>
+                {(() => {
+                  const s = STATUSES.find(x => x.id === 8);
+                  return (
+                    <button
+                      onClick={() => setPauseActive(v => !v)}
+                      style={{ padding: "3px 10px", borderRadius: 6,
+                        border: `1px solid ${pauseActive ? s.color + "99" : "#2a2a40"}`,
+                        background: pauseActive ? s.bg : "transparent",
+                        color: pauseActive ? s.color : "#555",
+                        fontSize: 10, cursor: "pointer", fontWeight: pauseActive ? 700 : 400,
+                        fontFamily: "inherit", transition: "all 0.1s" }}>
+                      {s.label}
+                    </button>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Arrow + replay bubble — appear under the Played button */}
           {selectedStatus === 1 && userRating !== null && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 72 }}>
               <DownRightArrow />
@@ -1710,8 +1758,6 @@ export default function App() {
   const [favCardHMult, setFavCardHMult]         = useState(1.5);
   const [favCardCount, setFavCardCount]         = useState(0);
   const [favAltCardMode, setFavAltCardMode]     = useState(false);
-  const [uploadBtnMult, setUploadBtnMult]       = useState(1.0);
-  const [uploadBtnText, setUploadBtnText]       = useState("");
   const [cardCount, setCardCount]         = useState(0);
   const [glow1Enabled, setGlow1Enabled]   = useState(true);
   const [glow1Color,   setGlow1Color]     = useState("#FFD700");
@@ -1722,10 +1768,10 @@ export default function App() {
   const [fav1Mult, setFav1Mult]           = useState(2.0);
   const [fav2Mult, setFav2Mult]           = useState(2.0);
   const [fav3Mult, setFav3Mult]           = useState(2.0);
-  const [listStatsSize,   setListStatsSize]   = useState(11);
-  const [favStatsSize,    setFavStatsSize]    = useState(11);
-  const [listNameOffset,  setListNameOffset]  = useState(0);
-  const [favNameOffset,   setFavNameOffset]   = useState(0);
+  const [listStatsSize,   setListStatsSize]   = useState(16);
+  const [favStatsSize,    setFavStatsSize]    = useState(16);
+  const [listNameOffset,  setListNameOffset]  = useState(6);
+  const [favNameOffset,   setFavNameOffset]   = useState(6);
   const [autoFitTitle,    setAutoFitTitle]    = useState(false);
   const [steamApiKey, setSteamApiKey] = useState("");
   const [steamId, setSteamId]         = useState("");
@@ -1767,6 +1813,16 @@ export default function App() {
   const [platSearch, setPlatSearch]       = useState("");
   const platDropRef                       = useRef(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  // Typography
+  const [tbLabelSize,    setTbLabelSize]    = useState(17);
+  const [tbLabelWeight,  setTbLabelWeight]  = useState(800);
+  const [tbInputSize,    setTbInputSize]    = useState(18);
+  const [tbCountSize,    setTbCountSize]    = useState(17);
+  const [tbCountWeight,  setTbCountWeight]  = useState(800);
+  const [platBtnSize,    setPlatBtnSize]    = useState(18);
+  const [platItemSize,   setPlatItemSize]   = useState(18);
+  const [actEditsSize,   setActEditsSize]   = useState(10);
+  const [actEditsWeight, setActEditsWeight] = useState(800);
   const [saving, setSaving]               = useState(false);
   const [toast, setToast]                 = useState(null);
   const [statusFilter, setStatusFilter]   = useState(null);
@@ -1781,11 +1837,11 @@ export default function App() {
   });
 
   const dbSettings = useRef({
-    cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, showGalleryNav: true, favCardCustom: false, favCardWMult: 1.5, favCardHMult: 1.5, favCardCount: 0, favAltCardMode: false, uploadBtnMult: 1.0, uploadBtnText: "", cardCount: 0, modalWidthMult: 1.0,
+    cardWMult: 1.5, cardHMult: 1.5, cardH2Mult: 1.0, altCardMode: false, showGalleryNav: true, favCardCustom: false, favCardWMult: 1.5, favCardHMult: 1.5, favCardCount: 0, favAltCardMode: false, cardCount: 0, modalWidthMult: 1.0,
     glow1Enabled: true, glow1Color: "#FFD700", glow2Enabled: true, glow2Color: "#C0C0C0", glow3Enabled: true, glow3Color: "#CD7F32",
     steamApiKey: "", steamId: "", psnNpsso: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {}, ratingColors: {},
     fav1Mult: 2.0, fav2Mult: 2.0, fav3Mult: 2.0,
-    listStatsSize: 11, favStatsSize: 11, listNameOffset: 0, favNameOffset: 0, autoFitTitle: false,
+    listStatsSize: 16, favStatsSize: 16, listNameOffset: 6, favNameOffset: 6, autoFitTitle: false,
   });
 
   const [query, setQuery]               = useState("");
@@ -1856,8 +1912,6 @@ export default function App() {
         favCardHMult:    s.favCardHMult    ?? 1.5,
         favCardCount:    s.favCardCount    ?? 0,
         favAltCardMode:  s.favAltCardMode  ?? false,
-        uploadBtnMult:   s.uploadBtnMult   ?? 1.0,
-        uploadBtnText: s.uploadBtnText ?? "",
         cardCount:     s.cardCount     ?? 0,
         glow1Enabled:  s.glow1Enabled  ?? true,  glow1Color: s.glow1Color ?? "#FFD700",
         glow2Enabled:  s.glow2Enabled  ?? true,  glow2Color: s.glow2Color ?? "#C0C0C0",
@@ -1870,13 +1924,17 @@ export default function App() {
       setCardWMult(loaded.cardWMult);   setCardHMult(loaded.cardHMult);
       setCardH2Mult(loaded.cardH2Mult); setAltCardMode(loaded.altCardMode); setShowGalleryNav(loaded.showGalleryNav);
       setFavCardCustom(loaded.favCardCustom); setFavCardWMult(loaded.favCardWMult); setFavCardHMult(loaded.favCardHMult); setFavCardCount(loaded.favCardCount); setFavAltCardMode(loaded.favAltCardMode);
-      setUploadBtnMult(loaded.uploadBtnMult); setUploadBtnText(loaded.uploadBtnText);
       setCardCount(loaded.cardCount);
       setGlow1Enabled(loaded.glow1Enabled); setGlow1Color(loaded.glow1Color);
       setGlow2Enabled(loaded.glow2Enabled); setGlow2Color(loaded.glow2Color);
       setGlow3Enabled(loaded.glow3Enabled); setGlow3Color(loaded.glow3Color);
       setFav1Mult(s.fav1Mult ?? 2.0); setFav2Mult(s.fav2Mult ?? 2.0); setFav3Mult(s.fav3Mult ?? 2.0);
-      setListStatsSize(s.listStatsSize ?? 11); setFavStatsSize(s.favStatsSize ?? 11); setListNameOffset(s.listNameOffset ?? 0); setFavNameOffset(s.favNameOffset ?? 0); setAutoFitTitle(s.autoFitTitle ?? false);
+      setListStatsSize(s.listStatsSize ?? 16); setFavStatsSize(s.favStatsSize ?? 16); setListNameOffset(s.listNameOffset ?? 6); setFavNameOffset(s.favNameOffset ?? 6); setAutoFitTitle(s.autoFitTitle ?? false);
+      setTbLabelSize(s.tbLabelSize ?? 17); setTbLabelWeight(s.tbLabelWeight ?? 800);
+      setTbInputSize(s.tbInputSize ?? 18);
+      setTbCountSize(s.tbCountSize ?? 17); setTbCountWeight(s.tbCountWeight ?? 800);
+      setPlatBtnSize(s.platBtnSize ?? 18); setPlatItemSize(s.platItemSize ?? 18);
+      setActEditsSize(s.actEditsSize ?? 10); setActEditsWeight(s.actEditsWeight ?? 800);
       setSteamApiKey(loaded.steamApiKey); setSteamId(loaded.steamId); setPsnNpsso(loaded.psnNpsso);
       setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
       setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
@@ -1895,12 +1953,21 @@ export default function App() {
         fav1Mult:        s.fav1Mult        ?? 2.0,
         fav2Mult:        s.fav2Mult        ?? 2.0,
         fav3Mult:        s.fav3Mult        ?? 2.0,
-        listStatsSize:   s.listStatsSize   ?? 11,
-        favStatsSize:    s.favStatsSize    ?? 11,
-        listNameOffset:  s.listNameOffset  ?? 0,
-        favNameOffset:   s.favNameOffset   ?? 0,
+        listStatsSize:   s.listStatsSize   ?? 16,
+        favStatsSize:    s.favStatsSize    ?? 16,
+        listNameOffset:  s.listNameOffset  ?? 6,
+        favNameOffset:   s.favNameOffset   ?? 6,
         autoFitTitle:    s.autoFitTitle    ?? false,
         modalWidthMult:  s.modalWidthMult  ?? 1.0,
+        tbLabelSize:     s.tbLabelSize     ?? 17,
+        tbLabelWeight:   s.tbLabelWeight   ?? 800,
+        tbInputSize:     s.tbInputSize     ?? 18,
+        tbCountSize:     s.tbCountSize     ?? 17,
+        tbCountWeight:   s.tbCountWeight   ?? 800,
+        platBtnSize:     s.platBtnSize     ?? 18,
+        platItemSize:    s.platItemSize    ?? 18,
+        actEditsSize:    s.actEditsSize    ?? 10,
+        actEditsWeight:  s.actEditsWeight  ?? 800,
       };
     }).catch(() => {});
 
@@ -1934,14 +2001,18 @@ export default function App() {
     setCardWMult(s.cardWMult);   setCardHMult(s.cardHMult);
     setCardH2Mult(s.cardH2Mult ?? 1.0); setAltCardMode(s.altCardMode ?? false); setShowGalleryNav(s.showGalleryNav ?? true);
     setFavCardCustom(s.favCardCustom ?? false); setFavCardWMult(s.favCardWMult ?? 1.5); setFavCardHMult(s.favCardHMult ?? 1.5); setFavCardCount(s.favCardCount ?? 0); setFavAltCardMode(s.favAltCardMode ?? false);
-    setUploadBtnMult(s.uploadBtnMult); setUploadBtnText(s.uploadBtnText);
     setCardCount(s.cardCount);
     setGlow1Enabled(s.glow1Enabled); setGlow1Color(s.glow1Color);
     setGlow2Enabled(s.glow2Enabled); setGlow2Color(s.glow2Color);
     setGlow3Enabled(s.glow3Enabled); setGlow3Color(s.glow3Color);
     setFav1Mult(s.fav1Mult ?? 2.0); setFav2Mult(s.fav2Mult ?? 2.0); setFav3Mult(s.fav3Mult ?? 2.0);
-    setListStatsSize(s.listStatsSize ?? 11); setFavStatsSize(s.favStatsSize ?? 11);
-    setListNameOffset(s.listNameOffset ?? 0); setFavNameOffset(s.favNameOffset ?? 0); setAutoFitTitle(s.autoFitTitle ?? false);
+    setListStatsSize(s.listStatsSize ?? 16); setFavStatsSize(s.favStatsSize ?? 16);
+    setListNameOffset(s.listNameOffset ?? 6); setFavNameOffset(s.favNameOffset ?? 6); setAutoFitTitle(s.autoFitTitle ?? false);
+    setTbLabelSize(s.tbLabelSize ?? 17); setTbLabelWeight(s.tbLabelWeight ?? 800);
+    setTbInputSize(s.tbInputSize ?? 18);
+    setTbCountSize(s.tbCountSize ?? 17); setTbCountWeight(s.tbCountWeight ?? 800);
+    setPlatBtnSize(s.platBtnSize ?? 18); setPlatItemSize(s.platItemSize ?? 18);
+    setActEditsSize(s.actEditsSize ?? 10); setActEditsWeight(s.actEditsWeight ?? 800);
     setSteamApiKey(s.steamApiKey); setSteamId(s.steamId); setPsnNpsso(s.psnNpsso ?? "");
     setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
     setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
@@ -1952,10 +2023,12 @@ export default function App() {
   }, []);
 
   const handleSave = () => saveSettings({
-    cardWMult, cardHMult, cardH2Mult, altCardMode, showGalleryNav, favCardCustom, favCardWMult, favCardHMult, favCardCount, favAltCardMode, uploadBtnMult, uploadBtnText, cardCount, modalWidthMult,
+    cardWMult, cardHMult, cardH2Mult, altCardMode, showGalleryNav, favCardCustom, favCardWMult, favCardHMult, favCardCount, favAltCardMode, cardCount, modalWidthMult,
     glow1Enabled, glow1Color, glow2Enabled, glow2Color, glow3Enabled, glow3Color,
     fav1Mult, fav2Mult, fav3Mult,
     listStatsSize, favStatsSize, listNameOffset, favNameOffset, autoFitTitle,
+    tbLabelSize, tbLabelWeight, tbInputSize, tbCountSize, tbCountWeight,
+    platBtnSize, platItemSize, actEditsSize, actEditsWeight,
     steamApiKey, steamId, psnNpsso, platformHighlightColor: platformDefaultColor,
     platformColors, statusColors, activityColors, ratingColors,
   });
@@ -2375,9 +2448,7 @@ export default function App() {
   const updateH          = markDirty(setCardHMult);
   const updateH2         = markDirty(setCardH2Mult);
   const updateAltMode    = markDirty(setAltCardMode);
-  const updateBtn           = markDirty(setUploadBtnMult);
   const updateCount         = markDirty(setCardCount);
-  const updateBtnText       = markDirty(setUploadBtnText);
   const updateFavCardCustom  = markDirty(setFavCardCustom);
   const updateFavCardW       = markDirty(setFavCardWMult);
   const updateFavCardH       = markDirty(setFavCardHMult);
@@ -2392,6 +2463,15 @@ export default function App() {
   const updateFav1Mult   = markDirty(setFav1Mult);
   const updateFav2Mult   = markDirty(setFav2Mult);
   const updateFav3Mult   = markDirty(setFav3Mult);
+  const updateTbLabelSize    = markDirty(setTbLabelSize);
+  const updateTbLabelWeight  = markDirty(setTbLabelWeight);
+  const updateTbInputSize    = markDirty(setTbInputSize);
+  const updateTbCountSize    = markDirty(setTbCountSize);
+  const updateTbCountWeight  = markDirty(setTbCountWeight);
+  const updatePlatBtnSize    = markDirty(setPlatBtnSize);
+  const updatePlatItemSize   = markDirty(setPlatItemSize);
+  const updateActEditsSize   = markDirty(setActEditsSize);
+  const updateActEditsWeight = markDirty(setActEditsWeight);
   const updateSteamKey          = markDirty(setSteamApiKey);
   const updateSteamId           = markDirty(setSteamId);
   const updatePsnNpsso          = markDirty(setPsnNpsso);
@@ -2423,7 +2503,7 @@ export default function App() {
     setMetadataGameId(gameId);
   }, [myList]);
 
-  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: handleOpenMetadata, onTogglePlatform: togglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, uploadBtnMult, uploadBtnText, effectiveCardCount, showGalleryNav, onActualCardW: setActualCardW, ratingColors };
+  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: handleOpenMetadata, onTogglePlatform: togglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, effectiveCardCount, showGalleryNav, onActualCardW: setActualCardW, ratingColors };
 
   // Name-keyed lookup for PSN/Steam entries so search results can match them by title.
   const importedNameMap = useMemo(() => {
@@ -2520,7 +2600,7 @@ export default function App() {
         {/* ── My List ── */}
         {tab === "mylist" && (
           <>
-            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 20, fontFamily: "'Gloria Hallelujah', cursive" }}>My List</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 20, fontFamily: "'Gloria Hallelujah', cursive" }}>My List</div>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${STATUSES.length}, 1fr)`, gap: 8, marginBottom: 28 }}>
               {STATUSES.map(s => {
                 const cnt = allEntries.filter(e => e.status === s.id).length;
@@ -2548,9 +2628,9 @@ export default function App() {
                       <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
                     </>
                   )}
-                  <span style={{ fontSize: 11, color: "#fff", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8 }}>Sort</span>
+                  <span style={{ fontSize: tbLabelSize, color: "#fff", fontWeight: tbLabelWeight, textTransform: "uppercase", letterSpacing: 0.8 }}>Sort</span>
                   <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-                    style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "3px 6px", color: "#a0a0cc", fontSize: 11, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+                    style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "3px 6px", color: "#a0a0cc", fontSize: tbInputSize, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
                     <option value="rating_desc">Rating ↓</option>
                     <option value="rating_asc">Rating ↑</option>
                     <option value="name_asc">Name A→Z</option>
@@ -2559,13 +2639,13 @@ export default function App() {
                     <option value="unrated">Unrated first</option>
                   </select>
                   <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
-                  <span style={{ fontSize: 11, color: "#fff", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8 }}>Filter</span>
+                  <span style={{ fontSize: tbLabelSize, color: "#fff", fontWeight: tbLabelWeight, textTransform: "uppercase", letterSpacing: 0.8 }}>Filter</span>
                   {/* Platform searchable dropdown */}
                   {activePlatformSlugs.length > 0 && (
                     <div ref={platDropRef} style={{ position: "relative" }}>
                       <button
                         onClick={() => { setPlatDropOpen(o => !o); setPlatSearch(""); }}
-                        style={{ background: "#080814", border: `1px solid ${platformFilterSlugs.length > 0 ? "#7c6ef755" : "#1a1a2e"}`, borderRadius: 5, padding: "4px 24px 4px 8px", color: platformFilterSlugs.length > 0 ? "#a090ff" : "#666", fontSize: 12, fontFamily: "inherit", cursor: "pointer", minWidth: 120, textAlign: "left", position: "relative", whiteSpace: "nowrap" }}>
+                        style={{ background: "#080814", border: `1px solid ${platformFilterSlugs.length > 0 ? "#7c6ef755" : "#1a1a2e"}`, borderRadius: 5, padding: "4px 24px 4px 8px", color: platformFilterSlugs.length > 0 ? "#a090ff" : "#666", fontSize: platBtnSize, fontFamily: "inherit", cursor: "pointer", minWidth: 180, textAlign: "left", position: "relative", whiteSpace: "nowrap" }}>
                         {platformFilterSlugs.length === 0
                           ? "All Platforms"
                           : platformFilterSlugs.length === 1
@@ -2597,10 +2677,10 @@ export default function App() {
                                 return (
                                   <div key={slug}
                                     onClick={() => { setPlatformFilterSlugs(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]); }}
-                                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer", background: active ? pc + "14" : "transparent", color: active ? pc : "#888", fontSize: 12, fontFamily: "inherit", transition: "background 0.1s" }}
+                                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", cursor: "pointer", background: active ? pc + "14" : "transparent", color: active ? pc : "#888", fontSize: platItemSize, fontFamily: "inherit", transition: "background 0.1s" }}
                                     onMouseEnter={e => { if (!active) e.currentTarget.style.background = "#ffffff08"; }}
                                     onMouseLeave={e => { e.currentTarget.style.background = active ? pc + "14" : "transparent"; }}>
-                                    <span style={{ fontSize: 10, width: 12, color: active ? pc : "#333" }}>{active ? "✓" : ""}</span>
+                                    <span style={{ fontSize: Math.max(8, Math.round(platItemSize * 0.83)), width: 12, color: active ? pc : "#333" }}>{active ? "✓" : ""}</span>
                                     {pInfo?.name || slug}
                                   </div>
                                 );
@@ -2609,7 +2689,7 @@ export default function App() {
                           {platformFilterSlugs.length > 0 && (
                             <div style={{ borderTop: "1px solid #1a1a2e", margin: "4px 0 0" }}>
                               <div onClick={() => setPlatformFilterSlugs([])}
-                                style={{ padding: "5px 12px", cursor: "pointer", color: "#555", fontSize: 11, fontFamily: "inherit" }}
+                                style={{ padding: "5px 12px", cursor: "pointer", color: "#555", fontSize: Math.max(9, Math.round(platItemSize * 0.94)), fontFamily: "inherit" }}
                                 onMouseEnter={e => e.currentTarget.style.color = "#888"}
                                 onMouseLeave={e => e.currentTarget.style.color = "#555"}>
                                 Clear filter
@@ -2620,7 +2700,7 @@ export default function App() {
                       )}
                     </div>
                   )}
-                  <span style={{ fontSize: 11, color: "#fff", fontWeight: 800, marginLeft: "auto" }}>{listEntries.length} / {allEntries.length} games</span>
+                  <span style={{ fontSize: tbCountSize, color: "#fff", fontWeight: tbCountWeight, marginLeft: "auto" }}>{listEntries.length} / {allEntries.length} games</span>
                 </div>
 
                 {/* Row 2: Search */}
@@ -2630,7 +2710,7 @@ export default function App() {
                       value={listSearch}
                       onChange={e => setListSearch(e.target.value)}
                       placeholder="Search my list…"
-                      style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "4px 28px 4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", width: "100%" }}
+                      style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "6px 42px 6px 12px", color: "#a0a0cc", fontSize: tbInputSize, fontFamily: "inherit", outline: "none", width: "100%" }}
                     />
                     {listSearch && (
                       <button onClick={() => setListSearch("")}
@@ -2643,8 +2723,8 @@ export default function App() {
               {/* Global activity heatmap */}
               {allEntries.length > 0 && (
                 <div style={{ flexShrink: 0, background: activityColors.bg || "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "8px 12px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                  <div style={{ fontSize: 11, color: "#fff", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Activity</div>
-                  <ActivityGraph activityLog={globalActivityLog} colors={activityColors} />
+                  <div style={{ fontSize: tbLabelSize, color: "#fff", fontWeight: tbLabelWeight, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Activity</div>
+                  <ActivityGraph activityLog={globalActivityLog} colors={activityColors} editsSize={actEditsSize} editsWeight={actEditsWeight} />
                 </div>
               )}
             </div>
@@ -2702,7 +2782,7 @@ export default function App() {
         {/* ── Favourites ── */}
         {tab === "favs" && (
           <>
-            <div style={{ fontSize: 24, fontWeight: 800, color: "#eeeeff", marginBottom: 4, fontFamily: "'Gloria Hallelujah', cursive" }}>Favourites</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 4, fontFamily: "'Gloria Hallelujah', cursive" }}>Favourites</div>
             <div style={{ fontSize: 13, color: "#444", marginBottom: 28 }}>Star ★ any game to add it here. Drag cards to reorder.</div>
             <FavGrid entries={orderedFavEntries.filter(e => e.game)} glowConfig={glowConfig} {...gridProps} hideMenu listMode hideFav
               cardW={favCardCustom ? favCardW : cardW} cardH={favCardCustom ? favCardH : cardH}
@@ -2717,7 +2797,7 @@ export default function App() {
           <>
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: saving ? 8 : 28, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 48, fontWeight: 800, color: "#eeeeff", fontFamily: "'Gloria Hallelujah', cursive" }}>Settings</div>
+              <div style={{ fontSize: 32, fontWeight: 800, color: "#eeeeff", fontFamily: "'Gloria Hallelujah', cursive" }}>Settings</div>
               <button onClick={handleSave} disabled={!settingsDirty || saving}
                 style={{ padding: "8px 20px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 13, cursor: settingsDirty && !saving ? "pointer" : "not-allowed", background: settingsDirty && !saving ? "#7c6ef7" : "#1a1a2e", color: settingsDirty && !saving ? "#fff" : "#444", transition: "background 0.2s, color 0.2s", fontFamily: "inherit" }}>
                 {saving ? "Saving…" : "Save Settings"}
@@ -2741,28 +2821,145 @@ export default function App() {
             {/* Panels row */}
             <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap", marginBottom: 40 }}>
 
-              {/* Card Settings */}
-              <LockableSection sectionId="card" title="Card Settings"
-                description="Control card dimensions and grid layout. Columns sets a fixed count — Auto fills based on width. The max adjusts live to fit your screen."
-                locked={!!lockedSections.card} onToggle={toggleSectionLock}>
-                {[
-                  { label: "Width",  value: cardWMult, onChange: updateW, color: "#7c6ef7" },
-                  { label: "Height", value: cardHMult, onChange: updateH, color: "#38bdf8" },
-                ].map(({ label, value, onChange, color }) => (
-                  <div key={label} style={{ marginBottom: 24 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>{label}</span>
-                      <span style={{ fontSize: 12, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
+              {/* ── Cards section header ── */}
+              <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingBottom: 4 }}>
+                <div style={{ display: "flex", gap: 5 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", textTransform: "uppercase", letterSpacing: 1.5 }}>Cards</div>
+              </div>
+
+              {/* ── Dimensions ── */}
+              <LockableSection sectionId="card-dimensions" title="Dimensions"
+                description="Scale card width and height. Set how much larger your top 3 favourites appear."
+                locked={!!lockedSections["card-dimensions"]} onToggle={toggleSectionLock}>
+                <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
+                  {[
+                    { label: "Width", desc: "Width scale (base 210px).", value: cardWMult, onChange: updateW, color: "#7c6ef7" },
+                    { label: "Height", desc: "Height scale (base 170px).", value: cardHMult, onChange: updateH, color: "#38bdf8" },
+                  ].map(({ label, desc, value, onChange, color }) => (
+                    <div key={label} style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                        <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>{label}</div>
+                        <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value.toFixed(2)}×</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: "#444", marginBottom: 4 }}>{desc}</div>
+                      <input type="range" min="0.25" max="5" step="0.05" value={value} onChange={e => onChange(parseFloat(e.target.value))} style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
                     </div>
-                    <input type="range" min="0.25" max="5" step="0.05" value={value} onChange={e => onChange(parseFloat(e.target.value))} style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
-                      {["0.25×","1×","2×","3×","5×"].map(m => <span key={m}>{m}</span>)}
-                    </div>
+                  ))}
+                </div>
+                <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e", marginBottom: 0 }}>
+                  <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Alternating Heights</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: altCardMode ? 12 : 0 }}>
+                    <span style={{ fontSize: 11, color: "#444", flex: 1 }}>Even-indexed cards use a secondary height.</span>
+                    <button onClick={() => updateAltMode(!altCardMode)}
+                      style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: altCardMode ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                      <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: altCardMode ? 19 : 3, transition: "left 0.2s" }} />
+                    </button>
                   </div>
-                ))}
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Columns</span>
+                  {altCardMode && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Secondary Height</div>
+                          <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Height scale for alternating cards.</div>
+                        </div>
+                        <span style={{ fontSize: 12, color: "#e05c7a", fontWeight: 700 }}>{cardH2Mult.toFixed(2)}×</span>
+                      </div>
+                      <input type="range" min="0.25" max="5" step="0.05" value={cardH2Mult} onChange={e => updateH2(parseFloat(e.target.value))} style={{ width: "100%", accentColor: "#e05c7a", cursor: "pointer" }} />
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
+                        {["0.25×","1×","2×","3×","5×"].map(m => <span key={m}>{m}</span>)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e", marginTop: 16 }}>
+                  <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Favourite Card Size</div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 12 }}>How much larger your top 3 favourites appear in the grid.</div>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    {[
+                      { label: "1st", value: fav1Mult, update: updateFav1Mult, color: "#FFD700" },
+                      { label: "2nd", value: fav2Mult, update: updateFav2Mult, color: "#C0C0C0" },
+                      { label: "3rd", value: fav3Mult, update: updateFav3Mult, color: "#CD7F32" },
+                    ].map(({ label, value, update, color }) => (
+                      <div key={label} style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                          <span style={{ fontSize: 10, color: "#888" }}>{label}</span>
+                          <span style={{ fontSize: 10, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
+                        </div>
+                        <input type="range" min="1" max="4" step="0.25" value={value}
+                          onChange={e => update(parseFloat(e.target.value))}
+                          style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+                    <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Custom Dimensions</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: favCardCustom ? 16 : 0 }}>
+                      <span style={{ fontSize: 11, color: "#444", flex: 1 }}>Use separate card size and columns for the Favourites tab.</span>
+                      <button onClick={() => updateFavCardCustom(!favCardCustom)}
+                        style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: favCardCustom ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                        <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: favCardCustom ? 19 : 3, transition: "left 0.2s" }} />
+                      </button>
+                    </div>
+                    {favCardCustom && (
+                      <>
+                        {[
+                          { label: "Width",  desc: "Card width scale for the Favourites tab.", value: favCardWMult, onChange: updateFavCardW, color: "#7c6ef7" },
+                          { label: "Height", desc: "Card height scale for the Favourites tab.", value: favCardHMult, onChange: updateFavCardH, color: "#38bdf8" },
+                        ].map(({ label, desc, value, onChange, color }) => (
+                          <div key={label} style={{ marginBottom: 14 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 2 }}>
+                              <div>
+                                <span style={{ fontSize: 11, color: "#888", fontWeight: 700 }}>{label}</span>
+                                <div style={{ fontSize: 11, color: "#444" }}>{desc}</div>
+                              </div>
+                              <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value.toFixed(2)}×</span>
+                            </div>
+                            <input type="range" min="0.25" max="5" step="0.05" value={value} onChange={e => onChange(parseFloat(e.target.value))} style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
+                          </div>
+                        ))}
+                        <div style={{ marginBottom: 14 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 2 }}>
+                            <div>
+                              <span style={{ fontSize: 11, color: "#888", fontWeight: 700 }}>Columns</span>
+                              <div style={{ fontSize: 11, color: "#444" }}>Fixed column count. 0 = auto-fill.</div>
+                            </div>
+                            <span style={{ fontSize: 11, color: "#a78bfa", fontWeight: 700 }}>{favCardCount === 0 ? "Auto" : favCardCount}</span>
+                          </div>
+                          <input type="range" min="0" max={maxFitCols} step="1" value={Math.min(favCardCount, maxFitCols)} onChange={e => updateFavCardCount(parseInt(e.target.value))} style={{ width: "100%", accentColor: "#a78bfa", cursor: "pointer" }} />
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 3 }}>
+                            <span>Auto</span><span style={{ marginLeft: "auto" }}>Max {maxFitCols}</span>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: 11, color: "#888", fontWeight: 700 }}>Alternating Heights</span>
+                            <div style={{ fontSize: 11, color: "#444" }}>Apply alternating card heights on the Favourites tab.</div>
+                          </div>
+                          <button onClick={() => updateFavAltCardMode(!favAltCardMode)}
+                            style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: favAltCardMode ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                            <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: favAltCardMode ? 19 : 3, transition: "left 0.2s" }} />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </LockableSection>
+
+              {/* ── Grid ── */}
+              <LockableSection sectionId="card-grid" title="Grid"
+                description="Column count, gallery arrows, and detail popup width."
+                locked={!!lockedSections["card-grid"]} onToggle={toggleSectionLock}>
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Columns</div>
+                      <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Fixed column count. 0 = auto-fill to fit screen.</div>
+                    </div>
                     <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700 }}>
                       {cardCount === 0 ? "Auto" : `${effectiveCardCount}${effectiveCardCount < cardCount ? ` (max ${maxFitCols})` : ""}`}
                     </span>
@@ -2772,47 +2969,22 @@ export default function App() {
                     <span>Auto</span><span style={{ marginLeft: "auto" }}>Max {maxFitCols}</span>
                   </div>
                 </div>
-
-                {/* Alternating Heights */}
-                <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
-                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Alternating Heights</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-                    <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Enable alternating card heights (even/odd)</span>
-                    <button onClick={() => updateAltMode(!altCardMode)}
-                      style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: altCardMode ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-                      <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: altCardMode ? 19 : 3, transition: "left 0.2s" }} />
-                    </button>
-                  </div>
-                  {altCardMode && (
-                    <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                        <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Secondary Height</span>
-                        <span style={{ fontSize: 12, color: "#e05c7a", fontWeight: 700 }}>{cardH2Mult.toFixed(1)}×</span>
-                      </div>
-                      <input type="range" min="0.25" max="5" step="0.05" value={cardH2Mult} onChange={e => updateH2(parseFloat(e.target.value))} style={{ width: "100%", accentColor: "#e05c7a", cursor: "pointer" }} />
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
-                        {["0.25×","1×","2×","3×","5×"].map(m => <span key={m}>{m}</span>)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Gallery Navigation */}
-                <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
-                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Gallery Navigation</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Show arrows and dots on hover to browse card images</span>
+                <div style={{ marginBottom: 20, paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+                  <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Gallery Navigation</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 11, color: "#444", flex: 1 }}>Show arrow and dot controls on hover to browse card images.</span>
                     <button onClick={() => { setShowGalleryNav(v => !v); setSettingsDirty(true); }}
                       style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: showGalleryNav ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
                       <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: showGalleryNav ? 19 : 3, transition: "left 0.2s" }} />
                     </button>
                   </div>
                 </div>
-
-                {/* Metadata Modal Width */}
-                <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Metadata Width</span>
+                <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Detail Panel Width</div>
+                      <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Width of the game detail popup (base: 315px).</div>
+                    </div>
                     <span style={{ fontSize: 12, color: "#e05c7a", fontWeight: 700 }}>{modalWidthMult.toFixed(1)}×</span>
                   </div>
                   <input type="range" min="0.8" max="2.0" step="0.1" value={modalWidthMult}
@@ -2822,161 +2994,187 @@ export default function App() {
                     <span>0.8×</span><span>1.0×</span><span>1.5×</span><span>2.0×</span>
                   </div>
                 </div>
+              </LockableSection>
 
-                {/* Stats Text Size */}
-                <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
-                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Text Size</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-                    <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Auto-shrink title to fit card</span>
-                    <button onClick={() => { setAutoFitTitle(v => !v); setSettingsDirty(true); }}
-                      style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: autoFitTitle ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-                      <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: autoFitTitle ? 19 : 3, transition: "left 0.2s" }} />
-                    </button>
+              {/* ── Text ── */}
+              <LockableSection sectionId="card-text" title="Text"
+                description="Font size for game titles and stats. Applies to both My List and Favourites."
+                locked={!!lockedSections["card-text"]} onToggle={toggleSectionLock}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Auto-fit Title</div>
+                    <div style={{ fontSize: 11, color: "#444" }}>Shrink long titles so they always fit on one line.</div>
                   </div>
-                  {[
-                    { label: "My List", sizeVal: listStatsSize, sizeSetter: setListStatsSize, offsetVal: listNameOffset, offsetSetter: setListNameOffset, color: "#7c6ef7" },
-                    { label: "Favourites", sizeVal: favStatsSize, sizeSetter: setFavStatsSize, offsetVal: favNameOffset, offsetSetter: setFavNameOffset, color: "#e6a63a" },
-                  ].map(({ label, sizeVal, sizeSetter, offsetVal, offsetSetter, color }) => (
-                    <div key={label} style={{ marginBottom: 20 }}>
-                      <div style={{ fontSize: 11, color, fontWeight: 700, marginBottom: 10 }}>{label}</div>
-                      {/* Live preview */}
-                      <div style={{ background: "#070710", border: "1px solid #1a1a2e", borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
-                        {autoFitTitle
-                          ? <FitTitle targetSize={sizeVal + offsetVal} style={{ fontWeight: 700, color: "#eeeeff", marginBottom: 4 }}>A Very Long Game Title That May Not Fit</FitTitle>
-                          : <div style={{ fontSize: sizeVal + offsetVal, fontWeight: 700, color: "#eeeeff", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>A Very Long Game Title That May Not Fit</div>
-                        }
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 6 }}>
-                          {["PC","PS5","NSW"].map(p => (
-                            <span key={p} style={{ fontSize: Math.max(7, sizeVal - 2), fontWeight: 700, padding: "2px 5px", borderRadius: 3, background: color + "28", border: `1px solid ${color}77`, color, userSelect: "none" }}>{p}</span>
-                          ))}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: sizeVal + 2, fontWeight: 800, color: "#e6a63a", userSelect: "none" }}>★ 8.5</span>
-                          <span style={{ color: "#2a2a3a", fontSize: sizeVal + 1, userSelect: "none" }}>|</span>
-                          <span style={{ fontSize: sizeVal, color: "#eeeeff", fontWeight: 700, whiteSpace: "nowrap" }}>⏱ 42h</span>
-                          <span style={{ color: "#2a2a3a", fontSize: sizeVal + 1, userSelect: "none" }}>|</span>
-                          <span style={{ fontSize: sizeVal, color: "#eeeeff", fontWeight: 700, whiteSpace: "nowrap" }}>↺ ×2</span>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                        <span style={{ fontSize: 10, color: "#666" }}>Base size</span>
-                        <span style={{ fontSize: 10, color, fontWeight: 700 }}>{sizeVal}px</span>
-                      </div>
-                      <input type="range" min="8" max="20" step="1" value={sizeVal}
-                        onChange={e => { sizeSetter(parseInt(e.target.value)); setSettingsDirty(true); }}
-                        style={{ width: "100%", accentColor: color, cursor: "pointer", marginBottom: 10 }} />
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                        <span style={{ fontSize: 10, color: "#666" }}>Name offset</span>
-                        <span style={{ fontSize: 10, color, fontWeight: 700 }}>{offsetVal >= 0 ? `+${offsetVal}` : offsetVal}px</span>
-                      </div>
-                      <input type="range" min="0" max="10" step="1" value={offsetVal}
-                        onChange={e => { offsetSetter(parseInt(e.target.value)); setSettingsDirty(true); }}
-                        style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
-                    </div>
-                  ))}
+                  <button onClick={() => { setAutoFitTitle(v => !v); setSettingsDirty(true); }}
+                    style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: autoFitTitle ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                    <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: autoFitTitle ? 19 : 3, transition: "left 0.2s" }} />
+                  </button>
                 </div>
-
-                {/* Custom Favourites Layout */}
-                <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #1a1a2e" }}>
-                  <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Favourites Layout</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: favCardCustom ? 16 : 4 }}>
-                    <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Custom card size and columns for Favourites</span>
-                    <button onClick={() => updateFavCardCustom(!favCardCustom)}
-                      style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: favCardCustom ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-                      <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: favCardCustom ? 19 : 3, transition: "left 0.2s" }} />
-                    </button>
-                  </div>
-                  {favCardCustom && (
-                    <>
-                      {[
-                        { label: "Width",  value: favCardWMult, onChange: updateFavCardW, color: "#7c6ef7" },
-                        { label: "Height", value: favCardHMult, onChange: updateFavCardH, color: "#38bdf8" },
-                      ].map(({ label, value, onChange, color }) => (
-                        <div key={label} style={{ marginBottom: 16 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                            <span style={{ fontSize: 11, color: "#888" }}>{label}</span>
-                            <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
-                          </div>
-                          <input type="range" min="0.25" max="5" step="0.05" value={value} onChange={e => onChange(parseFloat(e.target.value))} style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
-                        </div>
+                <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e", marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, color: "#eeeeff", fontWeight: 700, marginBottom: 8 }}>Preview</div>
+                  <div style={{ background: "#070710", border: "1px solid #1a1a2e", borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
+                    {autoFitTitle
+                      ? <FitTitle targetSize={listStatsSize + listNameOffset} style={{ fontWeight: 700, color: "#eeeeff", marginBottom: 4 }}>A Very Long Game Title That May Not Fit</FitTitle>
+                      : <div style={{ fontSize: listStatsSize + listNameOffset, fontWeight: 700, color: "#eeeeff", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>A Very Long Game Title That May Not Fit</div>
+                    }
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 6 }}>
+                      {["PC","PS5","NSW"].map(p => (
+                        <span key={p} style={{ fontSize: Math.max(7, listStatsSize - 2), fontWeight: 700, padding: "2px 5px", borderRadius: 3, background: "#7c6ef728", border: "1px solid #7c6ef777", color: "#7c6ef7", userSelect: "none" }}>{p}</span>
                       ))}
-                      <div>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                          <span style={{ fontSize: 11, color: "#888" }}>Columns</span>
-                          <span style={{ fontSize: 11, color: "#a78bfa", fontWeight: 700 }}>{favCardCount === 0 ? "Auto" : favCardCount}</span>
-                        </div>
-                        <input type="range" min="0" max={maxFitCols} step="1" value={Math.min(favCardCount, maxFitCols)} onChange={e => updateFavCardCount(parseInt(e.target.value))} style={{ width: "100%", accentColor: "#a78bfa", cursor: "pointer" }} />
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 3 }}>
-                          <span>Auto</span><span style={{ marginLeft: "auto" }}>Max {maxFitCols}</span>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16 }}>
-                        <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Alternating card heights</span>
-                        <button onClick={() => updateFavAltCardMode(!favAltCardMode)}
-                          style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: favAltCardMode ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-                          <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: favAltCardMode ? 19 : 3, transition: "left 0.2s" }} />
-                        </button>
-                      </div>
-                    </>
-                  )}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: listStatsSize + 2, fontWeight: 800, color: "#e6a63a", userSelect: "none" }}>★ 8.5</span>
+                      <span style={{ color: "#2a2a3a", fontSize: listStatsSize + 1, userSelect: "none" }}>|</span>
+                      <span style={{ fontSize: listStatsSize, color: "#eeeeff", fontWeight: 700, whiteSpace: "nowrap" }}>⏱ 42h</span>
+                      <span style={{ color: "#2a2a3a", fontSize: listStatsSize + 1, userSelect: "none" }}>|</span>
+                      <span style={{ fontSize: listStatsSize, color: "#eeeeff", fontWeight: 700, whiteSpace: "nowrap" }}>↺ ×2</span>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                    <span style={{ fontSize: 11, color: "#444" }}>Base — stats, platforms, playtime</span>
+                    <span style={{ fontSize: 10, color: "#7c6ef7", fontWeight: 700 }}>{listStatsSize}px</span>
+                  </div>
+                  <input type="range" min="8" max="32" step="1" value={listStatsSize}
+                    onChange={e => { const v = parseInt(e.target.value); setListStatsSize(v); setFavStatsSize(v); setSettingsDirty(true); }}
+                    style={{ width: "100%", accentColor: "#7c6ef7", cursor: "pointer", marginBottom: 10 }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                    <span style={{ fontSize: 11, color: "#444" }}>Title offset — added on top of base for the title only</span>
+                    <span style={{ fontSize: 10, color: "#7c6ef7", fontWeight: 700 }}>{listNameOffset >= 0 ? `+${listNameOffset}` : listNameOffset}px</span>
+                  </div>
+                  <input type="range" min="0" max="16" step="1" value={listNameOffset}
+                    onChange={e => { const v = parseInt(e.target.value); setListNameOffset(v); setFavNameOffset(v); setSettingsDirty(true); }}
+                    style={{ width: "100%", accentColor: "#7c6ef7", cursor: "pointer" }} />
                 </div>
               </LockableSection>
 
-              {/* Colors — Glow + Platform + Status merged */}
-              <LockableSection sectionId="colors" title="Colors"
-                locked={!!lockedSections.colors} onToggle={toggleSectionLock}>
+              {/* ── Preview section header ── */}
+              <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingBottom: 4, paddingTop: 8 }}>
+                <div style={{ display: "flex", gap: 5 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", textTransform: "uppercase", letterSpacing: 1.5 }}>
+                  Preview{effectiveCardCount > 0 ? ` — ${effectiveCardCount} column${effectiveCardCount > 1 ? "s" : ""}` : ""}
+                </div>
+              </div>
 
-                {/* Status Colors */}
-                <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 18, marginBottom: 10 }}>
-                  <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Status Colors</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {STATUSES.map(s => {
-                      const sp = getStatusProps(s.id);
-                      const hasOverride = !!statusColors[s.id];
+              {/* ── Card Preview — full-width break inside flex row ── */}
+              <div style={{ flexBasis: "100%", background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px", marginBottom: 0 }}>
+
+                {previewEntries.length > 0
+                  ? (() => {
+                      const count = effectiveCardCount > 0 ? effectiveCardCount : Math.min(4, maxFitCols);
+                      const entries = Array.from({ length: count }, (_, i) => previewEntries[i % previewEntries.length]);
+                      const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
                       return (
-                        <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: sp.color, flex: 1,
-                            background: sp.bg, border: `1px solid ${sp.color}44`, borderRadius: 4,
-                            padding: "3px 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {s.label}
-                          </span>
-                          <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                            <span style={{ fontSize: 9, color: "#444" }}>Label</span>
-                            <input type="color" value={sp.color} onChange={e => setStatusColorDirty(s.id, "color", e.target.value)}
-                              style={{ width: 22, height: 16, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                            <span style={{ fontSize: 9, color: "#444" }}>BG</span>
-                            <input type="color" value={sp.bg} onChange={e => setStatusColorDirty(s.id, "bg", e.target.value)}
-                              style={{ width: 22, height: 16, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
-                          </div>
-                          {hasOverride && (
-                            <button onClick={() => resetStatusColor(s.id)}
-                              style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset to default">↺</button>
-                          )}
+                        <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
+                          {entries.map((e, i) => (
+                            <GameCard key={i} game={e.game} listEntry={e}
+                              cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH}
+                              glowColor={i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null}
+                              showGalleryNav={showGalleryNav}
+                              statsTextSize={listStatsSize} nameOffset={listNameOffset} autoFitTitle={autoFitTitle}
+                              getPlatformColor={getPlatformColor} getStatusProps={getStatusProps}
+                              ratingColors={ratingColors}
+                              onAdd={addToList} onRemove={removeFromList} onToggleFav={toggleFav}
+                              onRate={rateGame} onCoverUploaded={handleCoverUploaded}
+                              onOpenMetadata={handleOpenMetadata} />
+                          ))}
                         </div>
                       );
-                    })}
-                  </div>
-                </div>
+                    })()
+                  : <div style={{ padding: "60px 0", textAlign: "center", color: "#333", fontSize: 13, border: "1px dashed #1a1a2e", borderRadius: 12 }}>
+                      Add games to your list to see a preview here
+                    </div>
+                }
+              </div>
 
-                {/* Platform Colors */}
-                <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 18, marginTop: 10 }}>
-                  <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Platform Colors</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                    <span style={{ fontSize: 11, color: "#888", flex: 1 }}>Default</span>
+              {/* ── Colors section header ── */}
+              <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingBottom: 4, paddingTop: 8 }}>
+                <div style={{ display: "flex", gap: 5 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", textTransform: "uppercase", letterSpacing: 1.5 }}>Colors</div>
+              </div>
+
+              {/* ── Status ── */}
+              <LockableSection sectionId="colors-status" title="Status"
+                description="Customize label and background color for every game status."
+                locked={!!lockedSections["colors-status"]} onToggle={toggleSectionLock}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {STATUSES.map(s => {
+                    const sp = getStatusProps(s.id);
+                    const hasOverride = !!statusColors[s.id];
+                    return (
+                      <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: sp.color, flex: 1, minWidth: 0,
+                          background: sp.bg, border: `1px solid ${sp.color}44`, borderRadius: 4,
+                          padding: "3px 7px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {s.label}
+                        </span>
+                        <input type="color" value={sp.color} onChange={e => setStatusColorDirty(s.id, "color", e.target.value)}
+                          style={{ width: 22, height: 18, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1, flexShrink: 0 }} title="Label color" />
+                        <input type="color" value={sp.bg} onChange={e => setStatusColorDirty(s.id, "bg", e.target.value)}
+                          style={{ width: 22, height: 18, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1, flexShrink: 0 }} title="Background" />
+                        {hasOverride
+                          ? <button onClick={() => resetStatusColor(s.id)}
+                              style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", flexShrink: 0 }} title="Reset">↺</button>
+                          : <div style={{ width: 18, flexShrink: 0 }} />
+                        }
+                      </div>
+                    );
+                  })}
+                </div>
+              </LockableSection>
+
+              {/* ── Platforms ── */}
+              <LockableSection sectionId="colors-platform" title="Platforms"
+                description="Accent color for platform badges. Set a global default or override per platform."
+                locked={!!lockedSections["colors-platform"]} onToggle={toggleSectionLock}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Default Color</div>
+                    <div style={{ fontSize: 11, color: "#444" }}>Applied to all platforms without a custom override.</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                     <input type="color" value={platformDefaultColor} onChange={e => updatePlatformDefault(e.target.value)}
                       style={{ width: 26, height: 20, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
                     <span style={{ fontSize: 10, color: platformDefaultColor, fontWeight: 700 }}>{platformDefaultColor}</span>
                   </div>
-                  {/* Always-visible: PC, PS5, Xbox, Switch */}
-                  {(() => {
-                    const featured = ["pc","playstation5","xbox-series-x","nintendo-switch"];
-                    const extraPlatforms = ALL_PLATFORMS.filter(p => !featured.includes(p.slug));
-                    return (
-                      <>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                          {ALL_PLATFORMS.filter(p => featured.includes(p.slug)).map(p => {
+                </div>
+                {(() => {
+                  const featured = ["pc","playstation5","xbox-series-x","nintendo-switch"];
+                  const extraPlatforms = ALL_PLATFORMS.filter(p => !featured.includes(p.slug));
+                  return (
+                    <>
+                      <div style={{ fontSize: 11, color: "#444", marginBottom: 8 }}>Per-platform overrides</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                        {ALL_PLATFORMS.filter(p => featured.includes(p.slug)).map(p => {
+                          const c = platformColors[p.slug] ?? platformDefaultColor;
+                          return (
+                            <div key={p.slug} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 9, fontWeight: 700, color: c, minWidth: 28 }}>{p.short}</span>
+                              <span style={{ fontSize: 11, color: "#666", flex: 1 }}>{p.name}</span>
+                              <input type="color" value={c} onChange={e => setPlatformColorDirty(p.slug, e.target.value)}
+                                style={{ width: 22, height: 16, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
+                              {platformColors[p.slug] && platformColors[p.slug] !== platformDefaultColor && (
+                                <button onClick={() => { const n = { ...platformColors }; delete n[p.slug]; setPlatformColors(n); setSettingsDirty(true); }}
+                                  style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset">↺</button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <button onClick={() => setShowMorePlatformColors(v => !v)}
+                        style={{ marginTop: 10, fontSize: 11, color: "#555", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
+                        {showMorePlatformColors ? "▲ Show less" : `▼ More platforms (${extraPlatforms.length})`}
+                      </button>
+                      {showMorePlatformColors && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 8 }}>
+                          {extraPlatforms.map(p => {
                             const c = platformColors[p.slug] ?? platformDefaultColor;
                             return (
                               <div key={p.slug} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -2992,101 +3190,180 @@ export default function App() {
                             );
                           })}
                         </div>
-                        <button onClick={() => setShowMorePlatformColors(v => !v)}
-                          style={{ marginTop: 10, fontSize: 11, color: "#555", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
-                          {showMorePlatformColors ? "▲ Show less" : `▼ More platforms (${extraPlatforms.length})`}
-                        </button>
-                        {showMorePlatformColors && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 8 }}>
-                            {extraPlatforms.map(p => {
-                              const c = platformColors[p.slug] ?? platformDefaultColor;
-                              return (
-                                <div key={p.slug} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                  <span style={{ fontSize: 9, fontWeight: 700, color: c, minWidth: 28 }}>{p.short}</span>
-                                  <span style={{ fontSize: 11, color: "#666", flex: 1 }}>{p.name}</span>
-                                  <input type="color" value={c} onChange={e => setPlatformColorDirty(p.slug, e.target.value)}
-                                    style={{ width: 22, height: 16, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
-                                  {platformColors[p.slug] && platformColors[p.slug] !== platformDefaultColor && (
-                                    <button onClick={() => { const n = { ...platformColors }; delete n[p.slug]; setPlatformColors(n); setSettingsDirty(true); }}
-                                      style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset">↺</button>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </>
+                      )}
+                    </>
+                  );
+                })()}
+              </LockableSection>
+
+              {/* ── Glow ── */}
+              <LockableSection sectionId="colors-rating" title="Glow"
+                description="Color per star rating, and glow border for your top 3 favourite cards."
+                locked={!!lockedSections["colors-rating"]} onToggle={toggleSectionLock}>
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Rating Colors</div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 12 }}>Color for each star rating score. Click a swatch to edit it.</div>
+                  {(() => {
+                    const RATING_STEPS_KEYS = [
+                      { key: "10",  label: "10 / 10" }, { key: "9.5", label: "9.5" },
+                      { key: "9",   label: "9"        }, { key: "8.5", label: "8.5" },
+                      { key: "8",   label: "8"        }, { key: "7.5", label: "7.5" },
+                      { key: "7",   label: "7"        }, { key: "6.5", label: "6.5" },
+                      { key: "6",   label: "6"        }, { key: "5.5", label: "5.5" },
+                      { key: "5",   label: "5"        }, { key: "lt5", label: "< 5" },
+                    ];
+                    const DEFAULT_RATING_COLORS = {
+                      "10": "#FFD700", "9.5": "#f0c020", "9": "#e8b030",
+                      "8.5": "#e0a040", "8": "#d89050", "7.5": "#cc8060",
+                      "7": "#c07070", "6.5": "#aa6080", "6": "#9060a0",
+                      "5.5": "#7050b0", "5": "#6040c0", "lt5": "#e05c7a",
+                    };
+                    const sel = selectedRatingColorKey;
+                    const currentColor = ratingColors[sel] || DEFAULT_RATING_COLORS[sel] || "#7c6ef7";
+                    const hasOverride  = !!ratingColors[sel];
+                    return (
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <select value={sel} onChange={e => setSelectedRatingColorKey(e.target.value)}
+                            style={{ flex: 1, background: "#080814", border: "1px solid #2a2a40", borderRadius: 6, padding: "5px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+                            {RATING_STEPS_KEYS.map(({ key, label }) => (
+                              <option key={key} value={key}>{label}{ratingColors[key] ? " ●" : ""}</option>
+                            ))}
+                          </select>
+                          <input type="color" value={currentColor} onChange={e => setRatingColorDirty(sel, e.target.value)}
+                            style={{ width: 28, height: 24, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
+                          {hasOverride && (
+                            <button onClick={() => resetRatingColor(sel)}
+                              style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset to default">↺</button>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", gap: 3 }}>
+                          {RATING_STEPS_KEYS.map(({ key }) => {
+                            const c = ratingColors[key] || DEFAULT_RATING_COLORS[key] || "#7c6ef7";
+                            return (
+                              <div key={key} onClick={() => setSelectedRatingColorKey(key)}
+                                style={{ flex: 1, height: 7, borderRadius: 3, background: c, cursor: "pointer", opacity: key === sel ? 1 : 0.45, outline: key === sel ? `2px solid ${c}` : "none", transition: "opacity 0.15s" }} />
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })()}
-                  {/* Rating Colors */}
-                  <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 18, marginTop: 10 }}>
-                    <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Rating Colors</div>
-                    {(() => {
-                      const RATING_STEPS_KEYS = [
-                        { key: "10",  label: "10 / 10" }, { key: "9.5", label: "9.5" },
-                        { key: "9",   label: "9"        }, { key: "8.5", label: "8.5" },
-                        { key: "8",   label: "8"        }, { key: "7.5", label: "7.5" },
-                        { key: "7",   label: "7"        }, { key: "6.5", label: "6.5" },
-                        { key: "6",   label: "6"        }, { key: "5.5", label: "5.5" },
-                        { key: "5",   label: "5"        }, { key: "lt5", label: "< 5" },
-                      ];
-                      const DEFAULT_RATING_COLORS = {
-                        "10": "#FFD700", "9.5": "#f0c020", "9": "#e8b030",
-                        "8.5": "#e0a040", "8": "#d89050", "7.5": "#cc8060",
-                        "7": "#c07070", "6.5": "#aa6080", "6": "#9060a0",
-                        "5.5": "#7050b0", "5": "#6040c0", "lt5": "#e05c7a",
-                      };
-                      const sel = selectedRatingColorKey;
-                      const currentColor = ratingColors[sel] || DEFAULT_RATING_COLORS[sel] || "#7c6ef7";
-                      const hasOverride  = !!ratingColors[sel];
-                      return (
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                            <select value={sel} onChange={e => setSelectedRatingColorKey(e.target.value)}
-                              style={{ flex: 1, background: "#080814", border: "1px solid #2a2a40", borderRadius: 6, padding: "5px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
-                              {RATING_STEPS_KEYS.map(({ key, label }) => (
-                                <option key={key} value={key}>{label}{ratingColors[key] ? " ●" : ""}</option>
-                              ))}
-                            </select>
-                            <input type="color" value={currentColor} onChange={e => setRatingColorDirty(sel, e.target.value)}
-                              style={{ width: 28, height: 24, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
-                            {hasOverride && (
-                              <button onClick={() => resetRatingColor(sel)}
-                                style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset to default">↺</button>
-                            )}
-                          </div>
-                          <div style={{ display: "flex", gap: 3 }}>
-                            {RATING_STEPS_KEYS.map(({ key }) => {
-                              const c = ratingColors[key] || DEFAULT_RATING_COLORS[key] || "#7c6ef7";
-                              return (
-                                <div key={key} onClick={() => setSelectedRatingColorKey(key)}
-                                  style={{ flex: 1, height: 7, borderRadius: 3, background: c, cursor: "pointer", opacity: key === sel ? 1 : 0.45, outline: key === sel ? `2px solid ${c}` : "none", transition: "opacity 0.15s" }} />
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
+                </div>
+                <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+                  <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Favourite Glow</div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 12 }}>Colored border glow on top-ranked favourite cards. Toggle and pick color per rank.</div>
+                  <GlowRow rank="1" label="1st place" enabled={glow1Enabled} color={glow1Color} onToggle={() => updateGlow1E(!glow1Enabled)} onColor={updateGlow1C} />
+                  <GlowRow rank="2" label="2nd place" enabled={glow2Enabled} color={glow2Color} onToggle={() => updateGlow2E(!glow2Enabled)} onColor={updateGlow2C} />
+                  <GlowRow rank="3" label="3rd place" enabled={glow3Enabled} color={glow3Color} onToggle={() => updateGlow3E(!glow3Enabled)} onColor={updateGlow3C} />
                 </div>
               </LockableSection>
 
-              {/* Activity Graph Colors + Favourite Settings (merged) */}
-              <LockableSection sectionId="activity" title="Activity Graph"
-                description="Customize the contribution heatmap colors shown on the My List tab."
-                locked={!!lockedSections.activity} onToggle={toggleSectionLock}>
+              {/* ── Display section header ── */}
+              <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingBottom: 4, paddingTop: 8 }}>
+                <div style={{ display: "flex", gap: 5 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", textTransform: "uppercase", letterSpacing: 1.5 }}>Display</div>
+              </div>
+
+              {/* ── Typography ── */}
+              <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Typography</div>
+                <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.6 }}>Font sizes and weights for toolbar labels, sort controls, and the activity panel.</div>
                 {[
-                  { key: "bg",    label: "Background",  default: "#0c0c1c" },
-                  { key: "empty", label: "Empty cell",  default: "#0d0d1a" },
-                  { key: "low",   label: "Low (1 session)", default: "#2d1f6b" },
-                  { key: "mid",   label: "Mid (2 sessions)", default: "#5040a0" },
-                  { key: "high",  label: "High (3+)",   default: "#7c6ef7" },
-                ].map(({ key, label, default: def }) => {
+                  {
+                    group: "Toolbar Labels",
+                    desc: "Sort, Filter, and Activity heading text.",
+                    defaultOpen: true,
+                    rows: [
+                      { label: "Sort / Filter / Activity", preview: "Filter", size: tbLabelSize, onSize: updateTbLabelSize, weight: tbLabelWeight, onWeight: updateTbLabelWeight },
+                      { label: "Games count", preview: "42 / 100 games", size: tbCountSize, onSize: updateTbCountSize, weight: tbCountWeight, onWeight: updateTbCountWeight },
+                    ],
+                  },
+                  {
+                    group: "Toolbar Controls",
+                    desc: "Sort dropdown and search input text.",
+                    defaultOpen: false,
+                    rows: [
+                      { label: "Sort select & Search input", preview: "Search my list…", size: tbInputSize, onSize: updateTbInputSize },
+                    ],
+                  },
+                  {
+                    group: "Platform Filter",
+                    desc: "Platform filter button and dropdown list.",
+                    defaultOpen: false,
+                    rows: [
+                      { label: "Button", preview: "All Platforms", size: platBtnSize, onSize: updatePlatBtnSize },
+                      { label: "Dropdown items", preview: "PlayStation 5", size: platItemSize, onSize: updatePlatItemSize },
+                    ],
+                  },
+                  {
+                    group: "Activity Graph",
+                    desc: "Edits summary label below the heatmap.",
+                    defaultOpen: false,
+                    rows: [
+                      { label: "Edits count label", preview: "142 edits in the last year", size: actEditsSize, onSize: updateActEditsSize, weight: actEditsWeight, onWeight: updateActEditsWeight },
+                    ],
+                  },
+                ].map(({ group, desc, defaultOpen, rows }) => (
+                  <CollapseSection key={group} title={group} defaultOpen={defaultOpen}>
+                    <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.4 }}>{desc}</div>
+                    {rows.map(({ label, preview, size, onSize, weight, onWeight }) => (
+                      <div key={label} style={{ marginBottom: 14 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6, gap: 8 }}>
+                          <span style={{ fontSize: 10, color: "#555", flexShrink: 0 }}>{label}</span>
+                          <span style={{ fontSize: size, fontWeight: weight ?? 400, color: "#9a9ab8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160, display: "inline-block" }}>{preview}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: onWeight ? 5 : 0 }}>
+                          <span style={{ fontSize: 9, color: "#333", width: 22, flexShrink: 0 }}>Size</span>
+                          <input type="range" min={8} max={36} step={1} value={size}
+                            onChange={e => onSize(parseInt(e.target.value))}
+                            style={{ flex: 1, accentColor: "#7c6ef7", cursor: "pointer" }} />
+                          <span style={{ fontSize: 9, color: "#7c6ef7", fontWeight: 700, width: 22, textAlign: "right", flexShrink: 0 }}>{size}px</span>
+                        </div>
+                        {onWeight && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <span style={{ fontSize: 9, color: "#333", width: 22, flexShrink: 0 }}>Weight</span>
+                            {[{ l: "Regular", v: 400 }, { l: "Bold", v: 700 }, { l: "Heavy", v: 800 }].map(({ l, v }) => (
+                              <button key={v} onClick={() => onWeight(v)}
+                                style={{ padding: "2px 7px", borderRadius: 4, fontSize: 9, fontFamily: "inherit", cursor: "pointer",
+                                  border: `1px solid ${weight === v ? "#7c6ef799" : "#1e1e30"}`,
+                                  background: weight === v ? "#7c6ef722" : "transparent",
+                                  color: weight === v ? "#9a8ef7" : "#444" }}>
+                                {l}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </CollapseSection>
+                ))}
+              </div>
+
+              {/* ── Activity Graph ── */}
+              <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Activity Graph</div>
+                <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.6 }}>Colors for the activity heatmap shown on the My List tab.</div>
+                <div>
+                {[
+                  { key: "bg",    label: "Background", desc: "Panel background color.",       default: "#0c0c1c" },
+                  { key: "empty", label: "Empty",       desc: "Days with no edits.",           default: "#0d0d1a" },
+                  { key: "low",   label: "Low",         desc: "1 edit in a day.",              default: "#2d1f6b" },
+                  { key: "mid",   label: "Mid",         desc: "2 edits in a day.",             default: "#5040a0" },
+                  { key: "high",  label: "High",        desc: "3 or more edits in a day.",     default: "#7c6ef7" },
+                ].map(({ key, label, desc, default: def }) => {
                   const val = activityColors[key] || def;
                   return (
-                    <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                       <div style={{ width: 14, height: 14, borderRadius: 3, background: val, border: "1px solid #2a2a40", flexShrink: 0 }} />
-                      <span style={{ fontSize: 11, color: "#888", flex: 1 }}>{label}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, color: "#888", fontWeight: 700 }}>{label}</div>
+                        <div style={{ fontSize: 9, color: "#444" }}>{desc}</div>
+                      </div>
                       <input type="color" value={val} onChange={e => setActivityColorDirty(key, e.target.value)}
                         style={{ width: 26, height: 20, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
                       {activityColors[key] && activityColors[key] !== def && (
@@ -3096,151 +3373,88 @@ export default function App() {
                     </div>
                   );
                 })}
-                {/* 13-week preview to fit within the panel */}
-                <div style={{ marginTop: 14, padding: "10px", background: activityColors.bg || "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 8, overflowX: "hidden" }}>
-                  <ActivityGraph activityLog={exampleActivityLog} colors={activityColors} numWeeks={20} />
+                <div style={{ marginTop: 12, padding: "10px", background: activityColors.bg || "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 8, overflowX: "hidden" }}>
+                  <ActivityGraph activityLog={exampleActivityLog} colors={activityColors} numWeeks={20} editsSize={actEditsSize} editsWeight={actEditsWeight} />
                 </div>
-
-                {/* Favourite Settings — merged below with separator */}
-                <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 24, paddingTop: 20 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 4 }}>Favourite Settings</div>
-                  <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
-                    Glow effects and card size multipliers for your top-ranked favourites. Reorder favourites by dragging cards on the Favourites tab.
-                  </div>
-
-                  <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Glow</div>
-                  <GlowRow rank="1" label="1st place" enabled={glow1Enabled} color={glow1Color} onToggle={() => updateGlow1E(!glow1Enabled)} onColor={updateGlow1C} />
-                  <GlowRow rank="2" label="2nd place" enabled={glow2Enabled} color={glow2Color} onToggle={() => updateGlow2E(!glow2Enabled)} onColor={updateGlow2C} />
-                  <GlowRow rank="3" label="3rd place" enabled={glow3Enabled} color={glow3Color} onToggle={() => updateGlow3E(!glow3Enabled)} onColor={updateGlow3C} />
-
-                  <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 14, marginTop: 18 }}>
-                    <div style={{ fontSize: 11, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 12 }}>Card Size</div>
-                    {[
-                      { label: "1st place", value: fav1Mult, update: updateFav1Mult, color: "#FFD700" },
-                      { label: "2nd place", value: fav2Mult, update: updateFav2Mult, color: "#C0C0C0" },
-                      { label: "3rd place", value: fav3Mult, update: updateFav3Mult, color: "#CD7F32" },
-                    ].map(({ label, value, update, color }) => (
-                      <div key={label} style={{ marginBottom: 14 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                          <span style={{ fontSize: 11, color: "#888" }}>{label}</span>
-                          <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value.toFixed(1)}×</span>
-                        </div>
-                        <input type="range" min="1" max="4" step="0.25" value={value}
-                          onChange={e => update(parseFloat(e.target.value))}
-                          style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 3 }}>
-                          <span>1×</span><span>2×</span><span>3×</span><span>4×</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                 </div>
-              </LockableSection>
-
-            </div>
-
-            {/* ── Full-width preview ── */}
-            <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
-              <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>
-                Preview {effectiveCardCount > 0 ? `— ${effectiveCardCount} column${effectiveCardCount > 1 ? "s" : ""}` : "— Auto columns"}
               </div>
-              {previewEntries.length > 0
-                ? (() => {
-                    const count = effectiveCardCount > 0 ? effectiveCardCount : Math.min(4, maxFitCols);
-                    const entries = Array.from({ length: count }, (_, i) => previewEntries[i % previewEntries.length]);
-                    const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
-                    return (
-                      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 20 }}>
-                        {entries.map((e, i) => (
-                          <GameCard key={i} game={e.game} listEntry={e} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH}
-                            uploadBtnMult={uploadBtnMult} uploadBtnText={uploadBtnText}
-                            glowColor={i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null}
-                            onAdd={addToList} onRemove={removeFromList} onToggleFav={toggleFav}
-                            onRate={rateGame} onCoverUploaded={handleCoverUploaded} />
-                        ))}
-                      </div>
-                    );
-                  })()
-                : <div style={{ padding: "60px 0", textAlign: "center", color: "#333", fontSize: 13, border: "1px dashed #1a1a2e", borderRadius: 12 }}>
-                    Add games to your list to see a preview here
-                  </div>
-              }
+
             </div>
 
-            {/* ── Integrations ── */}
-            <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
-              <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>Integrations</div>
 
+            {/* ── Platform Data ── */}
+            <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+                <div style={{ display: "flex", gap: 5 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", textTransform: "uppercase", letterSpacing: 1.5 }}>Platform Data</div>
+              </div>
               <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap" }}>
 
-                {/* Steam Credentials */}
-                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Steam Account</div>
-                  <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-                    Get a free API key at <span style={{ color: "#7c6ef7" }}>steamcommunity.com/dev/apikey</span>. Steam ID can be your 17-digit SteamID64 or your vanity URL username. Your profile and game details must be set to <strong style={{ color: "#888" }}>Public</strong>.
+                {/* Accounts */}
+                <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 16 }}>Accounts</div>
+                  {/* Steam */}
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Steam</div>
+                    <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.5 }}>API key from steamcommunity.com/dev/apikey. Set profile to Public.</div>
+                    <input type="password" value={steamApiKey} onChange={e => updateSteamKey(e.target.value)} placeholder="API key"
+                      style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit", marginBottom: 6, boxSizing: "border-box" }} />
+                    <input type="text" value={steamId} onChange={e => updateSteamId(e.target.value)} placeholder="Steam ID or vanity URL"
+                      style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+                    {credentialsReady && (
+                      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <button onClick={syncSteam} disabled={steamSyncing}
+                          style={{ width: "100%", padding: "8px 0", background: steamSyncing ? "#1a1a2e" : "#1db954", border: "none", borderRadius: 8, color: steamSyncing ? "#444" : "#fff", fontWeight: 700, fontSize: 12, cursor: steamSyncing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                          {steamSyncing ? "Fetching…" : "Sync Library"}
+                        </button>
+                        <button onClick={syncAllSteamPlaytime} disabled={syncingAllPlaytime}
+                          style={{ width: "100%", padding: "8px 0", background: syncingAllPlaytime ? "#1a1a2e" : "#0a2a1a", border: "1px solid #1db95444", borderRadius: 8, color: syncingAllPlaytime ? "#444" : "#1db954", fontWeight: 700, fontSize: 12, cursor: syncingAllPlaytime ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                          {syncingAllPlaytime ? "Syncing…" : "Sync Playtime"}
+                        </button>
+                        {steamError && <div style={{ fontSize: 11, color: "#ff8080" }}>{steamError}</div>}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>API Key</div>
-                    <input type="password" value={steamApiKey} onChange={e => updateSteamKey(e.target.value)} placeholder="Paste your Steam Web API key"
-                      style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "7px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }} />
+                  {/* PSN */}
+                  <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+                    <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>PSN</div>
+                    <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.5 }}>Visit <a href="https://ca.account.sony.com/api/v1/ssocookie" target="_blank" rel="noopener noreferrer" style={{ color: "#0070cc" }}>ca.account.sony.com/api/v1/ssocookie</a> and paste the npsso value.</div>
+                    <input type="password" value={psnNpsso} onChange={e => updatePsnNpsso(e.target.value)} placeholder="NPSSO token"
+                      style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+                    {psnNpsso.trim() && (
+                      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <button onClick={syncPsn} disabled={psnSyncing}
+                          style={{ width: "100%", padding: "8px 0", background: psnSyncing ? "#1a1a2e" : "#003087", border: "none", borderRadius: 8, color: psnSyncing ? "#444" : "#fff", fontWeight: 700, fontSize: 12, cursor: psnSyncing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                          {psnSyncing ? "Fetching…" : "Sync Library"}
+                        </button>
+                        <button onClick={syncAllPsnPlaytime}
+                          style={{ width: "100%", padding: "8px 0", background: "#0a1a2a", border: "1px solid #0070cc44", borderRadius: 8, color: "#0070cc", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                          Sync Playtime
+                        </button>
+                        <button onClick={syncPsnPlatforms}
+                          style={{ width: "100%", padding: "8px 0", background: "#0a1a2a", border: "1px solid #0070cc44", borderRadius: 8, color: "#0070cc", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                          Sync Platforms
+                        </button>
+                        {psnError && <div style={{ fontSize: 11, color: "#ff8080" }}>{psnError}</div>}
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Steam ID or Vanity URL</div>
-                    <input type="text" value={steamId} onChange={e => updateSteamId(e.target.value)} placeholder="e.g. 76561198000000000 or username"
-                      style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "7px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }} />
-                  </div>
-                  {credentialsReady && (
-                    <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
-                      <button onClick={syncSteam} disabled={steamSyncing}
-                        style={{ width: "100%", padding: "9px 0", background: steamSyncing ? "#1a1a2e" : "#1db954", border: "none", borderRadius: 8, color: steamSyncing ? "#444" : "#fff", fontWeight: 700, fontSize: 13, cursor: steamSyncing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                        {steamSyncing ? "Fetching library…" : "Sync Steam Library"}
-                      </button>
-                      <button onClick={syncAllSteamPlaytime} disabled={syncingAllPlaytime}
-                        style={{ width: "100%", padding: "9px 0", background: syncingAllPlaytime ? "#1a1a2e" : "#0a2a1a", border: "1px solid #1db95444", borderRadius: 8, color: syncingAllPlaytime ? "#444" : "#1db954", fontWeight: 700, fontSize: 13, cursor: syncingAllPlaytime ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                        {syncingAllPlaytime ? "Syncing playtime…" : "Sync All Playtime"}
-                      </button>
-                      {steamError && <div style={{ fontSize: 12, color: "#ff8080", lineHeight: 1.5 }}>{steamError}</div>}
-                    </div>
-                  )}
                 </div>
 
-                {/* RAWG API Usage */}
-                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>RAWG API Usage</div>
-                  <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
-                    Free tier: 20,000 requests / month. Resets automatically on the 1st of each month.
-                  </div>
-                  {(() => {
-                    const pct = Math.min(100, Math.round((rawgCallsCount / 20000) * 100));
-                    const barColor = pct >= 90 ? "#ff6060" : pct >= 70 ? "#e6a63a" : "#4caf80";
-                    return (
-                      <>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-                          <span style={{ fontSize: 28, fontWeight: 800, color: pct >= 90 ? "#ff6060" : "#eeeeff" }}>{rawgCallsCount.toLocaleString()}</span>
-                          <span style={{ fontSize: 12, color: "#555" }}>/ 20,000</span>
-                        </div>
-                        <div style={{ height: 6, borderRadius: 3, background: "#1a1a2e", overflow: "hidden", marginBottom: 8 }}>
-                          <div style={{ height: "100%", width: `${pct}%`, borderRadius: 3, background: barColor, transition: "width 0.3s" }} />
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#555" }}>
-                          <span>{pct}% used</span>
-                          {rawgCallsMonth && <span>Month: {rawgCallsMonth}</span>}
-                        </div>
-                        {pct >= 90 && (
-                          <div style={{ marginTop: 10, fontSize: 11, color: "#ff8080", lineHeight: 1.5 }}>
-                            ⚠ Near limit — RAWG searches are paused automatically on 401 errors.
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
+                {/* PSN library — shown inline once synced */}
+                {psnLibrary && (
+                  <PsnLibrarySection library={psnLibrary} myList={myList} onImport={importPsnGames} onSyncPlaytime={syncPlaytime} onRefresh={syncPsn} />
+                )}
 
-                {/* Platform Data resync + RAWG image sync */}
-                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Platform Data</div>
-                  <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-                    Fill entries with no platform data. Blank entries (Steam imports) default to PC.
+                {/* Platforms */}
+                <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Platforms</div>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.6 }}>
+                    Fill or re-sync platform data. Blank entries default to PC.
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     <button onClick={async () => {
@@ -3270,199 +3484,144 @@ export default function App() {
                       {resyncingPlatforms ? "Syncing…" : "Re-sync Platforms from RAWG"}
                     </button>
 
-                    {/* Image sync + prune — shared threshold */}
-                    <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 8, paddingTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div style={{ fontSize: 11, color: "#444", lineHeight: 1.6 }}>
-                        Skips Dropped games and games rated at or below the threshold. Custom covers are never touched.
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 12, color: "#666" }}>Rating threshold</span>
-                        <input
-                          type="number" min={0} max={10} step={0.5}
-                          value={pruneThreshold}
-                          onChange={e => setPruneThreshold(parseFloat(e.target.value) || 0)}
-                          style={{ width: 52, background: "#080814", border: "1px solid #2a2a50", borderRadius: 5, padding: "3px 6px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit", textAlign: "center" }}
-                        />
-                        <span style={{ fontSize: 12, color: "#444" }}>/ 10</span>
-                      </div>
-                      <button onClick={async () => {
-                        setResyncingSteamImages(true);
-                        try {
-                          const r = await apiFetch("/admin/sync-steam-images", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threshold: pruneThreshold }) });
-                          setToast({ msg: `Updated Steam images for ${r.updated} game${r.updated !== 1 ? "s" : ""} (${r.skipped} skipped)`, ok: true });
-                          const data = await apiFetch("/list");
-                          setMyList(data);
-                        } catch { setToast({ msg: "Failed to sync Steam images", ok: false }); }
-                        finally { setResyncingSteamImages(false); }
-                      }} disabled={resyncingSteamImages}
-                        style={{ width: "100%", padding: "9px 0", background: resyncingSteamImages ? "#1a1a2e" : "#0a1a2a", border: "1px solid #38bdf844", borderRadius: 8, color: resyncingSteamImages ? "#444" : "#38bdf8", fontWeight: 700, fontSize: 13, cursor: resyncingSteamImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                        {resyncingSteamImages ? "Syncing…" : "Sync Images from Steam"}
-                      </button>
-                      <button onClick={async () => {
-                        setResyncingImages(true);
-                        try {
-                          const r = await apiFetch("/admin/sync-rawg-images", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threshold: pruneThreshold }) });
-                          setToast({ msg: `Updated images for ${r.updated} game${r.updated !== 1 ? "s" : ""} (${r.skipped} skipped)`, ok: true });
-                          const data = await apiFetch("/list");
-                          setMyList(data);
-                        } catch { setToast({ msg: "Failed to sync RAWG images", ok: false }); }
-                        finally { setResyncingImages(false); }
-                      }} disabled={resyncingImages}
-                        style={{ width: "100%", padding: "9px 0", background: resyncingImages ? "#1a1a2e" : "#1a0a2a", border: "1px solid #a78bfa44", borderRadius: 8, color: resyncingImages ? "#444" : "#a78bfa", fontWeight: 700, fontSize: 13, cursor: resyncingImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                        {resyncingImages ? "Syncing…" : "Sync Images from RAWG"}
-                      </button>
-                      <button onClick={async () => {
-                        setPruning(true);
-                        try {
-                          const r = await apiFetch("/admin/prune-extra-images", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threshold: pruneThreshold }) });
-                          setToast({ msg: `Deleted ${r.deleted_images} image${r.deleted_images !== 1 ? "s" : ""} across ${r.affected_games} game${r.affected_games !== 1 ? "s" : ""}`, ok: true });
-                          const data = await apiFetch("/list");
-                          setMyList(data);
-                        } catch { setToast({ msg: "Failed to prune images", ok: false }); }
-                        finally { setPruning(false); }
-                      }} disabled={pruning}
-                        style={{ width: "100%", padding: "9px 0", background: pruning ? "#1a1a2e" : "#1a0a0a", border: "1px solid #e05a5a44", borderRadius: 8, color: pruning ? "#444" : "#e05a5a", fontWeight: 700, fontSize: 13, cursor: pruning ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                        {pruning ? "Pruning…" : "Prune Extra Images"}
-                      </button>
-                    </div>
 
-                    {/* Duplicate detection */}
-                    <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 8, paddingTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div style={{ fontSize: 11, color: "#444", lineHeight: 1.6 }}>
-                        Find entries with similar names (75% match). Check the ones to <strong style={{ color: "#e0e0f0" }}>keep</strong>, uncheck to delete.
-                      </div>
-                      <button onClick={async () => {
-                        setDetectingDuplicates(true);
-                        setDuplicateGroups(null);
-                        try {
-                          const r = await apiFetch("/admin/find-duplicates");
-                          setDuplicateGroups(r.groups);
-                          // Default: keep first in each group, mark rest for deletion
-                          const init = {};
-                          for (const g of r.groups) g.forEach((e, i) => { init[e.game_id] = i === 0; });
-                          setDuplicateKeep(init);
-                        } catch { setToast({ msg: "Failed to detect duplicates", ok: false }); }
-                        finally { setDetectingDuplicates(false); }
-                      }} disabled={detectingDuplicates}
-                        style={{ width: "100%", padding: "9px 0", background: detectingDuplicates ? "#1a1a2e" : "#1a0a1a", border: "1px solid #e05a5a44", borderRadius: 8, color: detectingDuplicates ? "#444" : "#e05a5a", fontWeight: 700, fontSize: 13, cursor: detectingDuplicates ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                        {detectingDuplicates ? "Scanning…" : "Detect Duplicates"}
-                      </button>
-
-                      {duplicateGroups !== null && (
-                        <div>
-                          {duplicateGroups.length === 0
-                            ? <div style={{ fontSize: 12, color: "#444", padding: "8px 0" }}>No duplicates found.</div>
-                            : <>
-                                <div style={{ maxHeight: 320, overflowY: "auto", border: "1px solid #1a1a2e", borderRadius: 8, marginBottom: 8 }}>
-                                  {duplicateGroups.map((group, gi) => (
-                                    <div key={gi} style={{ borderBottom: "1px solid #0e0e1e", padding: "10px 12px" }}>
-                                      <div style={{ fontSize: 10, color: "#555", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Group {gi + 1}</div>
-                                      {group.map(e => (
-                                        <label key={e.game_id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 4 }}>
-                                          <input type="checkbox" checked={duplicateKeep[e.game_id] ?? true}
-                                            onChange={ev => setDuplicateKeep(p => ({ ...p, [e.game_id]: ev.target.checked }))} />
-                                          {e.image && <img src={rawgImgSrc(e.image)} alt="" style={{ width: 24, height: 32, objectFit: "cover", borderRadius: 3, flexShrink: 0 }} onError={ev => ev.target.style.display = "none"} />}
-                                          <span style={{ fontSize: 12, color: duplicateKeep[e.game_id] ?? true ? "#e0e0f0" : "#555", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: duplicateKeep[e.game_id] ?? true ? "none" : "line-through" }}>{e.name}</span>
-                                        </label>
-                                      ))}
-                                    </div>
-                                  ))}
-                                </div>
-                                {(() => {
-                                  const toDelete = Object.entries(duplicateKeep).filter(([,keep]) => !keep).map(([id]) => parseInt(id));
-                                  return toDelete.length > 0 && (
-                                    <button onClick={async () => {
-                                      try {
-                                        const r = await apiFetch("/admin/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ game_ids: toDelete }) });
-                                        setToast({ msg: `Deleted ${r.deleted} duplicate${r.deleted !== 1 ? "s" : ""}`, ok: true });
-                                        const data = await apiFetch("/list");
-                                        setMyList(data);
-                                        setDuplicateGroups(null);
-                                      } catch { setToast({ msg: "Failed to delete duplicates", ok: false }); }
-                                    }}
-                                      style={{ width: "100%", padding: "9px 0", background: "#2a0a0a", border: "1px solid #e05a5a99", borderRadius: 8, color: "#e05a5a", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-                                      Delete {toDelete.length} unchecked entr{toDelete.length !== 1 ? "ies" : "y"}
-                                    </button>
-                                  );
-                                })()}
-                              </>
-                          }
+                  <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 12, paddingTop: 12 }}>
+                    <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>RAWG Usage</div>
+                    {(() => {
+                      const pct = Math.min(100, Math.round((rawgCallsCount / 20000) * 100));
+                      const barColor = pct >= 90 ? "#ff6060" : pct >= 70 ? "#e6a63a" : "#4caf80";
+                      return (<>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                          <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 90 ? "#ff6060" : "#eeeeff" }}>{rawgCallsCount.toLocaleString()}</span>
+                          <span style={{ fontSize: 11, color: "#555" }}>/ 20,000{rawgCallsMonth && ` · ${rawgCallsMonth}`}</span>
                         </div>
-                      )}
-                    </div>
+                        <div style={{ height: 4, borderRadius: 2, background: "#1a1a2e", overflow: "hidden", marginBottom: 4 }}>
+                          <div style={{ height: "100%", width: `${pct}%`, borderRadius: 2, background: barColor }} />
+                        </div>
+                        <div style={{ fontSize: 10, color: "#555" }}>{pct}% used</div>
+                        {pct >= 90 && <div style={{ marginTop: 6, fontSize: 11, color: "#ff8080" }}>⚠ Near limit — pauses on 401.</div>}
+                      </>);
+                    })()}
+                  </div>
+                  <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 12, paddingTop: 12 }}>
+                    <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Duplicates</div>
+                    <div style={{ fontSize: 11, color: "#444", marginBottom: 8, lineHeight: 1.5 }}>Find entries with similar names. Check what to keep, uncheck to delete.</div>
+                    <button onClick={async () => {
+                      setDetectingDuplicates(true); setDuplicateGroups(null);
+                      try {
+                        const r = await apiFetch("/admin/find-duplicates");
+                        setDuplicateGroups(r.groups);
+                        const init = {};
+                        for (const g of r.groups) g.forEach((e, i) => { init[e.game_id] = i === 0; });
+                        setDuplicateKeep(init);
+                      } catch { setToast({ msg: "Failed to detect duplicates", ok: false }); }
+                      finally { setDetectingDuplicates(false); }
+                    }} disabled={detectingDuplicates}
+                      style={{ width: "100%", padding: "9px 0", background: detectingDuplicates ? "#1a1a2e" : "#1a0a1a", border: "1px solid #e05a5a44", borderRadius: 8, color: detectingDuplicates ? "#444" : "#e05a5a", fontWeight: 700, fontSize: 13, cursor: detectingDuplicates ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {detectingDuplicates ? "Scanning…" : "Detect Duplicates"}
+                    </button>
+                    {duplicateGroups !== null && (
+                      <div style={{ marginTop: 8 }}>
+                        {duplicateGroups.length === 0
+                          ? <div style={{ fontSize: 12, color: "#444" }}>No duplicates found.</div>
+                          : <>
+                              <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #1a1a2e", borderRadius: 8, marginBottom: 8, marginTop: 8 }}>
+                                {duplicateGroups.map((group, gi) => (
+                                  <div key={gi} style={{ borderBottom: "1px solid #0e0e1e", padding: "8px 12px" }}>
+                                    <div style={{ fontSize: 10, color: "#555", marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Group {gi + 1}</div>
+                                    {group.map(e => (
+                                      <label key={e.game_id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 4 }}>
+                                        <input type="checkbox" checked={duplicateKeep[e.game_id] ?? true} onChange={ev => setDuplicateKeep(p => ({ ...p, [e.game_id]: ev.target.checked }))} />
+                                        {e.image && <img src={rawgImgSrc(e.image)} alt="" style={{ width: 20, height: 28, objectFit: "cover", borderRadius: 2, flexShrink: 0 }} onError={ev => ev.target.style.display = "none"} />}
+                                        <span style={{ fontSize: 11, color: duplicateKeep[e.game_id] ?? true ? "#e0e0f0" : "#555", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: duplicateKeep[e.game_id] ?? true ? "none" : "line-through" }}>{e.name}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                              {(() => {
+                                const toDelete = Object.entries(duplicateKeep).filter(([,keep]) => !keep).map(([id]) => parseInt(id));
+                                return toDelete.length > 0 && (
+                                  <button onClick={async () => {
+                                    try {
+                                      const r = await apiFetch("/admin/bulk-delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ game_ids: toDelete }) });
+                                      setToast({ msg: `Deleted ${r.deleted} duplicate${r.deleted !== 1 ? "s" : ""}`, ok: true });
+                                      const data = await apiFetch("/list"); setMyList(data); setDuplicateGroups(null);
+                                    } catch { setToast({ msg: "Failed to delete duplicates", ok: false }); }
+                                  }} style={{ width: "100%", padding: "9px 0", background: "#2a0a0a", border: "1px solid #e05a5a99", borderRadius: 8, color: "#e05a5a", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                                    Delete {Object.entries(duplicateKeep).filter(([,keep]) => !keep).length} unchecked
+                                  </button>
+                                );
+                              })()}
+                            </>
+                        }
+                      </div>
+                    )}
+                  </div>
+                </div>
+                </div>
+
+                {/* Images */}
+                <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Images</div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
+                    Sync cover art from Steam or RAWG. Skips Dropped games and entries below the threshold. Custom covers are never overwritten.
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                    <span style={{ fontSize: 12, color: "#666" }}>Rating threshold</span>
+                    <input type="number" min={0} max={10} step={0.5} value={pruneThreshold}
+                      onChange={e => setPruneThreshold(parseFloat(e.target.value) || 0)}
+                      style={{ width: 52, background: "#080814", border: "1px solid #2a2a50", borderRadius: 5, padding: "3px 6px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit", textAlign: "center" }} />
+                    <span style={{ fontSize: 12, color: "#444" }}>/ 10</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <button onClick={async () => {
+                      setResyncingSteamImages(true);
+                      try {
+                        const r = await apiFetch("/admin/sync-steam-images", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threshold: pruneThreshold }) });
+                        setToast({ msg: `Updated Steam images for ${r.updated} game${r.updated !== 1 ? "s" : ""} (${r.skipped} skipped)`, ok: true });
+                        const data = await apiFetch("/list"); setMyList(data);
+                      } catch { setToast({ msg: "Failed to sync Steam images", ok: false }); }
+                      finally { setResyncingSteamImages(false); }
+                    }} disabled={resyncingSteamImages}
+                      style={{ width: "100%", padding: "9px 0", background: resyncingSteamImages ? "#1a1a2e" : "#0a1a2a", border: "1px solid #38bdf844", borderRadius: 8, color: resyncingSteamImages ? "#444" : "#38bdf8", fontWeight: 700, fontSize: 13, cursor: resyncingSteamImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {resyncingSteamImages ? "Syncing…" : "Sync from Steam"}
+                    </button>
+                    <button onClick={async () => {
+                      setResyncingImages(true);
+                      try {
+                        const r = await apiFetch("/admin/sync-rawg-images", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threshold: pruneThreshold }) });
+                        setToast({ msg: `Updated images for ${r.updated} game${r.updated !== 1 ? "s" : ""} (${r.skipped} skipped)`, ok: true });
+                        const data = await apiFetch("/list"); setMyList(data);
+                      } catch { setToast({ msg: "Failed to sync RAWG images", ok: false }); }
+                      finally { setResyncingImages(false); }
+                    }} disabled={resyncingImages}
+                      style={{ width: "100%", padding: "9px 0", background: resyncingImages ? "#1a1a2e" : "#1a0a2a", border: "1px solid #a78bfa44", borderRadius: 8, color: resyncingImages ? "#444" : "#a78bfa", fontWeight: 700, fontSize: 13, cursor: resyncingImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {resyncingImages ? "Syncing…" : "Sync from RAWG"}
+                    </button>
+                    <button onClick={async () => {
+                      setPruning(true);
+                      try {
+                        const r = await apiFetch("/admin/prune-extra-images", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threshold: pruneThreshold }) });
+                        setToast({ msg: `Deleted ${r.deleted_images} image${r.deleted_images !== 1 ? "s" : ""} across ${r.affected_games} game${r.affected_games !== 1 ? "s" : ""}`, ok: true });
+                        const data = await apiFetch("/list"); setMyList(data);
+                      } catch { setToast({ msg: "Failed to prune images", ok: false }); }
+                      finally { setPruning(false); }
+                    }} disabled={pruning}
+                      style={{ width: "100%", padding: "9px 0", background: pruning ? "#1a1a2e" : "#1a0a0a", border: "1px solid #e05a5a44", borderRadius: 8, color: pruning ? "#444" : "#e05a5a", fontWeight: 700, fontSize: 13, cursor: pruning ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {pruning ? "Pruning…" : "Prune Extra Images"}
+                    </button>
                   </div>
                 </div>
 
-                {/* Steam library — shown inline once synced */}
-                {steamLibrary && (
-                  <SteamLibrarySection
-                    library={steamLibrary}
-                    myList={myList}
-                    onImport={importSteamGames}
-                    onSyncPlaytime={syncPlaytime}
-                    onRefresh={syncSteam}
-                  />
-                )}
-
-                {/* PSN Credentials */}
-                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>PSN Account</div>
-                  <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-                    Log into your PlayStation account, then visit <a href="https://ca.account.sony.com/api/v1/ssocookie" target="_blank" rel="noopener noreferrer" style={{ color: "#0070cc" }}>ca.account.sony.com/api/v1/ssocookie</a> and paste the <strong style={{ color: "#888" }}>npsso</strong> value. Token is valid for ~60 days. Playtime only available for PS5 games.
+                {/* Backup & Import */}
+                <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Backup & Import</div>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.6 }}>
+                    Download a full backup, or load a <code style={{ color: "#666" }}>.sql.gz</code> file to verify and restore.
                   </div>
-                  <div>
-                    <div style={{ fontSize: 12, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>NPSSO Token</div>
-                    <input type="password" value={psnNpsso} onChange={e => updatePsnNpsso(e.target.value)} placeholder="Paste your NPSSO token"
-                      style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "7px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit" }} />
-                  </div>
-                  {psnNpsso.trim() && (
-                    <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
-                      <button onClick={syncPsn} disabled={psnSyncing}
-                        style={{ width: "100%", padding: "9px 0", background: psnSyncing ? "#1a1a2e" : "#003087", border: "none", borderRadius: 8, color: psnSyncing ? "#444" : "#fff", fontWeight: 700, fontSize: 13, cursor: psnSyncing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                        {psnSyncing ? "Fetching library…" : "Sync PSN Library"}
-                      </button>
-                      <button onClick={syncAllPsnPlaytime}
-                        style={{ width: "100%", padding: "9px 0", background: "#0a1a2a", border: "1px solid #0070cc44", borderRadius: 8, color: "#0070cc", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-                        Sync All Playtime
-                      </button>
-                      <button onClick={syncPsnPlatforms}
-                        style={{ width: "100%", padding: "9px 0", background: "#0a1a2a", border: "1px solid #0070cc44", borderRadius: 8, color: "#0070cc", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-                        Sync Platforms
-                      </button>
-                      {psnError && <div style={{ fontSize: 12, color: "#ff8080", lineHeight: 1.5 }}>{psnError}</div>}
-                    </div>
-                  )}
-                </div>
-
-                {/* PSN library — shown inline once synced */}
-                {psnLibrary && (
-                  <PsnLibrarySection
-                    library={psnLibrary}
-                    myList={myList}
-                    onImport={importPsnGames}
-                    onSyncPlaytime={syncPlaytime}
-                    onRefresh={syncPsn}
-                  />
-                )}
-
-              </div>
-            </div>
-
-            {/* ── Backup ── */}
-            <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
-              <div style={{ fontSize: 12, color: "#555", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>Backup</div>
-
-              <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap" }}>
-
-                {/* Database Backup */}
-                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Database Backup</div>
-                  <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-                    Download a full compressed backup of your game list database. Save it to iCloud, a USB drive, or wherever you like.
-                  </div>
-                  <button
-                    disabled={downloading}
-                    onClick={async () => {
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <button disabled={downloading} onClick={async () => {
                       setDownloading(true);
                       try {
                         const res = await fetch("/api/backup/download");
@@ -3473,81 +3632,38 @@ export default function App() {
                         const blob = await res.blob();
                         if (window.showSaveFilePicker) {
                           try {
-                            const handle = await window.showSaveFilePicker({
-                              suggestedName: filename,
-                              types: [{ description: "GZip archive", accept: { "application/gzip": [".gz"] } }],
-                            });
+                            const handle = await window.showSaveFilePicker({ suggestedName: filename, types: [{ description: "GZip archive", accept: { "application/gzip": [".gz"] } }] });
                             const writable = await handle.createWritable();
-                            await writable.write(blob);
-                            await writable.close();
-                            setToast({ msg: `Backup saved: ${filename}`, ok: true });
-                            return;
-                          } catch (e) {
-                            if (e.name === "AbortError") return;
-                            // fall through to blob download
-                          }
+                            await writable.write(blob); await writable.close();
+                            setToast({ msg: `Backup saved: ${filename}`, ok: true }); return;
+                          } catch (e) { if (e.name === "AbortError") return; }
                         }
                         const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = filename;
-                        a.click();
+                        const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
                         URL.revokeObjectURL(url);
                         setToast({ msg: `Backup downloaded: ${filename}`, ok: true });
-                      } catch {
-                        setToast({ msg: "Backup failed", ok: false });
-                      } finally {
-                        setDownloading(false);
-                      }
-                    }}
-                    style={{ width: "100%", padding: "9px 0", background: "#0a1020", border: "1px solid #7c6ef744", borderRadius: 8, color: downloading ? "#555" : "#7c6ef7", fontWeight: 700, fontSize: 13, cursor: downloading ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                    {downloading ? "Downloading…" : "Download Backup"}
-                  </button>
-                </div>
-
-                {/* Database Import / Verify */}
-                <div style={{ width: 340, flexShrink: 0, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Database Import / Verify</div>
-                  <div style={{ fontSize: 11, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-                    Load a <code style={{ color: "#666" }}>.sql.gz</code> backup to verify its integrity and preview what would change before restoring.
+                      } catch { setToast({ msg: "Backup failed", ok: false }); }
+                      finally { setDownloading(false); }
+                    }} style={{ width: "100%", padding: "9px 0", background: "#0a1020", border: "1px solid #7c6ef744", borderRadius: 8, color: downloading ? "#555" : "#7c6ef7", fontWeight: 700, fontSize: 13, cursor: downloading ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {downloading ? "Downloading…" : "Download Backup"}
+                    </button>
+                    <input id="backup-file-input" type="file" accept=".sql.gz,.gz" style={{ display: "none" }}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0]; if (!file) return;
+                        setVerifyFile(file); setVerifyResult(null); setRestoreConfirm(false); setVerifying(true);
+                        try {
+                          const fd = new FormData(); fd.append("file", file);
+                          const res = await fetch("/api/backup/verify", { method: "POST", body: fd });
+                          setVerifyResult(await res.json());
+                        } catch { setVerifyResult({ valid: false, error: "Network error" }); }
+                        finally { setVerifying(false); e.target.value = ""; }
+                      }} />
+                    <button disabled={verifying} onClick={() => document.getElementById("backup-file-input").click()}
+                      style={{ width: "100%", padding: "9px 0", background: "#0a1a10", border: "1px solid #4caf8044", borderRadius: 8, color: verifying ? "#444" : "#4caf80", fontWeight: 700, fontSize: 13, cursor: verifying ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      {verifying ? "Analysing…" : "Choose Backup File"}
+                    </button>
+                    {verifyFile && !verifying && <div style={{ fontSize: 11, color: "#555", textAlign: "center" }}>{verifyFile.name}</div>}
                   </div>
-                  <input
-                    id="backup-file-input"
-                    type="file"
-                    accept=".sql.gz,.gz"
-                    style={{ display: "none" }}
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      setVerifyFile(file);
-                      setVerifyResult(null);
-                      setRestoreConfirm(false);
-                      setVerifying(true);
-                      try {
-                        const fd = new FormData();
-                        fd.append("file", file);
-                        const res = await fetch("/api/backup/verify", { method: "POST", body: fd });
-                        const data = await res.json();
-                        setVerifyResult(data);
-                      } catch {
-                        setVerifyResult({ valid: false, error: "Network error contacting server" });
-                      } finally {
-                        setVerifying(false);
-                        e.target.value = "";
-                      }
-                    }}
-                  />
-                  <button
-                    disabled={verifying}
-                    onClick={() => document.getElementById("backup-file-input").click()}
-                    style={{ width: "100%", padding: "9px 0", background: "#0a1a10", border: "1px solid #4caf8044", borderRadius: 8, color: verifying ? "#444" : "#4caf80", fontWeight: 700, fontSize: 13, cursor: verifying ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                    {verifying ? "Analysing…" : "Choose Backup File"}
-                  </button>
-                  {verifyFile && !verifying && (
-                    <div style={{ marginTop: 10, fontSize: 11, color: "#555", textAlign: "center" }}>
-                      {verifyFile.name}
-                    </div>
-                  )}
                 </div>
 
                 {/* Verify result panel (modal) */}
@@ -3731,7 +3847,7 @@ export default function App() {
               </div>
             </div>
 
-          </>
+        </>
         )}
 
         {/* ── Search ── */}
