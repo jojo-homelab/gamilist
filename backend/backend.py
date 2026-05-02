@@ -1638,11 +1638,6 @@ def sync_both_images(game_id):
     })
 
 
-def _skip_threshold_clause():
-    """SQL fragment (no leading AND) that matches games to exclude from image syncs."""
-    return "status = 6 OR (user_rating IS NOT NULL AND user_rating <= %s)"
-
-
 @app.route("/api/admin/sync-steam-images", methods=["POST"])
 def sync_steam_images_all():
     """

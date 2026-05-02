@@ -240,38 +240,13 @@ function RatingInput({ value, onChange, size = 11, starColor = "#e6a63a", textCo
       </span>;
 }
 
-function CoverUpload({ gameId, onUploaded, sizeMult = 1, btnText = "" }) {
-  const ref = useRef();
-  const [uploading, setUploading] = useState(false);
-  const handleFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setUploading(true);
-    const fd = new FormData();
-    fd.append("cover", file);
-    try {
-      await fetch(`${API}/list/${gameId}/cover`, { method: "POST", body: fd });
-      onUploaded();
-    } finally { setUploading(false); e.target.value = ""; }
-  };
-  return (
-    <>
-      <input ref={ref} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
-      <button onClick={e => { e.stopPropagation(); ref.current.click(); }} disabled={uploading}
-        style={{ position: "absolute", bottom: 8, right: 8, background: "rgba(0,0,0,0.7)", border: "1px solid #333", borderRadius: 6, padding: `${3*sizeMult}px ${8*sizeMult}px`, color: uploading ? "#555" : "#aaa", cursor: "pointer", fontSize: Math.round(10*sizeMult), fontFamily: "inherit" }}>
-        {uploading ? "…" : (btnText || "📷")}
-      </button>
-    </>
-  );
-}
-
 /**
  * GameCard — uniform height is achieved by making the outer div a flex column
  * and inserting a flex-grow spacer before the status button. This ensures the
  * status dropdown is always at the same vertical position in every card
  * regardless of how many optional fields (rating bar, genres, score) are present.
  */
-function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardH = 255, glowColor = null, showGalleryNav = true, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, ratingColors = {} }) {
+function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardH = 255, glowColor = null, showGalleryNav = true, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, ratingColors = {} }) {
   const ratingKeyFor = v => (v < 5 ? "lt5" : String(v));
   const ratingStarColor = v => ratingColors[ratingKeyFor(v)] || { "10":"#FFD700","9.5":"#f0c020","9":"#e8b030","8.5":"#e0a040","8":"#d89050","7.5":"#cc8060","7":"#c07070","6.5":"#aa6080","6":"#9060a0","5.5":"#7050b0","5":"#6040c0","lt5":"#e05c7a" }[ratingKeyFor(v)] || "#e6a63a";
   const ratingTextColor = v => ratingStarColor(v);
@@ -280,7 +255,7 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
   const [arrowHover, setArrowHover] = useState(false);
   const [showMenu, setShowMenu]     = useState(false);
   const [imgErr, setImgErr]         = useState(false);
-  const [coverKey, setCoverKey]     = useState(0);
+
   const [screenshots, setScreenshots] = useState(null); // null=not loaded yet
   const [imgIndex, setImgIndex]     = useState(0);
   const menuRef = useRef();
@@ -295,12 +270,10 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
     return () => document.removeEventListener("mousedown", h);
   }, [showMenu]);
 
-  const handleCoverUploaded = () => { setCoverKey(k => k + 1); onCoverUploaded(game.id); };
-
   // Build image list with extra images and customImagesOnly support
   const customImagesOnly = listEntry?.customImagesOnly || false;
   const extraImageUrls = (listEntry?.extraImageIds || []).map(id => `${API}/images/${id}`);
-  const coverUrl = hasCover ? `${coverSrc(game.id)}?v=${coverKey}-${listEntry?.coverVersion ?? 0}` : null;
+  const coverUrl = hasCover ? `${coverSrc(game.id)}?v=${listEntry?.coverVersion ?? 0}` : null;
   const rawgCover = rawgImgSrc(game.background_image);
 
   let baseImages;
@@ -408,7 +381,6 @@ function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onCov
             {STATUSES[status].label}
           </div>
         )}
-        {/* CoverUpload moved to MetadataModal */}
       </div>
 
       {/* Card body */}
@@ -515,7 +487,7 @@ function Spinner({ text = "Loading…" }) {
   );
 }
 
-function Grid({ games, myList, importedNameMap, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, cardH2, altCardMode, effectiveCardCount, showGalleryNav, hideMenu = false, listMode = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
+function Grid({ games, myList, importedNameMap, onAdd, onRemove, onToggleFav, onRate, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, cardH2, altCardMode, effectiveCardCount, showGalleryNav, hideMenu = false, listMode = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
   if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
   const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
   const gridRef = useRef();
@@ -538,7 +510,7 @@ function Grid({ games, myList, importedNameMap, onAdd, onRemove, onToggleFav, on
     <div ref={gridRef} style={{ display: "grid", gridTemplateColumns: cols, gap: 20, alignItems: "start" }}>
       {games.map((g, i) => (
         <GameCard key={g.id} game={g} listEntry={myList[g.id] || importedNameMap?.[normName(g.name)] || null} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH}
-          onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
+          onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate}
           onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav}
           hideMenu={hideMenu} listMode={listMode} statsTextSize={statsTextSize} nameOffset={nameOffset} autoFitTitle={autoFitTitle} ratingColors={ratingColors} />
       ))}
@@ -546,7 +518,7 @@ function Grid({ games, myList, importedNameMap, onAdd, onRemove, onToggleFav, on
   );
 }
 
-function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onCoverUploaded, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, effectiveCardCount, favMults = [2, 2, 2], onReorder, showGalleryNav, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
+function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, effectiveCardCount, favMults = [2, 2, 2], onReorder, showGalleryNav, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
   const [dragOverId, setDragOverId] = useState(null);
   const dragId = useRef(null);
   const gridRef = useRef();
@@ -585,7 +557,7 @@ function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, on
             onDrop={() => { setDragOverId(null); if (dragId.current != null && dragId.current !== e.game.id) onReorder(dragId.current, e.game.id); }}
             style={{ gridColumn: span > 1 ? `span ${span}` : undefined, opacity: dragOverId === e.game.id ? 0.5 : 1, outline: dragOverId === e.game.id ? "2px dashed #7c6ef755" : "none", borderRadius: 12, cursor: "grab", transition: "opacity 0.15s" }}>
             <GameCard game={e.game} listEntry={e} cardH={thisCardH} glowColor={glow}
-              onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate} onCoverUploaded={onCoverUploaded}
+              onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate}
               onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav}
               hideMenu={hideMenu} listMode={listMode} hideFav={hideFav} statsTextSize={statsTextSize} nameOffset={nameOffset} autoFitTitle={autoFitTitle} ratingColors={ratingColors} />
           </div>
@@ -2138,8 +2110,6 @@ export default function App() {
     persist(id, next);
   };
 
-  const handleCoverUploaded = (id) => setMyList(p => ({ ...p, [id]: { ...p[id], hasCover: true } }));
-
   const doSearch = async (page = 1, platSlug = searchPlatSlug) => {
     const q = query.trim();
     const rawgId = platSlug ? RAWG_PLATFORM_IDS[platSlug] : null;
@@ -2503,7 +2473,7 @@ export default function App() {
     setMetadataGameId(gameId);
   }, [myList]);
 
-  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onCoverUploaded: handleCoverUploaded, onOpenMetadata: handleOpenMetadata, onTogglePlatform: togglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, effectiveCardCount, showGalleryNav, onActualCardW: setActualCardW, ratingColors };
+  const gridProps = { myList, onAdd: addToList, onRemove: removeFromList, onToggleFav: toggleFav, onRate: rateGame, onOpenMetadata: handleOpenMetadata, onTogglePlatform: togglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, effectiveCardCount, showGalleryNav, onActualCardW: setActualCardW, ratingColors };
 
   // Name-keyed lookup for PSN/Steam entries so search results can match them by title.
   const importedNameMap = useMemo(() => {
@@ -3078,7 +3048,7 @@ export default function App() {
                               getPlatformColor={getPlatformColor} getStatusProps={getStatusProps}
                               ratingColors={ratingColors}
                               onAdd={addToList} onRemove={removeFromList} onToggleFav={toggleFav}
-                              onRate={rateGame} onCoverUploaded={handleCoverUploaded}
+                              onRate={rateGame}
                               onOpenMetadata={handleOpenMetadata} />
                           ))}
                         </div>
