@@ -172,6 +172,29 @@ def init_db():
             cur.execute("ALTER TABLE entries ADD COLUMN IF NOT EXISTS img_fit TEXT NOT NULL DEFAULT 'cover'")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS rawg_calls_month TEXT    NOT NULL DEFAULT ''")
             cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS rawg_calls_count INTEGER NOT NULL DEFAULT 0")
+            # Typography / toolbar text sizes
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS tb_label_size    INTEGER NOT NULL DEFAULT 17")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS tb_label_weight  INTEGER NOT NULL DEFAULT 800")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS tb_input_size    INTEGER NOT NULL DEFAULT 18")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS tb_count_size    INTEGER NOT NULL DEFAULT 17")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS tb_count_weight  INTEGER NOT NULL DEFAULT 800")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS plat_btn_size    INTEGER NOT NULL DEFAULT 18")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS plat_item_size   INTEGER NOT NULL DEFAULT 18")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS act_edits_size   INTEGER NOT NULL DEFAULT 10")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS act_edits_weight INTEGER NOT NULL DEFAULT 800")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS act_thresh_mid   INTEGER NOT NULL DEFAULT 2")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS act_thresh_high  INTEGER NOT NULL DEFAULT 3")
+            # Theme colors
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS theme_page_bg TEXT NOT NULL DEFAULT '#080814'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS theme_surface  TEXT NOT NULL DEFAULT '#0c0c1c'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS theme_border   TEXT NOT NULL DEFAULT '#1a1a2e'")
+            # Locked sections (persisted so the AI can check before modifying)
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS locked_sections JSONB NOT NULL DEFAULT '{}'::jsonb")
+            # Section header dot styling
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS section_dot_color   TEXT NOT NULL DEFAULT '#ffffff'")
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS section_dot_opacity REAL NOT NULL DEFAULT 1.0")
+            # Card/rating/category fill color
+            cur.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS card_fill_color TEXT NOT NULL DEFAULT '#0c0c1c'")
 
 
 init_db()
@@ -272,6 +295,24 @@ def get_settings():
             "ratingColors":            row.get("rating_colors") or {},
             "rawgCallsMonth":          row.get("rawg_calls_month") or "",
             "rawgCallsCount":          row.get("rawg_calls_count") or 0,
+            "tbLabelSize":             row.get("tb_label_size")    if row.get("tb_label_size")    is not None else 17,
+            "tbLabelWeight":           row.get("tb_label_weight")  if row.get("tb_label_weight")  is not None else 800,
+            "tbInputSize":             row.get("tb_input_size")    if row.get("tb_input_size")    is not None else 18,
+            "tbCountSize":             row.get("tb_count_size")    if row.get("tb_count_size")    is not None else 17,
+            "tbCountWeight":           row.get("tb_count_weight")  if row.get("tb_count_weight")  is not None else 800,
+            "platBtnSize":             row.get("plat_btn_size")    if row.get("plat_btn_size")    is not None else 18,
+            "platItemSize":            row.get("plat_item_size")   if row.get("plat_item_size")   is not None else 18,
+            "actEditsSize":            row.get("act_edits_size")   if row.get("act_edits_size")   is not None else 10,
+            "actEditsWeight":          row.get("act_edits_weight") if row.get("act_edits_weight") is not None else 800,
+            "actThreshMid":            row.get("act_thresh_mid")   if row.get("act_thresh_mid")   is not None else 2,
+            "actThreshHigh":           row.get("act_thresh_high")  if row.get("act_thresh_high")  is not None else 3,
+            "themePageBg":             row.get("theme_page_bg")    or "#080814",
+            "themeSurface":            row.get("theme_surface")    or "#0c0c1c",
+            "themeBorder":             row.get("theme_border")     or "#1a1a2e",
+            "lockedSections":          row.get("locked_sections")  or {},
+            "sectionDotColor":         row.get("section_dot_color")   or "#ffffff",
+            "sectionDotOpacity":       row.get("section_dot_opacity")  if row.get("section_dot_opacity") is not None else 1.0,
+            "cardFillColor":           row.get("card_fill_color")      or "#0c0c1c",
         })
     # No row yet — return defaults so the frontend has something to work with
     return jsonify({
@@ -288,6 +329,13 @@ def get_settings():
         "favCardCount": 0, "favAltCardMode": False, "modalWidthMult": 1.0,
         "listStatsSize": 11, "favStatsSize": 11, "listNameOffset": 0, "favNameOffset": 0,
         "autoFitTitle": False, "ratingColors": {}, "rawgCallsMonth": "", "rawgCallsCount": 0,
+        "tbLabelSize": 17, "tbLabelWeight": 800, "tbInputSize": 18, "tbCountSize": 17, "tbCountWeight": 800,
+        "platBtnSize": 18, "platItemSize": 18, "actEditsSize": 10, "actEditsWeight": 800,
+        "actThreshMid": 2, "actThreshHigh": 3,
+        "themePageBg": "#080814", "themeSurface": "#0c0c1c", "themeBorder": "#1a1a2e",
+        "lockedSections": {},
+        "sectionDotColor": "#ffffff", "sectionDotOpacity": 1.0,
+        "cardFillColor": "#0c0c1c",
     })
 
 
@@ -346,6 +394,23 @@ def put_settings():
     fav_name_offset          = body.get("favNameOffset")
     auto_fit_title           = body.get("autoFitTitle")
     rating_colors            = body.get("ratingColors")
+    tb_label_size            = body.get("tbLabelSize")
+    tb_label_weight          = body.get("tbLabelWeight")
+    tb_input_size            = body.get("tbInputSize")
+    tb_count_size            = body.get("tbCountSize")
+    tb_count_weight          = body.get("tbCountWeight")
+    plat_btn_size            = body.get("platBtnSize")
+    plat_item_size           = body.get("platItemSize")
+    act_edits_size           = body.get("actEditsSize")
+    act_edits_weight         = body.get("actEditsWeight")
+    act_thresh_mid           = body.get("actThreshMid")
+    act_thresh_high          = body.get("actThreshHigh")
+    theme_page_bg            = body.get("themePageBg")
+    theme_surface            = body.get("themeSurface")
+    theme_border             = body.get("themeBorder")
+    section_dot_color        = body.get("sectionDotColor")
+    section_dot_opacity      = body.get("sectionDotOpacity")
+    card_fill_color          = body.get("cardFillColor")
     steam_mappings_json      = json.dumps(steam_mappings)      if steam_mappings is not None else None
     platform_colors_json     = json.dumps(platform_colors)     if platform_colors is not None else None
     status_colors_json       = json.dumps(status_colors)       if status_colors is not None else None
@@ -364,7 +429,11 @@ def put_settings():
                     show_gallery_nav, fav_card_custom, fav_card_w_mult, fav_card_h_mult,
                     fav_card_count, fav_alt_card_mode, modal_width_mult,
                     list_stats_size, fav_stats_size, list_name_offset, fav_name_offset,
-                    auto_fit_title, rating_colors
+                    auto_fit_title, rating_colors,
+                    tb_label_size, tb_label_weight, tb_input_size, tb_count_size, tb_count_weight,
+                    plat_btn_size, plat_item_size, act_edits_size, act_edits_weight,
+                    act_thresh_mid, act_thresh_high, theme_page_bg, theme_surface, theme_border,
+                    section_dot_color, section_dot_opacity, card_fill_color
                 )
                 VALUES (1,
                     COALESCE(%s, 1.5), COALESCE(%s, 1.5), COALESCE(%s, 1.0),
@@ -389,7 +458,14 @@ def put_settings():
                     COALESCE(%s, 11),   COALESCE(%s, 11),
                     COALESCE(%s, 0),    COALESCE(%s, 0),
                     COALESCE(%s, FALSE),
-                    COALESCE(%s::jsonb, '{}'::jsonb))
+                    COALESCE(%s::jsonb, '{}'::jsonb),
+                    COALESCE(%s, 17),  COALESCE(%s, 800), COALESCE(%s, 18),
+                    COALESCE(%s, 17),  COALESCE(%s, 800),
+                    COALESCE(%s, 18),  COALESCE(%s, 18),
+                    COALESCE(%s, 10),  COALESCE(%s, 800),
+                    COALESCE(%s, 2),   COALESCE(%s, 3),
+                    COALESCE(%s, '#080814'), COALESCE(%s, '#0c0c1c'), COALESCE(%s, '#1a1a2e'),
+                    COALESCE(%s, '#ffffff'), COALESCE(%s, 1.0), COALESCE(%s, '#0c0c1c'))
                 ON CONFLICT (id) DO UPDATE SET
                     card_w_mult              = COALESCE(EXCLUDED.card_w_mult,              settings.card_w_mult),
                     card_h_mult              = COALESCE(EXCLUDED.card_h_mult,              settings.card_h_mult),
@@ -428,7 +504,24 @@ def put_settings():
                     list_name_offset         = COALESCE(EXCLUDED.list_name_offset,         settings.list_name_offset),
                     fav_name_offset          = COALESCE(EXCLUDED.fav_name_offset,          settings.fav_name_offset),
                     auto_fit_title           = COALESCE(EXCLUDED.auto_fit_title,           settings.auto_fit_title),
-                    rating_colors            = COALESCE(EXCLUDED.rating_colors,            settings.rating_colors)
+                    rating_colors            = COALESCE(EXCLUDED.rating_colors,            settings.rating_colors),
+                    tb_label_size            = COALESCE(EXCLUDED.tb_label_size,            settings.tb_label_size),
+                    tb_label_weight          = COALESCE(EXCLUDED.tb_label_weight,          settings.tb_label_weight),
+                    tb_input_size            = COALESCE(EXCLUDED.tb_input_size,            settings.tb_input_size),
+                    tb_count_size            = COALESCE(EXCLUDED.tb_count_size,            settings.tb_count_size),
+                    tb_count_weight          = COALESCE(EXCLUDED.tb_count_weight,          settings.tb_count_weight),
+                    plat_btn_size            = COALESCE(EXCLUDED.plat_btn_size,            settings.plat_btn_size),
+                    plat_item_size           = COALESCE(EXCLUDED.plat_item_size,           settings.plat_item_size),
+                    act_edits_size           = COALESCE(EXCLUDED.act_edits_size,           settings.act_edits_size),
+                    act_edits_weight         = COALESCE(EXCLUDED.act_edits_weight,         settings.act_edits_weight),
+                    act_thresh_mid           = COALESCE(EXCLUDED.act_thresh_mid,           settings.act_thresh_mid),
+                    act_thresh_high          = COALESCE(EXCLUDED.act_thresh_high,          settings.act_thresh_high),
+                    theme_page_bg            = COALESCE(EXCLUDED.theme_page_bg,            settings.theme_page_bg),
+                    theme_surface            = COALESCE(EXCLUDED.theme_surface,            settings.theme_surface),
+                    theme_border             = COALESCE(EXCLUDED.theme_border,             settings.theme_border),
+                    section_dot_color        = COALESCE(EXCLUDED.section_dot_color,        settings.section_dot_color),
+                    section_dot_opacity      = COALESCE(EXCLUDED.section_dot_opacity,      settings.section_dot_opacity),
+                    card_fill_color          = COALESCE(EXCLUDED.card_fill_color,          settings.card_fill_color)
                 RETURNING *
             """, (card_w_mult, card_h_mult, upload_btn_mult, card_count, upload_btn_text,
                   glow1_enabled, glow1_color, glow2_enabled, glow2_color, glow3_enabled, glow3_color,
@@ -438,7 +531,11 @@ def put_settings():
                   show_gallery_nav, fav_card_custom, fav_card_w_mult, fav_card_h_mult,
                   fav_card_count, fav_alt_card_mode, modal_width_mult,
                   list_stats_size, fav_stats_size, list_name_offset, fav_name_offset,
-                  auto_fit_title, rating_colors_json))
+                  auto_fit_title, rating_colors_json,
+                  tb_label_size, tb_label_weight, tb_input_size, tb_count_size, tb_count_weight,
+                  plat_btn_size, plat_item_size, act_edits_size, act_edits_weight,
+                  act_thresh_mid, act_thresh_high, theme_page_bg, theme_surface, theme_border,
+                  section_dot_color, section_dot_opacity, card_fill_color))
             row = cur.fetchone()
     return jsonify({
         "cardWMult":              row["card_w_mult"],
@@ -481,12 +578,57 @@ def put_settings():
         "ratingColors":           row.get("rating_colors") or {},
         "rawgCallsMonth":         row.get("rawg_calls_month") or "",
         "rawgCallsCount":         row.get("rawg_calls_count") or 0,
+        "tbLabelSize":            row.get("tb_label_size")    if row.get("tb_label_size")    is not None else 17,
+        "tbLabelWeight":          row.get("tb_label_weight")  if row.get("tb_label_weight")  is not None else 800,
+        "tbInputSize":            row.get("tb_input_size")    if row.get("tb_input_size")    is not None else 18,
+        "tbCountSize":            row.get("tb_count_size")    if row.get("tb_count_size")    is not None else 17,
+        "tbCountWeight":          row.get("tb_count_weight")  if row.get("tb_count_weight")  is not None else 800,
+        "platBtnSize":            row.get("plat_btn_size")    if row.get("plat_btn_size")    is not None else 18,
+        "platItemSize":           row.get("plat_item_size")   if row.get("plat_item_size")   is not None else 18,
+        "actEditsSize":           row.get("act_edits_size")   if row.get("act_edits_size")   is not None else 10,
+        "actEditsWeight":         row.get("act_edits_weight") if row.get("act_edits_weight") is not None else 800,
+        "actThreshMid":           row.get("act_thresh_mid")   if row.get("act_thresh_mid")   is not None else 2,
+        "actThreshHigh":          row.get("act_thresh_high")  if row.get("act_thresh_high")  is not None else 3,
+        "themePageBg":            row.get("theme_page_bg")    or "#080814",
+        "themeSurface":           row.get("theme_surface")    or "#0c0c1c",
+        "themeBorder":            row.get("theme_border")     or "#1a1a2e",
+        "lockedSections":         row.get("locked_sections")  or {},
+        "sectionDotColor":        row.get("section_dot_color")   or "#ffffff",
+        "sectionDotOpacity":      row.get("section_dot_opacity")  if row.get("section_dot_opacity") is not None else 1.0,
+        "cardFillColor":          row.get("card_fill_color")      or "#0c0c1c",
     })
 
 
 # ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
+
+@app.route("/api/settings/locked", methods=["GET"])
+def get_locked_sections():
+    """Return the current set of locked section IDs."""
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT locked_sections FROM settings WHERE id = 1")
+            row = cur.fetchone()
+    return jsonify(row["locked_sections"] if row else {})
+
+
+@app.route("/api/settings/locked", methods=["PUT"])
+def put_locked_sections():
+    """Update the locked sections map. Body: { sectionId: bool, ... }"""
+    sections = request.get_json() or {}
+    sections_json = json.dumps(sections)
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                INSERT INTO settings (id, locked_sections)
+                VALUES (1, %s::jsonb)
+                ON CONFLICT (id) DO UPDATE SET locked_sections = EXCLUDED.locked_sections
+                RETURNING locked_sections
+            """, (sections_json,))
+            row = cur.fetchone()
+    return jsonify(row["locked_sections"] or {})
+
 
 @app.route("/api/health")
 def health():

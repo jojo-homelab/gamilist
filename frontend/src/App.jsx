@@ -1,1710 +1,58 @@
 /**
- * GamiList — React Frontend (single-file SPA)
+ * App.jsx — GamiList root component
  *
- * Tabs:
- *   My List    — games the user has added, filterable by status
- *   Favourites — starred games, drag-and-drop orderable, top-3 glow effects
- *   Search     — RAWG-powered game search
- *   Settings   — card size, columns, upload button, glow, Steam integration
+ * This file is the application shell. It owns all top-level state, data-fetching
+ * effects, and the tab-based layout. Heavy components and utilities live in
+ * their own modules; App wires them together.
+ *
+ * Module map:
+ *   src/constants.js                     — STATUSES, platforms, lock password
+ *   src/utils.js                         — formatPlaytime, normName, image helpers
+ *   src/api.js                           — apiFetch, API base URL
+ *   src/components/ui/                   — Reusable UI primitives
+ *   src/components/game/GameCard.jsx     — Game card + grid layouts
+ *   src/components/activity/             — Activity heatmap
+ *   src/components/modals/MetadataModal  — Game detail / edit modal
+ *   src/components/library/             — PSN / Steam import panels
  */
 
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from "react";
 
-// VITE_API_URL="" means "use relative paths" (production via ingress).
-// Falls back to localhost:5001 only when the var is not set at all (local dev).
-const API = (import.meta.env.VITE_API_URL ?? "http://localhost:5001") + "/api";
-
-// Normalise a game title for fuzzy matching: lowercase, drop non-alphanumeric.
-const normName = s => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-
-const STATUSES = [
-  { id: 0, label: "Playing",        color: "#7c6ef7", bg: "#1a1730" },
-  { id: 1, label: "Played",         color: "#4caf80", bg: "#112418" },
-  { id: 2, label: "Next To Play",   color: "#e6a63a", bg: "#261d0a" },
-  { id: 3, label: "Backlog",        color: "#e05c7a", bg: "#2a0f18" },
-  { id: 4, label: "Replaying",      color: "#38bdf8", bg: "#0a1e2a" },
-  { id: 5, label: "Plan to Replay", color: "#a78bfa", bg: "#1a1430" },
-  { id: 6, label: "Dropped",        color: "#888",    bg: "#141414" },
-  { id: 7, label: "Demo",           color: "#20b2aa", bg: "#0a1e1e" },
-  { id: 8, label: "Paused",         color: "#f59e0b", bg: "#1e1500" },
-];
-
-// Comprehensive platform list — slug matches RAWG API platform slugs
-const ALL_PLATFORMS = [
-  { slug: "pc",              name: "PC",                short: "PC"   },
-  { slug: "playstation5",    name: "PlayStation 5",     short: "PS5"  },
-  { slug: "playstation4",    name: "PlayStation 4",     short: "PS4"  },
-  { slug: "playstation3",    name: "PlayStation 3",     short: "PS3"  },
-  { slug: "playstation2",    name: "PlayStation 2",     short: "PS2"  },
-  { slug: "playstation",     name: "PlayStation",       short: "PS1"  },
-  { slug: "xbox-series-x",   name: "Xbox Series X/S",   short: "XSX"  },
-  { slug: "xbox-one",        name: "Xbox One",           short: "XB1"  },
-  { slug: "xbox360",         name: "Xbox 360",           short: "360"  },
-  { slug: "xbox-old",        name: "Xbox (original)",    short: "XBX"  },
-  { slug: "nintendo-switch", name: "Nintendo Switch",    short: "NSW"  },
-  { slug: "wii-u",           name: "Wii U",              short: "WIU"  },
-  { slug: "wii",             name: "Wii",                short: "Wii"  },
-  { slug: "gamecube",        name: "GameCube",           short: "GCN"  },
-  { slug: "nintendo-64",     name: "Nintendo 64",        short: "N64"  },
-  { slug: "super-nintendo",  name: "Super Nintendo",     short: "SNES" },
-  { slug: "nes",             name: "NES",                short: "NES"  },
-  { slug: "game-boy-advance",name: "Game Boy Advance",   short: "GBA"  },
-  { slug: "game-boy-color",  name: "Game Boy Color",     short: "GBC"  },
-  { slug: "game-boy",        name: "Game Boy",           short: "GBY"  },
-  { slug: "nintendo-3ds",    name: "Nintendo 3DS",       short: "3DS"  },
-  { slug: "nintendo-ds",     name: "Nintendo DS",        short: "NDS"  },
-  { slug: "psp",             name: "PSP",                short: "PSP"  },
-  { slug: "ps-vita",         name: "PS Vita",            short: "PSV"  },
-  { slug: "ios",             name: "iOS",                short: "iOS"  },
-  { slug: "android",         name: "Android",            short: "AND"  },
-  { slug: "macos",           name: "macOS",              short: "Mac"  },
-  { slug: "linux",           name: "Linux",              short: "Lin"  },
-  { slug: "sega-genesis",    name: "Sega Genesis/MD",    short: "GEN"  },
-  { slug: "sega-saturn",     name: "Sega Saturn",        short: "SAT"  },
-  { slug: "sega-dreamcast",  name: "Dreamcast",          short: "DC"   },
-  { slug: "game-gear",       name: "Game Gear",          short: "GGR"  },
-  { slug: "sega-master-system", name: "Sega Master System", short: "SMS" },
-  { slug: "atari-2600",      name: "Atari 2600",         short: "2600" },
-  { slug: "atari-7800",      name: "Atari 7800",         short: "7800" },
-  { slug: "jaguar",          name: "Atari Jaguar",       short: "JAG"  },
-  { slug: "3do",             name: "3DO",                short: "3DO"  },
-  { slug: "neo-geo",         name: "Neo Geo",            short: "NEO"  },
-];
-
-const PLATFORM_SHORT = Object.fromEntries(ALL_PLATFORMS.map(p => [p.slug, p.short]));
-
-// RAWG numeric platform IDs used for the Search browse/filter feature
-const RAWG_PLATFORM_IDS = {
-  "pc": 4, "playstation5": 187, "playstation4": 18, "playstation3": 16,
-  "playstation2": 15, "playstation": 27, "xbox-series-x": 186, "xbox-one": 1,
-  "xbox360": 14, "xbox-old": 80, "nintendo-switch": 7, "wii-u": 10, "wii": 11,
-  "gamecube": 105, "nintendo-64": 83, "super-nintendo": 79, "nes": 49,
-  "game-boy-advance": 24, "game-boy-color": 43, "game-boy": 43,
-  "nintendo-3ds": 8, "nintendo-ds": 77, "psp": 17, "ps-vita": 19,
-  "ios": 3, "android": 21, "macos": 5, "linux": 6,
-  "sega-genesis": 167, "sega-saturn": 107, "sega-dreamcast": 106,
-};
-
-const rawgImgSrc = (url) => url ? `${API}/image-proxy?url=${encodeURIComponent(url)}` : null;
-const coverSrc   = (id)  => `${API}/list/${id}/cover`;
-
-async function apiFetch(path, opts) {
-  const res = await fetch(`${API}${path}`, opts);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-function formatPlaytime(mins) {
-  if (!mins || mins <= 0) return null;
-  const h = Math.floor(mins / 60), m = mins % 60;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function StarRating({ rating }) {
-  if (!rating) return null;
-  const pct = (rating / 5) * 100;
-  return (
-    <span style={{ position: "relative", display: "inline-block", fontSize: 12, letterSpacing: 1 }}>
-      <span style={{ color: "#2a2a3a" }}>★★★★★</span>
-      <span style={{ position: "absolute", left: 0, top: 0, overflow: "hidden", width: `${pct}%`, color: "#e6a63a", whiteSpace: "nowrap" }}>★★★★★</span>
-    </span>
-  );
-}
-
-function FitTitle({ children, targetSize, style }) {
-  const ref = useRef();
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.fontSize = targetSize + "px";
-    let size = targetSize;
-    while (el.scrollWidth > el.clientWidth && size > 8) {
-      size -= 0.5;
-      el.style.fontSize = size + "px";
-    }
-  });
-  return (
-    <div ref={ref} style={{ whiteSpace: "nowrap", overflow: "hidden", ...style }}>
-      {children}
-    </div>
-  );
-}
-
-const SETTINGS_LOCK_PW = "230737";
-
-function LockableSection({ sectionId, title, description, children, locked, onToggle }) {
-  const [showPw, setShowPw] = useState(false);
-  const [pw, setPw]         = useState("");
-  const [pwErr, setPwErr]   = useState(false);
-  const inputRef = useRef();
-
-  useEffect(() => { if (showPw && inputRef.current) inputRef.current.focus(); }, [showPw]);
-
-  const handleLockClick = () => {
-    if (locked) { setShowPw(true); setPw(""); setPwErr(false); }
-    else        { onToggle(sectionId, true); }
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (pw === SETTINGS_LOCK_PW) { onToggle(sectionId, false); setShowPw(false); }
-    else { setPwErr(true); setPw(""); }
-  };
-
-  return (
-    <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: `1px solid ${locked ? "#e05c7a33" : "#1a1a2e"}`, borderRadius: 12, padding: "24px 28px", position: "relative", transition: "border-color 0.2s" }}>
-      {/* Panel header with lock button */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: description ? 6 : 18 }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff" }}>{title}</div>
-        <button onClick={handleLockClick} title={locked ? "Locked — click to enter password" : "Lock this section"}
-          style={{ background: "transparent", border: "none", padding: "2px", cursor: "pointer", lineHeight: 1, display: "flex", alignItems: "center" }}>
-          {locked
-            ? <svg width="28" height="32" viewBox="0 0 14 16" fill="none"><rect x="1" y="7" width="12" height="9" rx="2" fill="white"/><path d="M3.5 7V5.5a3.5 3.5 0 1 1 7 0V7" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
-            : <svg width="28" height="32" viewBox="0 0 14 16" fill="none"><rect x="1" y="7" width="12" height="9" rx="2" fill="white"/><path d="M3.5 7V5.5a3.5 3.5 0 1 1 7 0" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
-          }
-        </button>
-      </div>
-      {description && <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.6 }}>{description}</div>}
-
-      {/* Controls — dimmed + non-interactive when locked */}
-      <div style={{ opacity: locked ? 0.38 : 1, pointerEvents: locked ? "none" : "auto", userSelect: locked ? "none" : "auto", transition: "opacity 0.2s" }}>
-        {children}
-      </div>
-
-      {/* Password overlay */}
-      {showPw && (
-        <div style={{ position: "absolute", inset: 0, background: "rgba(6,6,18,0.94)", borderRadius: 12, zIndex: 30, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
-          <svg width="28" height="32" viewBox="0 0 14 16" fill="none"><rect x="1" y="7" width="12" height="9" rx="2" fill="white"/><path d="M3.5 7V5.5a3.5 3.5 0 1 1 7 0V7" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
-          <div style={{ fontSize: 12, color: "#888", fontWeight: 700, letterSpacing: 0.5 }}>Enter password to unlock</div>
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-            <input ref={inputRef} type="password" value={pw}
-              onChange={e => { setPw(e.target.value); setPwErr(false); }}
-              placeholder="Password"
-              style={{ background: "#080814", border: `1px solid ${pwErr ? "#e05c7a" : "#2a2a50"}`, borderRadius: 7, padding: "7px 14px", color: "#e0e0f0", fontSize: 14, outline: "none", fontFamily: "inherit", width: 140, textAlign: "center", letterSpacing: 2 }} />
-            {pwErr && <div style={{ fontSize: 11, color: "#e05c7a", marginTop: -4 }}>Incorrect password</div>}
-            <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
-              <button type="submit" style={{ padding: "6px 18px", borderRadius: 7, border: "1px solid #7c6ef766", background: "#1a1730", color: "#a78bfa", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Unlock</button>
-              <button type="button" onClick={() => setShowPw(false)} style={{ padding: "6px 14px", borderRadius: 7, border: "1px solid #1e1e35", background: "transparent", color: "#444", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CollapseSection({ title, children, defaultOpen = false }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 12, paddingTop: 2 }}>
-      <button onClick={() => setOpen(o => !o)}
-        style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
-          background: "none", border: "none", padding: "8px 0", cursor: "pointer", fontFamily: "inherit" }}>
-        <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8, color: "#eeeeff" }}>{title}</span>
-        <span style={{ fontSize: 9, color: "#555" }}>{open ? "▲" : "▼"}</span>
-      </button>
-      {open && <div style={{ paddingBottom: 8 }}>{children}</div>}
-    </div>
-  );
-}
-
-function RatingInput({ value, onChange, size = 11, starColor = "#e6a63a", textColor = "#e6a63a" }) {
-  const [editing, setEditing] = useState(false);
-  const [input, setInput]     = useState("");
-  const ref = useRef();
-  useEffect(() => { if (editing) ref.current?.focus(); }, [editing]);
-  const commit = () => {
-    const v = parseFloat(input);
-    onChange(!isNaN(v) ? Math.min(10, Math.max(0, Math.round(v * 10) / 10)) : null);
-    setEditing(false);
-  };
-  if (editing) return (
-    <input ref={ref} value={input} onChange={e => setInput(e.target.value)}
-      onClick={e => e.stopPropagation()}
-      onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
-      placeholder="0–10"
-      style={{ width: 52, background: "#0a0a14", border: "1px solid #7c6ef7", borderRadius: 4, color: "#e0e0f0", fontSize: 12, padding: "2px 5px", outline: "none", fontFamily: "inherit" }} />
-  );
-  return value != null
-    ? <span onClick={e => { e.stopPropagation(); setInput(String(value)); setEditing(true); }}
-        style={{ cursor: "pointer", fontSize: size + 2, fontWeight: 800, whiteSpace: "nowrap", userSelect: "none", letterSpacing: 0.2, display: "inline-flex", alignItems: "baseline", gap: 3 }}>
-        <span style={{ color: starColor }}>★</span><span style={{ color: textColor }}>{value}</span>
-      </span>
-    : <span onClick={e => { e.stopPropagation(); setInput(""); setEditing(true); }}
-        style={{ cursor: "pointer", fontSize: size, color: "#444", border: "1px solid #1e1e30", borderRadius: 4, padding: "2px 7px", background: "#0a0a14", whiteSpace: "nowrap", userSelect: "none" }}>
-        + Rate
-      </span>;
-}
-
-/**
- * GameCard — uniform height is achieved by making the outer div a flex column
- * and inserting a flex-grow spacer before the status button. This ensures the
- * status dropdown is always at the same vertical position in every card
- * regardless of how many optional fields (rating bar, genres, score) are present.
- */
-function GameCard({ game, listEntry, onAdd, onRemove, onToggleFav, onRate, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardH = 255, glowColor = null, showGalleryNav = true, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, ratingColors = {} }) {
-  const ratingKeyFor = v => (v < 5 ? "lt5" : String(v));
-  const ratingStarColor = v => ratingColors[ratingKeyFor(v)] || { "10":"#FFD700","9.5":"#f0c020","9":"#e8b030","8.5":"#e0a040","8":"#d89050","7.5":"#cc8060","7":"#c07070","6.5":"#aa6080","6":"#9060a0","5.5":"#7050b0","5":"#6040c0","lt5":"#e05c7a" }[ratingKeyFor(v)] || "#e6a63a";
-  const ratingTextColor = v => ratingStarColor(v);
-  const statusProps = (id) => getStatusProps ? getStatusProps(id) : (STATUSES[id] || STATUSES[6]);
-  const [hover, setHover]           = useState(false);
-  const [arrowHover, setArrowHover] = useState(false);
-  const [showMenu, setShowMenu]     = useState(false);
-  const [imgErr, setImgErr]         = useState(false);
-
-  const [screenshots, setScreenshots] = useState(null); // null=not loaded yet
-  const [imgIndex, setImgIndex]     = useState(0);
-  const menuRef = useRef();
-  const status   = listEntry?.status ?? null;
-  const isFav    = listEntry?.favourite || false;
-  const hasCover = listEntry?.hasCover || false;
-
-  useEffect(() => {
-    if (!showMenu) return;
-    const h = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false); };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [showMenu]);
-
-  // Build image list with extra images and customImagesOnly support
-  const customImagesOnly = listEntry?.customImagesOnly || false;
-  const extraImageUrls = (listEntry?.extraImageIds || []).map(id => `${API}/images/${id}`);
-  const coverUrl = hasCover ? `${coverSrc(game.id)}?v=${listEntry?.coverVersion ?? 0}` : null;
-  const rawgCover = rawgImgSrc(game.background_image);
-
-  let baseImages;
-  if (customImagesOnly && (hasCover || extraImageUrls.length > 0)) {
-    baseImages = [coverUrl, ...extraImageUrls].filter(Boolean);
-  } else {
-    baseImages = [coverUrl || rawgCover, ...extraImageUrls].filter(Boolean);
-  }
-  // Don't append hover-loaded screenshots when stored extra images already exist (avoids duplicates)
-  const hoverScreenshots = extraImageUrls.length > 0 ? [] : (screenshots || []).map(u => rawgImgSrc(u));
-  const allImages = [...baseImages, ...hoverScreenshots].filter(Boolean);
-  const displayImg = allImages[imgIndex] || coverUrl || rawgCover;
-
-  const handleMouseEnter = async () => {
-    setHover(true);
-    // Lazy-load screenshots only when: RAWG game, not Steam/PSN import, not Dropped, no stored extra images
-    if (screenshots === null && game.id && !(game.slug || "").startsWith("steam-") && listEntry?.status !== 6 && !(listEntry?.extraImageIds?.length > 0)) {
-      setScreenshots([]); // mark as loading
-      try {
-        const shots = await apiFetch(`/games/${game.id}/screenshots`);
-        setScreenshots(shots);
-      } catch { setScreenshots([]); }
-    }
-  };
-
-  // Auto-cycle through images while hovered (paused when hovering arrows)
-  useEffect(() => {
-    if (!hover || arrowHover || allImages.length <= 1) return;
-    const timer = setInterval(() => setImgIndex(i => (i + 1) % allImages.length), 2200);
-    return () => clearInterval(timer);
-  }, [hover, arrowHover, allImages.length]);
-
-  const glowStyle = glowColor ? {
-    border:     `1px solid ${glowColor}99`,
-    boxShadow:  `0 0 14px ${glowColor}88, 0 0 32px ${glowColor}44${hover ? ", 0 8px 30px rgba(0,0,0,0.5)" : ""}`,
-    background: `linear-gradient(160deg, #10101e 60%, ${glowColor}18)`,
-  } : {
-    border:    `1px solid ${hover ? "#2e2e50" : "#1a1a2e"}`,
-    boxShadow: hover ? "0 8px 30px rgba(0,0,0,0.5)" : "none",
-    background: "#10101e",
-  };
-
-  const openMeta = (e) => {
-    if (!onOpenMetadata) return;
-    e.stopPropagation();
-    if (listEntry) {
-      onOpenMetadata(game.id);
-    } else if (onAdd) {
-      // Auto-add as Backlog then open metadata — React batches both state updates
-      onAdd(game, 3);
-      onOpenMetadata(game.id);
-    }
-  };
-
-  return (
-    <div onMouseEnter={handleMouseEnter} onMouseLeave={() => { setHover(false); setImgIndex(0); }}
-      onClick={openMeta}
-      style={{
-        borderRadius: 12, overflow: "visible", position: "relative",
-        display: "flex", flexDirection: "column",
-        transition: "transform 0.15s, box-shadow 0.15s, border-color 0.15s",
-        transform: hover ? "translateY(-4px)" : "none",
-        cursor: onOpenMetadata ? "pointer" : "default",
-        ...glowStyle,
-      }}>
-
-      {/* Cover image — fixed height with screenshot gallery navigation */}
-      <div style={{ height: cardH, borderRadius: "12px 12px 0 0", overflow: "hidden", background: "#080814", position: "relative", flexShrink: 0 }}>
-        {displayImg && !imgErr
-          ? <img src={displayImg} alt={game.name} onError={() => setImgErr(true)} style={{ width: "100%", height: "100%", objectFit: listEntry?.imgFit ?? "cover", objectPosition: `${listEntry?.imgPosX ?? 50}% ${listEntry?.imgPosY ?? 50}%`, display: "block", transition: "opacity 0.2s" }} />
-          : <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <span style={{ fontSize: 36 }}>🎮</span>
-              <span style={{ fontSize: 11, color: "#333", textAlign: "center", padding: "0 12px", lineHeight: 1.4 }}>{listEntry?.customName || game.name}</span>
-            </div>}
-        {/* Screenshot navigation dots */}
-        {allImages.length > 1 && hover && showGalleryNav && (
-          <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5, zIndex: 10 }} onClick={e => e.stopPropagation()}>
-            {allImages.map((_, i) => (
-              <div key={i} onClick={e => { e.stopPropagation(); setImgIndex(i); }}
-                style={{ width: i === imgIndex ? 18 : 6, height: 6, borderRadius: 3, background: i === imgIndex ? "#fff" : "rgba(255,255,255,0.45)", cursor: "pointer", transition: "all 0.2s", flexShrink: 0 }} />
-            ))}
-          </div>
-        )}
-        {/* Side arrow buttons */}
-        {allImages.length > 1 && hover && showGalleryNav && (
-          <>
-            <button
-              onMouseEnter={() => setArrowHover(true)} onMouseLeave={() => setArrowHover(false)}
-              onClick={e => { e.stopPropagation(); setImgIndex(i => (i - 1 + allImages.length) % allImages.length); }}
-              style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10, lineHeight: 1 }}>‹</button>
-            <button
-              onMouseEnter={() => setArrowHover(true)} onMouseLeave={() => setArrowHover(false)}
-              onClick={e => { e.stopPropagation(); setImgIndex(i => (i + 1) % allImages.length); }}
-              style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10, lineHeight: 1 }}>›</button>
-          </>
-        )}
-        {listEntry && !hideFav && (
-          <button onClick={e => { e.stopPropagation(); onToggleFav(game.id); }}
-            style={{ position: "absolute", top: 8, left: 8, background: "rgba(0,0,0,0.65)", border: "none", borderRadius: 6, width: 30, height: 30, cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", color: isFav ? "#e6a63a" : "#666" }}>
-            {isFav ? "★" : "☆"}
-          </button>
-        )}
-        {status !== null && (
-          <div style={{ position: "absolute", top: 8, right: 8, background: statusProps(status).color + "dd", borderRadius: 6, padding: "3px 9px", fontSize: 10, fontWeight: 700, color: "#fff", whiteSpace: "nowrap" }}>
-            {STATUSES[status].label}
-          </div>
-        )}
-      </div>
-
-      {/* Card body */}
-      <div style={{ padding: "12px 14px 14px", display: "flex", flexDirection: "column", flex: 1 }}>
-        {autoFitTitle
-          ? <FitTitle targetSize={statsTextSize + nameOffset} style={{ fontWeight: 700, color: "#eeeeff", marginBottom: 4 }} title={listEntry?.customName || game.name}>{listEntry?.customName || game.name}</FitTitle>
-          : <div style={{ fontSize: statsTextSize + nameOffset, fontWeight: 700, color: "#eeeeff", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={listEntry?.customName || game.name}>{listEntry?.customName || game.name}</div>
-        }
-
-        {/* Platform badges */}
-        {(() => {
-          const played = listEntry?.platformsPlayed || [];
-          const gameSlugs = (game.platforms || []).map(p => p.platform.slug);
-          const extraPlayedSlugs = played.filter(s => !gameSlugs.includes(s));
-          // In list mode: only show selected platforms. In search mode: show all.
-          const badgeSlugs = listMode
-            ? played
-            : [...gameSlugs, ...extraPlayedSlugs];
-          if (!badgeSlugs.length) return null;
-          const isDefault = !listMode && played.length === 0 && gameSlugs.length === 1;
-          return (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 6 }} onClick={e => e.stopPropagation()}>
-              {badgeSlugs.map(slug => {
-                const pInfo = (game.platforms || []).find(p => p.platform.slug === slug)?.platform
-                           || ALL_PLATFORMS.find(p => p.slug === slug)
-                           || { name: slug };
-                const active = listMode || played.includes(slug) || (isDefault && gameSlugs[0] === slug);
-                const pc = getPlatformColor ? getPlatformColor(slug) : "#7c6ef7";
-                return (
-                  <span key={slug} title={pInfo.name}
-                    onClick={e => { e.stopPropagation(); if (listEntry && onTogglePlatform) onTogglePlatform(game.id, slug); }}
-                    style={{ fontSize: Math.max(7, statsTextSize - 2), fontWeight: 700,
-                      padding: "2px 5px", borderRadius: 3,
-                      background: active ? pc + "28" : "#141420",
-                      border: `1px solid ${active ? pc + "77" : "#222238"}`,
-                      color: active ? pc : "#444",
-                      cursor: listEntry ? "pointer" : "default", userSelect: "none", whiteSpace: "nowrap" }}>
-                    {PLATFORM_SHORT[slug] || pInfo.name?.slice(0, 4)}
-                  </span>
-                );
-              })}
-            </div>
-          );
-        })()}
-
-        {listEntry && (
-          <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }} onClick={e => e.stopPropagation()}>
-            <RatingInput value={listEntry.userRating ?? null} onChange={v => onRate(game.id, v)} size={statsTextSize}
-              starColor={listEntry.userRating != null ? ratingStarColor(listEntry.userRating) : "#e6a63a"}
-              textColor={listEntry.userRating != null ? ratingTextColor(listEntry.userRating) : "#e6a63a"} />
-            {formatPlaytime(listEntry.playtimeMinutes) && <>
-              <span style={{ color: "#2a2a3a", fontSize: statsTextSize + 1, userSelect: "none" }}>|</span>
-              <span style={{ fontSize: statsTextSize, color: "#eeeeff", fontWeight: 700, whiteSpace: "nowrap" }}>⏱ {formatPlaytime(listEntry.playtimeMinutes)}</span>
-            </>}
-            {listEntry.replayCount > 0 && <>
-              <span style={{ color: "#2a2a3a", fontSize: statsTextSize + 1, userSelect: "none" }}>|</span>
-              <span style={{ fontSize: statsTextSize, color: "#eeeeff", fontWeight: 700, whiteSpace: "nowrap" }}>↺ ×{listEntry.replayCount}</span>
-            </>}
-          </div>
-        )}
-
-        <div style={{ flex: 1 }} />
-
-        {!hideMenu && (
-          <div ref={menuRef} style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
-            <button onClick={e => { e.stopPropagation(); setShowMenu(v => !v); }}
-              style={{ width: "100%", padding: "7px 11px", borderRadius: 8, border: `1px solid ${status !== null ? statusProps(status).color + "44" : "#1e1e35"}`, background: status !== null ? statusProps(status).bg : "#0a0a14", color: status !== null ? statusProps(status).color : "#555", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between", fontFamily: "inherit" }}>
-              <span>{status !== null ? STATUSES[status].label : "＋ Add to list"}</span>
-              <span style={{ opacity: 0.6, fontSize: 9 }}>▾</span>
-            </button>
-            {showMenu && (
-              <div style={{ position: "absolute", bottom: "calc(100% + 5px)", left: 0, right: 0, background: "#10101e", border: "1px solid #2a2a40", borderRadius: 10, overflow: "hidden", zIndex: 200, boxShadow: "0 8px 32px rgba(0,0,0,0.8)" }}>
-                {STATUSES.map(s => {
-                  const sp = statusProps(s.id);
-                  return (
-                    <button key={s.id} onClick={e => { e.stopPropagation(); onAdd(game, s.id); setShowMenu(false); }}
-                      style={{ width: "100%", padding: "8px 14px", border: "none", background: status === s.id ? sp.bg : "transparent", color: sp.color, cursor: "pointer", fontSize: 12, textAlign: "left", fontWeight: status === s.id ? 700 : 400, display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit" }}>
-                      <span style={{ fontSize: 10, opacity: status === s.id ? 1 : 0 }}>✓</span>{s.label}
-                    </button>
-                  );
-                })}
-                {status !== null && <>
-                  <div style={{ height: 1, background: "#1a1a30" }} />
-                  <button onClick={e => { e.stopPropagation(); onRemove(game.id); setShowMenu(false); }}
-                    style={{ width: "100%", padding: "8px 14px", border: "none", background: "transparent", color: "#ff6060", cursor: "pointer", fontSize: 12, textAlign: "left", fontFamily: "inherit" }}>
-                    Remove from list
-                  </button>
-                </>}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Spinner({ text = "Loading…" }) {
-  return (
-    <div style={{ textAlign: "center", padding: 80 }}>
-      <div style={{ display: "inline-block", width: 36, height: 36, border: "3px solid #1a1a30", borderTop: "3px solid #7c6ef7", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-      <div style={{ color: "#555", fontSize: 13, marginTop: 14 }}>{text}</div>
-    </div>
-  );
-}
-
-function Grid({ games, myList, importedNameMap, onAdd, onRemove, onToggleFav, onRate, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, emptyMsg, cardW, cardH, cardH2, altCardMode, effectiveCardCount, showGalleryNav, hideMenu = false, listMode = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
-  if (!games.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>{emptyMsg}</div>;
-  const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
-  const gridRef = useRef();
-  useEffect(() => {
-    if (!gridRef.current || !onActualCardW) return;
-    const gap = 20;
-    const measure = () => {
-      const containerW = gridRef.current.offsetWidth;
-      const colCount = effectiveCardCount > 0
-        ? effectiveCardCount
-        : Math.max(1, Math.floor((containerW + gap) / (cardW + gap)));
-      onActualCardW(Math.floor((containerW - (colCount - 1) * gap) / colCount));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(gridRef.current);
-    return () => ro.disconnect();
-  }, [effectiveCardCount, cardW, onActualCardW]);
-  return (
-    <div ref={gridRef} style={{ display: "grid", gridTemplateColumns: cols, gap: 20, alignItems: "start" }}>
-      {games.map((g, i) => (
-        <GameCard key={g.id} game={g} listEntry={myList[g.id] || importedNameMap?.[normName(g.name)] || null} cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH}
-          onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate}
-          onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav}
-          hideMenu={hideMenu} listMode={listMode} statsTextSize={statsTextSize} nameOffset={nameOffset} autoFitTitle={autoFitTitle} ratingColors={ratingColors} />
-      ))}
-    </div>
-  );
-}
-
-function FavGrid({ entries, glowConfig, myList, onAdd, onRemove, onToggleFav, onRate, onOpenMetadata, onTogglePlatform, getPlatformColor, getStatusProps, cardW, cardH, cardH2, altCardMode, effectiveCardCount, favMults = [2, 2, 2], onReorder, showGalleryNav, hideMenu = false, listMode = false, hideFav = false, statsTextSize = 11, nameOffset = 0, autoFitTitle = false, onActualCardW, ratingColors = {} }) {
-  const [dragOverId, setDragOverId] = useState(null);
-  const dragId = useRef(null);
-  const gridRef = useRef();
-  useEffect(() => {
-    if (!gridRef.current || !onActualCardW) return;
-    const gap = 20;
-    const measure = () => {
-      const containerW = gridRef.current.offsetWidth;
-      const colCount = effectiveCardCount > 0
-        ? effectiveCardCount
-        : Math.max(1, Math.floor((containerW + gap) / (cardW + gap)));
-      onActualCardW(Math.floor((containerW - (colCount - 1) * gap) / colCount));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(gridRef.current);
-    return () => ro.disconnect();
-  }, [effectiveCardCount, cardW, onActualCardW]);
-  if (!entries.length) return <div style={{ textAlign: "center", color: "#333", padding: 80, fontSize: 14 }}>No favourites yet. Add games to your list and star them!</div>;
-  const cols = effectiveCardCount > 0 ? `repeat(${effectiveCardCount}, 1fr)` : `repeat(auto-fill, minmax(${cardW}px, 1fr))`;
-  // Max columns for capping span (avoid overflowing a 1-col layout)
-  const maxCols = effectiveCardCount > 0 ? effectiveCardCount : 12;
-  return (
-    <div ref={gridRef} style={{ display: "grid", gridTemplateColumns: cols, gap: 20, alignItems: "start" }}>
-      {entries.map((e, i) => {
-        const glow = i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null;
-        const mult = i < 3 ? (favMults[i] ?? 2) : 1;
-        const span = i < 3 ? Math.max(1, Math.min(Math.round(mult), maxCols)) : 1;
-        const thisCardH = i < 3 ? Math.round(cardH * mult) : (altCardMode && i % 2 === 1 ? cardH2 : cardH);
-        return (
-          <div key={e.game.id} draggable
-            onDragStart={() => { dragId.current = e.game.id; }}
-            onDragEnd={() => { dragId.current = null; setDragOverId(null); }}
-            onDragOver={ev => { ev.preventDefault(); if (dragId.current !== e.game.id) setDragOverId(e.game.id); }}
-            onDragLeave={() => setDragOverId(null)}
-            onDrop={() => { setDragOverId(null); if (dragId.current != null && dragId.current !== e.game.id) onReorder(dragId.current, e.game.id); }}
-            style={{ gridColumn: span > 1 ? `span ${span}` : undefined, opacity: dragOverId === e.game.id ? 0.5 : 1, outline: dragOverId === e.game.id ? "2px dashed #7c6ef755" : "none", borderRadius: 12, cursor: "grab", transition: "opacity 0.15s" }}>
-            <GameCard game={e.game} listEntry={e} cardH={thisCardH} glowColor={glow}
-              onAdd={onAdd} onRemove={onRemove} onToggleFav={onToggleFav} onRate={onRate}
-              onOpenMetadata={onOpenMetadata} onTogglePlatform={onTogglePlatform} getPlatformColor={getPlatformColor} getStatusProps={getStatusProps} showGalleryNav={showGalleryNav}
-              hideMenu={hideMenu} listMode={listMode} hideFav={hideFav} statsTextSize={statsTextSize} nameOffset={nameOffset} autoFitTitle={autoFitTitle} ratingColors={ratingColors} />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function Toast({ msg, ok, onDone }) {
-  return (
-    <div onAnimationEnd={onDone} style={{ position: "fixed", top: 24, right: 28, zIndex: 1000, background: ok ? "#1a3a1a" : "#2a0a0a", border: `1px solid ${ok ? "#4caf8066" : "#ff606066"}`, color: ok ? "#4caf80" : "#ff8080", borderRadius: 10, padding: "12px 20px", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 24px rgba(0,0,0,0.6)", animation: "toastIn 0.2s ease, toastOut 0.3s ease 2.5s forwards", fontFamily: "inherit" }}>
-      {ok ? "✓ " : "✗ "}{msg}
-    </div>
-  );
-}
-
-function GlowRow({ rank, label, enabled, color, onToggle, onColor }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-      <div style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: enabled ? `${color}22` : "#1a1a2e", border: `2px solid ${enabled ? color : "#333"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: enabled ? color : "#444", transition: "all 0.2s" }}>{rank}</div>
-      <span style={{ fontSize: 12, color: "#888", flex: 1 }}>{label}</span>
-      <input type="color" value={color} onChange={e => onColor(e.target.value)} title="Pick glow color"
-        style={{ width: 34, height: 26, border: "1px solid #2a2a40", borderRadius: 5, cursor: "pointer", background: "none", padding: 2 }} />
-      <button onClick={onToggle} title={enabled ? "Disable" : "Enable"}
-        style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: enabled ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-        <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: enabled ? 19 : 3, transition: "left 0.2s" }} />
-      </button>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Activity graph — GitHub-style contribution heatmap
-// ---------------------------------------------------------------------------
-
-function ActivityGraph({ activityLog, colors = {}, numWeeks = 52, editsSize = 10, editsWeight = 800 }) {
-  const emptyColor = colors.empty || "#0d0d1a";
-  const lowColor   = colors.low   || "#2d1f6b";
-  const midColor   = colors.mid   || "#5040a0";
-  const highColor  = colors.high  || "#7c6ef7";
-
-  const [tooltip, setTooltip] = useState(null); // {label, x, y}
-
-  const counts = {};
-  for (const d of activityLog || []) counts[d] = (counts[d] || 0) + 1;
-
-  // AniList layout: numWeeks columns × 7 rows, today at top-right (col numWeeks-1, row 0)
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-
-  const weeks = [];
-  for (let col = 0; col < numWeeks; col++) {
-    const week = [];
-    for (let row = 0; row < 7; row++) {
-      const daysBack = (numWeeks - 1 - col) * 7 + row;
-      const d = new Date(today);
-      d.setDate(d.getDate() - daysBack);
-      const iso = d.toISOString().slice(0, 10);
-      week.push({ iso, count: counts[iso] || 0 });
-    }
-    weeks.push(week);
-  }
-
-  const cellColor = (n) => {
-    if (n === 0) return emptyColor;
-    if (n === 1) return lowColor;
-    if (n === 2) return midColor;
-    return highColor;
-  };
-
-  const formatIso = (iso) => {
-    const [y, m, day] = iso.split("-").map(Number);
-    const label = new Date(y, m - 1, day).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-    return label;
-  };
-
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
-
-  return (
-    <div style={{ display: "inline-block", position: "relative" }}>
-      {tooltip && (
-        <div style={{
-          position: "fixed", left: tooltip.x + 12, top: tooltip.y - 32,
-          background: "#1a1a2e", border: "1px solid #2a2a40", borderRadius: 6,
-          padding: "4px 10px", fontSize: 11, color: "#c0c0e0", whiteSpace: "nowrap",
-          pointerEvents: "none", zIndex: 9999, boxShadow: "0 2px 8px rgba(0,0,0,0.5)"
-        }}>
-          {tooltip.label}
-        </div>
-      )}
-      <div style={{ display: "flex", gap: 2 }}>
-        {weeks.map((week, wi) => (
-          <div key={wi} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {week.map((day, di) => (
-              <div key={di}
-                onMouseEnter={e => setTooltip({ label: `${formatIso(day.iso)} — ${day.count} edit${day.count !== 1 ? "s" : ""}`, x: e.clientX, y: e.clientY })}
-                onMouseMove={e => setTooltip(t => t ? { ...t, x: e.clientX, y: e.clientY } : t)}
-                onMouseLeave={() => setTooltip(null)}
-                style={{ width: 10, height: 10, borderRadius: 2, background: cellColor(day.count), flexShrink: 0, cursor: "default" }} />
-            ))}
-          </div>
-        ))}
-      </div>
-      <div style={{ fontSize: editsSize, color: "#fff", fontWeight: editsWeight, marginTop: 6 }}>{total} edit{total !== 1 ? "s" : ""} in the last year</div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Metadata modal — playtime, replays, tags, metacritic, activity
-// ---------------------------------------------------------------------------
-
-function MetadataModal({ gameId, entry, onClose, onSave, onDelete, onSyncSteam, onSyncRawg, onSyncPsn, onCoverPromoted, platformHighlightColor = "#7c6ef7", cardW = 315, cardH = 255, modalWidthMult = 1.0 }) {
-  const game = entry?.game;
-  const [replayCount, setReplayCount]     = useState(entry?.replayCount ?? 0);
-  const [userRating, setUserRating]       = useState(entry?.userRating ?? null);
-  const [metacriticLocal, setMetacriticLocal] = useState(null);
-  const [tags, setTags]                 = useState(entry?.tags ?? []);
-  const [tagInput, setTagInput]         = useState("");
-  const [platforms, setPlatforms]       = useState(entry?.platformsPlayed ?? []);
-  const origYear = game?.released ? game.released.slice(0, 4) : "";
-  const [yearInput, setYearInput]       = useState(origYear);
-  const [playtime, setPlaytime]         = useState(entry?.playtimeMinutes != null ? Math.round(entry.playtimeMinutes / 60 * 10) / 10 : "");
-  const [customImagesOnly, setCustomImagesOnly] = useState(entry?.customImagesOnly || false);
-  const [extraImageIds, setExtraImageIds]       = useState(entry?.extraImageIds || []);
-  // short_screenshots from RAWG — deduplicated against background_image, deleteable
-  const [shortScreenshots, setShortScreenshots] = useState(
-    (game?.short_screenshots || []).filter(ss => ss.image !== game?.background_image)
-  );
-  const [uploadingImg, setUploadingImg]         = useState(false);
-  const [imgPosX, setImgPosX]                   = useState(entry?.imgPosX ?? 50);
-  const [imgPosY, setImgPosY]                   = useState(entry?.imgPosY ?? 50);
-  const [imgFit,  setImgFit]                    = useState(entry?.imgFit  ?? "cover");
-  const [customName, setCustomName]               = useState(entry?.customName || "");
-  const isPlayedWithRating = (entry?.status === 4 || entry?.status === 5) && entry?.userRating != null;
-  const isPausedEntry = entry?.status === 8;
-  const [selectedStatus, setSelectedStatus]      = useState(isPlayedWithRating ? 1 : isPausedEntry ? 0 : (entry?.status ?? 0));
-  const [replayStatus, setReplayStatus]          = useState(isPlayedWithRating ? (entry?.status ?? null) : null);
-  const [pauseActive, setPauseActive]            = useState(isPausedEntry);
-  const [confirmDelete, setConfirmDelete]        = useState(false);
-  const [syncingSteam, setSyncingSteam]          = useState(false);
-  const [steamSynced, setSteamSynced]            = useState(false);
-  const [steamError, setSteamError]              = useState(null);
-  const [syncingRawg, setSyncingRawg]            = useState(false);
-  const [rawgSynced, setRawgSynced]              = useState(false);
-  const [syncingPsn, setSyncingPsn]              = useState(false);
-  const [psnSynced, setPsnSynced]                = useState(false);
-  const [psnError, setPsnError]                  = useState(null);
-
-  const [dragOverIdx, setDragOverIdx]            = useState(null);
-  const [coverDropOver, setCoverDropOver]        = useState(false);
-  const [promotingCover, setPromotingCover]      = useState(false);
-  const [hasCoverLocal, setHasCoverLocal]        = useState(entry?.hasCover || false);
-  const [previewKey, setPreviewKey]              = useState(0);
-  const [coverWasPromoted, setCoverWasPromoted]  = useState(false);
-  const [confirmClose, setConfirmClose]          = useState(false);
-  const [framingOpen, setFramingOpen]            = useState(false);
-  const [imagesOpen, setImagesOpen]              = useState(false);
-  const [framingImgIdx, setFramingImgIdx]        = useState(0);
-  const [topImgIdx, setTopImgIdx]                = useState(0);
-  const dragIdxRef                               = useRef(null);
-  const imageUploadRef = useRef();
-
-  // Snapshot of values at open-time for dirty detection
-  const initialRef = useRef({
-    customName:       entry?.customName || "",
-    effectiveStatus:  entry?.status ?? 0,
-    userRating:       entry?.userRating ?? null,
-    replayCount:      entry?.replayCount ?? 0,
-    playtime:         entry?.playtimeMinutes != null ? String(Math.round(entry.playtimeMinutes / 60 * 10) / 10) : "",
-    tags:             JSON.stringify(entry?.tags ?? []),
-    platforms:        JSON.stringify(entry?.platformsPlayed ?? []),
-    customImagesOnly: entry?.customImagesOnly || false,
-    imgPosX:          entry?.imgPosX ?? 50,
-    imgPosY:          entry?.imgPosY ?? 50,
-    imgFit:           entry?.imgFit  ?? "cover",
-    yearInput:        game?.released ? game.released.slice(0, 4) : "",
-    shortScreenshots: JSON.stringify((game?.short_screenshots || []).filter(ss => ss.image !== game?.background_image)),
-  });
-
-  const isDirty =
-    customName       !== initialRef.current.customName       ||
-    (replayStatus ?? (pauseActive ? 8 : selectedStatus)) !== initialRef.current.effectiveStatus ||
-    userRating       !== initialRef.current.userRating       ||
-    replayCount      !== initialRef.current.replayCount      ||
-    String(playtime) !== initialRef.current.playtime         ||
-    JSON.stringify(tags)      !== initialRef.current.tags    ||
-    JSON.stringify(platforms) !== initialRef.current.platforms ||
-    customImagesOnly !== initialRef.current.customImagesOnly ||
-    imgPosX          !== initialRef.current.imgPosX          ||
-    imgPosY          !== initialRef.current.imgPosY          ||
-    imgFit           !== initialRef.current.imgFit           ||
-    yearInput        !== initialRef.current.yearInput        ||
-    JSON.stringify(shortScreenshots) !== initialRef.current.shortScreenshots ||
-    coverWasPromoted;
-
-  const handleRequestClose = () => {
-    if (confirmClose) return;
-    if (isDirty) { setConfirmClose(true); } else { onClose(); }
-  };
-
-  const isSteamGame = (entry?.game?.slug || "").startsWith("steam-");
-
-  const handleSyncSteam = async () => {
-    if (!onSyncSteam) return;
-    setSyncingSteam(true);
-    setSteamError(null);
-    try {
-      await onSyncSteam(gameId);
-      setSteamSynced(true);
-      setTimeout(() => setSteamSynced(false), 2000);
-    } catch (e) {
-      const msg = e.message.includes("404")
-        ? "No Steam images found — this game may not be available on Steam."
-        : "Steam sync failed.";
-      setSteamError(msg);
-    } finally {
-      setSyncingSteam(false);
-    }
-  };
-
-  const handleSyncRawg = async () => {
-    if (!onSyncRawg) return;
-    setSyncingRawg(true);
-    const result = await onSyncRawg(gameId);
-    setSyncingRawg(false);
-    if (result) {
-      if (result.extraImageIds) setExtraImageIds(result.extraImageIds);
-      if (result.metacritic != null) setMetacriticLocal(result.metacritic);
-      setShortScreenshots([]);
-      setRawgSynced(true);
-      setTimeout(() => setRawgSynced(false), 2000);
-    }
-  };
-
-  const handleSyncPsn = async () => {
-    if (!onSyncPsn) return;
-    setSyncingPsn(true);
-    setPsnError(null);
-    try {
-      const result = await onSyncPsn(gameId);
-      if (result?.hasCover) {
-        setHasCoverLocal(true);
-        setPreviewKey(k => k + 1);
-      }
-      setPsnSynced(true);
-      setTimeout(() => setPsnSynced(false), 2000);
-    } catch (e) {
-      const msg = e.message.includes("404")
-        ? "Not found in your PSN library — the game may be under a different title."
-        : "PSN sync failed.";
-      setPsnError(msg);
-    } finally {
-      setSyncingPsn(false);
-    }
-  };
-
-  const promoteImageToCover = async (fromIdx) => {
-    const imageId = extraImageIds[fromIdx];
-    setPromotingCover(true);
-    try {
-      const result = await apiFetch(`/list/${gameId}/images/${imageId}/promote-to-cover`, { method: "POST" });
-      const newExtraIds = result.extraImageIds || [];
-      setExtraImageIds(newExtraIds);
-      setHasCoverLocal(true);
-      setCoverWasPromoted(true);
-      setPreviewKey(k => k + 1);
-      setImgPosX(50);
-      setImgPosY(50);
-      // Immediately update the card in the list so it shows the new cover without waiting for Save
-      if (onCoverPromoted) onCoverPromoted(gameId, newExtraIds);
-    } finally {
-      setPromotingCover(false);
-    }
-  };
-
-  const handleDragStart = (idx) => { dragIdxRef.current = idx; };
-  const handleDragOver  = (e, idx) => { e.preventDefault(); setDragOverIdx(idx); };
-  const handleDragEnd   = () => { dragIdxRef.current = null; setDragOverIdx(null); setCoverDropOver(false); };
-  const handleDrop      = async (e, toIdx) => {
-    e.preventDefault();
-    const fromIdx = dragIdxRef.current;
-    dragIdxRef.current = null;
-    setDragOverIdx(null);
-    if (fromIdx === null || fromIdx === toIdx) return;
-    const newIds = [...extraImageIds];
-    const [moved] = newIds.splice(fromIdx, 1);
-    newIds.splice(toIdx, 0, moved);
-    setExtraImageIds(newIds);
-    await fetch(`${API}/list/${gameId}/images/reorder`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: newIds }),
-    });
-  };
-
-  // Extra platforms: slugs user added manually not in game.platforms
-  const gamePlatformSlugs = (game?.platforms || []).map(gp => gp.platform.slug);
-  const [extraPlatformSlugs, setExtraPlatformSlugs] = useState(() => {
-    // Any slug in platformsPlayed not present in game.platforms
-    return (entry?.platformsPlayed ?? []).filter(s => !gamePlatformSlugs.includes(s));
-  });
-  const [selectedAddPlatform, setSelectedAddPlatform] = useState("");
-
-  // Image list for auto-rotating top preview — computed before early return so the effect can use it
-  const framingImages = [
-    hasCoverLocal ? `${coverSrc(gameId)}?v=prev-${previewKey}` : rawgImgSrc(entry?.game?.background_image),
-    ...extraImageIds.map(id => `${API}/images/${id}`),
-    ...shortScreenshots.map(ss => rawgImgSrc(ss.image)),
-  ].filter(Boolean);
-
-  // Auto-advance top image every 30 s
-  useEffect(() => {
-    if (framingImages.length <= 1) return;
-    const t = setInterval(() => setTopImgIdx(i => (i + 1) % framingImages.length), 15000);
-    return () => clearInterval(t);
-  }, [framingImages.length]);
-
-  if (!entry || !game) return null;
-
-  const addTag = (t) => {
-    const trimmed = t.trim();
-    if (trimmed && !tags.includes(trimmed)) setTags(prev => [...prev, trimmed]);
-    setTagInput("");
-  };
-  const removeTag = (t) => setTags(prev => prev.filter(x => x !== t));
-  const importGenres = () => {
-    const genres = (game.genres || []).map(g => g.name);
-    setTags(prev => [...new Set([...prev, ...genres])]);
-  };
-
-  const togglePlatform = (slug) =>
-    setPlatforms(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]);
-
-  const addExtraPlatform = () => {
-    if (!selectedAddPlatform) return;
-    if (gamePlatformSlugs.includes(selectedAddPlatform)) {
-      // Re-selecting a game's own platform — just toggle it into the played list
-      setPlatforms(prev => prev.includes(selectedAddPlatform) ? prev : [...prev, selectedAddPlatform]);
-    } else if (!extraPlatformSlugs.includes(selectedAddPlatform)) {
-      setExtraPlatformSlugs(prev => [...prev, selectedAddPlatform]);
-      setPlatforms(prev => prev.includes(selectedAddPlatform) ? prev : [...prev, selectedAddPlatform]);
-    }
-    setSelectedAddPlatform("");
-  };
-
-  const removeExtraPlatform = (slug) => {
-    setExtraPlatformSlugs(prev => prev.filter(s => s !== slug));
-    setPlatforms(prev => prev.filter(s => s !== slug));
-  };
-
-  const handleSetStatus = (newStatus) => {
-    setSelectedStatus(newStatus);
-    setReplayStatus(null);
-    setPauseActive(false);
-  };
-
-  const hasSelectedPlatforms = platforms.length > 0;
-  const allShownSlugs = [...gamePlatformSlugs, ...extraPlatformSlugs];
-  // When platforms are selected: dropdown lists everything not already played/shown
-  // When none selected: dropdown lists everything not already shown as a badge
-  const addablePlatforms = hasSelectedPlatforms
-    ? ALL_PLATFORMS.filter(p => !platforms.includes(p.slug) && !extraPlatformSlugs.includes(p.slug))
-    : ALL_PLATFORMS.filter(p => !allShownSlugs.includes(p.slug));
-
-  const handleImageUpload = async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    setUploadingImg(true);
-    try {
-      for (const file of files) {
-        const fd = new FormData();
-        fd.append("image", file);
-        const result = await fetch(`${API}/list/${gameId}/images`, { method: "POST", body: fd });
-        const data = await result.json();
-        if (data.id) setExtraImageIds(prev => [...prev, data.id]);
-      }
-    } finally { setUploadingImg(false); e.target.value = ""; }
-  };
-
-  const deleteExtraImage = async (imgId) => {
-    await fetch(`${API}/images/${imgId}`, { method: "DELETE" });
-    setExtraImageIds(prev => prev.filter(id => id !== imgId));
-  };
-
-  const handleSave = () => {
-    const isDropped = selectedStatus === 6;
-    const updatedGame = {
-      ...(yearInput !== origYear ? { ...game, released: yearInput ? `${yearInput}-01-01` : null } : game),
-      short_screenshots: isDropped ? [] : shortScreenshots,
-    };
-    onSave(gameId, {
-      game: updatedGame,
-      replayCount,
-      userRating,
-      tags,
-      platformsPlayed: platforms,
-      playtimeMinutes: playtime !== "" ? Math.round(parseFloat(playtime) * 60) : (entry.playtimeMinutes ?? null),
-      customImagesOnly,
-      imgPosX,
-      imgPosY,
-      imgFit,
-      customName: customName.trim() && customName.trim() !== game.name.trim() ? customName.trim() : null,
-      status: replayStatus ?? (pauseActive ? 8 : selectedStatus),
-      hasCover: hasCoverLocal,
-      extraImageIds,
-      coverWasPromoted,
-    });
-    onClose();
-  };
-
-  const modalMaxW = Math.round(600 * modalWidthMult);
-  // Content width = maxWidth minus left+right padding (28*2=56). Used for layout decisions.
-  const contentW = modalMaxW - 56;
-  // Show all rating buttons in a single row when wide enough
-  const singleRowRatings = contentW >= 680;
-
-  // Preview dimensions — 2× card size, capped to content width
-  const previewW = Math.min(cardW * 2, contentW);
-  const previewH = Math.round(previewW * cardH / cardW);
-
-  // Displayed metacritic — prefer post-sync value over stored
-  const metacriticDisplay = metacriticLocal ?? game.metacritic;
-
-  const ratingColor = (v) => ({ "10":"#FFD700","9.5":"#f0c020","9":"#e8b030","8.5":"#e0a040","8":"#d89050","7.5":"#cc8060","7":"#c07070","6.5":"#aa6080","6":"#9060a0","5.5":"#7050b0","5":"#6040c0","4":"#e05c7a","3":"#e05c7a","2":"#e05c7a","1":"#e05c7a","0":"#e05c7a" }[String(v)] || "#e6a63a");
-  const LBL = { fontSize: 10, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 };
-  const SEC = { fontSize: 20, color: "#eeeeff", fontWeight: 800, marginBottom: 14, letterSpacing: 0.3 };
-  const dashSvg = (rx) => `url("data:image/svg+xml,${encodeURIComponent(`<svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="none" rx="${rx}" ry="${rx}" stroke="rgba(255,255,255,0.4)" stroke-width="2.5" stroke-dasharray="11 6" stroke-linecap="round"/></svg>`)}")`;
-  const BOX = { backgroundImage: dashSvg(12), backgroundColor: "#09091a", borderRadius: 12, padding: "16px 18px", marginBottom: 14 };
-  const Pencil = () => (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ display: "inline", verticalAlign: "middle" }}>
-      <path d="M9.5 2L12 4.5L4.5 12H2V9.5L9.5 2Z" stroke="white" strokeWidth="1.5" strokeLinejoin="round"/>
-      <path d="M7.8 3.7L10.3 6.2" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  );
-  const DownRightArrow = () => (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0 }}>
-      <polyline points="5,2 5,12 15,12" stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-      <polyline points="12,9 15,12 12,15" stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-
-  return (
-    <div onClick={handleRequestClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div onClick={e => e.stopPropagation()}
-        style={{ background: "#0c0c1c", border: "1px solid #1e1e35", borderRadius: 16, width: "100%", maxWidth: modalMaxW, maxHeight: "90vh", overflowY: "auto", padding: 24, position: "relative" }}>
-
-        {/* Header bar */}
-        <button onClick={handleRequestClose} style={{ position: "absolute", top: 16, right: 16, background: "transparent", border: "none", color: "#444", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
-        <div style={{ fontSize: 40, fontWeight: 800, color: "#eeeeff", marginBottom: 14, paddingRight: 24, lineHeight: 1.1 }}>
-          {customName.trim() && customName.trim() !== game.name.trim() ? customName.trim() : game.name}
-        </div>
-
-        {/* Cover image — full width, outside sections, auto-rotates every 15 s */}
-        <div style={{ position: "relative", width: "100%", height: Math.round(contentW * cardH / cardW), borderRadius: 10, overflow: "hidden", background: "#080814", marginBottom: 14 }}>
-          {framingImages[topImgIdx]
-            ? <img src={framingImages[topImgIdx]} alt="" style={{ width: "100%", height: "100%", objectFit: imgFit, objectPosition: `${imgPosX}% ${imgPosY}%`, display: "block" }} />
-            : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>🎮</div>}
-          {framingImages.length > 1 && (
-            <div style={{ position: "absolute", bottom: 6, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 4 }}>
-              {framingImages.map((_, i) => (
-                <div key={i} onClick={() => setTopImgIdx(i)}
-                  style={{ width: i === topImgIdx ? 14 : 5, height: 5, borderRadius: 3, background: i === topImgIdx ? "#fff" : "rgba(255,255,255,0.35)", cursor: "pointer", transition: "all 0.3s", flexShrink: 0 }} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ── GAME METADATA section ─────────────────────── */}
-        <div style={BOX}>
-          <div style={SEC}>Game Metadata</div>
-
-          {/* Name */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={LBL}>Name</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <input value={customName} onChange={e => setCustomName(e.target.value)}
-                onFocus={() => { if (!customName) setCustomName(game.name); }}
-                placeholder={game.name}
-                style={{ flex: 1, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "5px 9px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
-              {customName && (
-                <button onClick={() => setCustomName("")}
-                  style={{ padding: "5px 10px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#888", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
-                  title="Reset to original name">×</button>
-              )}
-            </div>
-          </div>
-
-          {/* Year · Metacritic · Playtime · Replays */}
-          <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap" }}>
-            <div style={{ flexShrink: 0 }}>
-              <div style={LBL}>Year</div>
-              {origYear
-                ? <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 6, background: "#161622", border: "1px solid #2a2a40", color: "#aaa", fontSize: 13, fontWeight: 700 }}>{origYear}</span>
-                : <input type="number" min="1970" max="2030" value={yearInput} onChange={e => setYearInput(e.target.value)} placeholder="Year"
-                    style={{ width: 75, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "3px 8px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
-              }
-            </div>
-            <div style={{ flexShrink: 0 }}>
-              <div style={LBL}>Metacritic</div>
-              {metacriticDisplay > 0
-                ? <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 6,
-                    background: metacriticDisplay >= 75 ? "#1a3a1a" : metacriticDisplay >= 50 ? "#2a2a0a" : "#2a1010",
-                    border: `1px solid ${metacriticDisplay >= 75 ? "#4caf8066" : metacriticDisplay >= 50 ? "#e6a63a66" : "#ff606066"}`,
-                    color: metacriticDisplay >= 75 ? "#4caf80" : metacriticDisplay >= 50 ? "#e6a63a" : "#ff8080",
-                    fontSize: 13, fontWeight: 800 }}>{metacriticDisplay}</span>
-                : onSyncRawg
-                  ? <button onClick={handleSyncRawg} disabled={syncingRawg}
-                      style={{ padding: "3px 10px", borderRadius: 6, background: "transparent", border: "1px solid #2a2a40", color: syncingRawg ? "#444" : "#a78bfa", fontSize: 11, cursor: syncingRawg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                      {syncingRawg ? "…" : "Sync"}
-                    </button>
-                  : <span style={{ color: "#444", fontSize: 12 }}>—</span>
-              }
-            </div>
-            <div style={{ flexShrink: 0 }}>
-              <div style={LBL}>Playtime (h)</div>
-              <input type="number" min="0" step="0.1" value={playtime} onChange={e => setPlaytime(e.target.value)} placeholder="0.0"
-                style={{ width: 80, background: "#080814", border: "1px solid #2a2a50", borderRadius: 6, padding: "3px 8px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
-              {entry.playtimeMinutes != null && <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>~{formatPlaytime(entry.playtimeMinutes)}</div>}
-            </div>
-            <div style={{ flexShrink: 0 }}>
-              <div style={LBL}>Replays</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <button onClick={() => setReplayCount(c => Math.max(0, c - 1))}
-                  style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                <span style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", minWidth: 20, textAlign: "center" }}>{replayCount}</span>
-                <button onClick={() => setReplayCount(c => c + 1)}
-                  style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
-              </div>
-            </div>
-            {/* Rating — label on left, two heat-map rows: all colors visible, selected glows */}
-            <div style={{ flex: 1, minWidth: 0, display: "flex", gap: 8, alignItems: "center" }}>
-              <div style={{ ...LBL, marginBottom: 0, writingMode: "vertical-lr", transform: "rotate(180deg)", flexShrink: 0, letterSpacing: 2 }}>Rating</div>
-              <div style={{ flex: 1 }}>
-                {[[10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5], [6, 5.5, 5, 4, 3, 2, 1, 0]].map((row, ri) => (
-                  <div key={ri} style={{ display: "flex", gap: 3, marginBottom: ri === 0 ? 3 : 0 }}>
-                    {row.map(v => {
-                      const c = ratingColor(v);
-                      const sel = userRating === v;
-                      return (
-                        <button key={v} onClick={() => setUserRating(sel ? null : v)}
-                          style={{ flex: 1, padding: "3px 0", borderRadius: 4,
-                            border: `1px solid ${sel ? c + "dd" : c + "44"}`,
-                            background: sel ? c + "30" : c + "10",
-                            color: sel ? c : c + "77",
-                            fontSize: 9, cursor: "pointer",
-                            fontWeight: sel ? 800 : 500,
-                            fontFamily: "inherit", transition: "all 0.15s",
-                            boxShadow: sel ? `0 0 7px ${c}88` : "none" }}>
-                          {v}
-                        </button>
-                      );
-                    })}
-                    {ri === 1 && userRating !== null && (
-                      <button onClick={() => setUserRating(null)}
-                        style={{ flex: 1, padding: "3px 0", borderRadius: 4, border: "1px solid #2a2a40",
-                          background: "transparent", color: "#555", fontSize: 9, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Tags + Platforms */}
-          <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={LBL}>Tags</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: tags.length ? 6 : 0 }}>
-                {tags.map(t => (
-                  <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "#161628", border: "1px solid #2a2a50", borderRadius: 20, padding: "2px 8px", fontSize: 10, color: "#a0a0cc" }}>
-                    {t}
-                    <button onClick={() => removeTag(t)} style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 11, padding: 0, lineHeight: 1 }}>×</button>
-                  </span>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: 5 }}>
-                <input value={tagInput} onChange={e => setTagInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(tagInput); } }}
-                  placeholder="Add tag…"
-                  style={{ flex: 1, background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "3px 8px", color: "#e0e0f0", fontSize: 11, outline: "none", fontFamily: "inherit" }} />
-                <button onClick={() => addTag(tagInput)} style={{ padding: "3px 10px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#7c6ef7", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>Add</button>
-              </div>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={LBL}>Platforms</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
-                {(hasSelectedPlatforms
-                  ? (game.platforms || []).filter(gp => platforms.includes(gp.platform.slug))
-                  : (game.platforms || [])
-                ).map(gp => {
-                  const slug = gp.platform.slug;
-                  const pInfo = ALL_PLATFORMS.find(ap => ap.slug === slug) || { short: slug.slice(0, 4), name: gp.platform.name };
-                  const active = platforms.includes(slug);
-                  return (
-                    <span key={slug} onClick={() => togglePlatform(slug)} title={pInfo.name}
-                      style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
-                        background: active ? platformHighlightColor + "25" : "#0e0e1e",
-                        border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
-                        color: active ? platformHighlightColor : "#444", cursor: "pointer", userSelect: "none" }}>
-                      {pInfo.short}
-                    </span>
-                  );
-                })}
-                {extraPlatformSlugs.map(slug => {
-                  const pInfo = ALL_PLATFORMS.find(ap => ap.slug === slug) || { short: slug.slice(0, 4), name: slug };
-                  const active = platforms.includes(slug);
-                  return (
-                    <span key={slug} style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
-                      background: active ? platformHighlightColor + "25" : "#0e0e1e",
-                      border: `1px solid ${active ? platformHighlightColor + "99" : "#1e1e30"}`,
-                      color: active ? platformHighlightColor : "#444", userSelect: "none" }}>
-                      <span onClick={() => togglePlatform(slug)} style={{ cursor: "pointer" }} title={pInfo.name}>{pInfo.short}</span>
-                      <button onClick={() => removeExtraPlatform(slug)} style={{ background: "none", border: "none", color: "#666", cursor: "pointer", fontSize: 10, padding: 0, lineHeight: 1 }}>×</button>
-                    </span>
-                  );
-                })}
-              </div>
-              {addablePlatforms.length > 0 && (
-                <div style={{ display: "flex", gap: 5 }}>
-                  <select value={selectedAddPlatform} onChange={e => setSelectedAddPlatform(e.target.value)}
-                    style={{ flex: 1, background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "3px 6px", color: "#e0e0f0", fontSize: 11, outline: "none", fontFamily: "inherit" }}>
-                    <option value="">Add platform…</option>
-                    {addablePlatforms.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
-                  </select>
-                  <button onClick={addExtraPlatform} disabled={!selectedAddPlatform}
-                    style={{ padding: "3px 10px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: selectedAddPlatform ? "#7c6ef7" : "#333", fontSize: 11, cursor: selectedAddPlatform ? "pointer" : "not-allowed", fontFamily: "inherit" }}>Add</button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ── STATUS section ────────────────────────────── */}
-        <div style={BOX}>
-          <div style={SEC}>Status</div>
-
-          {/* Status buttons — Replaying (4), Plan to Replay (5), Paused (8) excluded; sub-status accessible via bubbles */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: (selectedStatus === 1 && userRating !== null) || selectedStatus === 0 ? 10 : 0 }}>
-            {STATUSES
-              .filter(s => pauseActive ? [0, 1, 6].includes(s.id) : ![4, 5, 8].includes(s.id))
-              .map(s => (
-              <button key={s.id} onClick={() => handleSetStatus(s.id)}
-                style={{ padding: "4px 10px", borderRadius: 6,
-                  border: `1px solid ${selectedStatus === s.id && !pauseActive ? s.color + "99" : "#2a2a40"}`,
-                  background: selectedStatus === s.id && !pauseActive ? s.bg : "transparent",
-                  color: selectedStatus === s.id && !pauseActive ? s.color : "#555",
-                  fontSize: 11, cursor: "pointer", fontWeight: selectedStatus === s.id && !pauseActive ? 700 : 400,
-                  fontFamily: "inherit", transition: "all 0.1s" }}>
-                {s.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Paused bubble — sub-status of Playing */}
-          {selectedStatus === 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 0 }}>
-              <DownRightArrow />
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px",
-                backgroundImage: dashSvg(8), backgroundColor: "#0a0a18", borderRadius: 8 }}>
-                {(() => {
-                  const s = STATUSES.find(x => x.id === 8);
-                  return (
-                    <button
-                      onClick={() => setPauseActive(v => !v)}
-                      style={{ padding: "3px 10px", borderRadius: 6,
-                        border: `1px solid ${pauseActive ? s.color + "99" : "#2a2a40"}`,
-                        background: pauseActive ? s.bg : "transparent",
-                        color: pauseActive ? s.color : "#555",
-                        fontSize: 10, cursor: "pointer", fontWeight: pauseActive ? 700 : 400,
-                        fontFamily: "inherit", transition: "all 0.1s" }}>
-                      {s.label}
-                    </button>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
-
-          {/* Arrow + replay bubble — appear under the Played button */}
-          {selectedStatus === 1 && userRating !== null && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 72 }}>
-              <DownRightArrow />
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px",
-                backgroundImage: dashSvg(8), backgroundColor: "#0a0a18", borderRadius: 8 }}>
-                {[STATUSES[4], STATUSES[5]].map(s => {
-                  const isActive = replayStatus === s.id;
-                  return (
-                    <button key={s.id}
-                      onClick={() => {
-                        if (isActive) {
-                          setReplayStatus(null);
-                          if (s.id === 4 && isPlayedWithRating && entry?.status === 4) setReplayCount(c => c + 1);
-                        } else { setReplayStatus(s.id); }
-                      }}
-                      title={s.id === 4 && isActive && isPlayedWithRating && entry?.status === 4 ? "Removing will add 1 replay" : undefined}
-                      style={{ padding: "3px 10px", borderRadius: 6,
-                        border: `1px solid ${isActive ? s.color + "99" : "#2a2a40"}`,
-                        background: isActive ? s.bg : "transparent",
-                        color: isActive ? s.color : "#555",
-                        fontSize: 10, cursor: "pointer", fontWeight: isActive ? 700 : 400, fontFamily: "inherit", transition: "all 0.1s" }}>
-                      {s.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-        </div>
-
-        {/* ── IMAGES section ────────────────────────────── */}
-        <div style={BOX}>
-          <div style={SEC}>Images</div>
-
-          {/* Image Framing */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: framingOpen ? 14 : 0 }}>
-              <div style={{ ...LBL, marginBottom: 0 }}>Image Framing</div>
-              <button onClick={() => setFramingOpen(v => !v)}
-                style={{ display: "flex", alignItems: "center", gap: 4, background: "transparent", border: "none", cursor: "pointer", color: "#fff", padding: "2px 4px" }}>
-                <Pencil />
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#fff" }}>Edit</span>
-              </button>
-            </div>
-            {framingOpen && (
-              <div>
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-                  <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid #1e1e35" }}>
-                    {["cover", "contain"].map(mode => (
-                      <button key={mode} onClick={() => setImgFit(mode)}
-                        style={{ padding: "3px 10px", fontSize: 10, fontWeight: 700, fontFamily: "inherit", border: "none", cursor: "pointer", background: imgFit === mode ? "#7c6ef7" : "transparent", color: imgFit === mode ? "#fff" : "#555", transition: "background 0.15s, color 0.15s" }}>
-                        {mode === "cover" ? "Fill" : "Fit"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {[
-                    { label: "H", value: imgPosX, set: setImgPosX, color: "#7c6ef7" },
-                    { label: "V", value: imgPosY, set: setImgPosY, color: "#38bdf8" },
-                  ].map(({ label, value, set, color }) => (
-                    <div key={label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 10, color: "#555", fontWeight: 700, width: 10, flexShrink: 0 }}>{label}</span>
-                      <input type="range" min={0} max={100} step={1} value={value}
-                        onChange={e => set(parseFloat(e.target.value))}
-                        style={{ flex: 1, accentColor: color, cursor: "pointer", height: 4 }} />
-                      <span style={{ fontSize: 10, color, fontWeight: 700, width: 28, textAlign: "right", flexShrink: 0 }}>{value}%</span>
-                    </div>
-                  ))}
-                  <button onClick={() => { setImgPosX(50); setImgPosY(50); }}
-                    style={{ fontSize: 10, color: "#444", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "2px 8px", cursor: "pointer", fontFamily: "inherit", alignSelf: "flex-start", marginTop: 2 }}>
-                    Reset
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Gallery */}
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: imagesOpen ? 16 : 0 }}>
-              <div style={{ ...LBL, marginBottom: 0 }}>Gallery</div>
-              <button onClick={() => setImagesOpen(v => !v)}
-                style={{ display: "flex", alignItems: "center", gap: 4, background: "transparent", border: "none", cursor: "pointer", color: "#fff", padding: "2px 4px" }}>
-                <Pencil />
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#fff" }}>Edit</span>
-              </button>
-            </div>
-            {imagesOpen && (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                  <span style={{ fontSize: 12, color: "#888", flex: 1 }}>Custom images only (skip RAWG cover)</span>
-                  <button onClick={() => setCustomImagesOnly(v => !v)}
-                    style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: customImagesOnly ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-                    <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: customImagesOnly ? 19 : 3, transition: "left 0.2s" }} />
-                  </button>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                  {(() => {
-                    const src = hasCoverLocal ? `${coverSrc(gameId)}?v=cover-${previewKey}` : rawgImgSrc(game.background_image);
-                    if (!src) return null;
-                    return (
-                      <div onDragOver={e => { e.preventDefault(); setCoverDropOver(true); }} onDragLeave={() => setCoverDropOver(false)}
-                        onDrop={e => { e.preventDefault(); setCoverDropOver(false); if (dragIdxRef.current !== null) promoteImageToCover(dragIdxRef.current); }}
-                        style={{ position: "relative", borderRadius: 6, outline: coverDropOver ? "2px dashed #7c6ef7" : "none", outlineOffset: 2 }}>
-                        <img src={src} alt="cover" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: `1px solid ${coverDropOver ? "#7c6ef7" : "#7c6ef766"}`, display: "block" }} />
-                        <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#7c6ef7", fontWeight: 700 }}>cover</div>
-                        {promotingCover && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.65)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#fff" }}>…</div>}
-                        {coverDropOver && !promotingCover && <div style={{ position: "absolute", inset: 0, background: "rgba(124,110,247,0.15)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, pointerEvents: "none" }}>⇥</div>}
-                      </div>
-                    );
-                  })()}
-                  {extraImageIds.map((id, idx) => (
-                    <div key={id} draggable onDragStart={() => handleDragStart(idx)} onDragOver={e => handleDragOver(e, idx)} onDrop={e => handleDrop(e, idx)} onDragEnd={handleDragEnd}
-                      style={{ position: "relative", cursor: "grab", outline: dragOverIdx === idx ? "2px solid #7c6ef7" : "none", borderRadius: 6, opacity: dragIdxRef.current === idx ? 0.4 : 1 }}>
-                      <img src={`${API}/images/${id}`} alt="" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #2a2a40", display: "block" }} />
-                      <button onClick={() => deleteExtraImage(id)} style={{ position: "absolute", top: -6, right: -6, width: 16, height: 16, borderRadius: "50%", background: "#2a0a0a", border: "1px solid #ff606066", color: "#ff6060", cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>×</button>
-                      <button onClick={() => promoteImageToCover(idx)} disabled={promotingCover} title="Set as cover" style={{ position: "absolute", top: -6, left: -6, width: 16, height: 16, borderRadius: "50%", background: "#0a1a2a", border: "1px solid #7c6ef766", color: "#7c6ef7", cursor: promotingCover ? "not-allowed" : "pointer", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>⭳</button>
-                      <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#555" }}>#{idx + 1}</div>
-                    </div>
-                  ))}
-                  {shortScreenshots.map((ss, idx) => (
-                    <div key={ss.id ?? idx} style={{ position: "relative" }}>
-                      <img src={rawgImgSrc(ss.image)} alt="" style={{ width: 60, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid #1a1a30", display: "block", opacity: 0.7 }} onError={e => e.target.style.display = "none"} />
-                      <button onClick={() => setShortScreenshots(prev => prev.filter((_, i) => i !== idx))} style={{ position: "absolute", top: -6, right: -6, width: 16, height: 16, borderRadius: "50%", background: "#2a0a0a", border: "1px solid #ff606066", color: "#ff6060", cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>×</button>
-                      <div style={{ position: "absolute", bottom: 2, left: 0, right: 0, textAlign: "center", fontSize: 9, color: "#555" }}>rawg</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <input ref={imageUploadRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleImageUpload} />
-                  <button onClick={() => imageUploadRef.current?.click()} disabled={uploadingImg}
-                    style={{ padding: "5px 14px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: uploadingImg ? "#333" : "#7c6ef7", fontSize: 12, cursor: uploadingImg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                    {uploadingImg ? "Uploading…" : "+ Upload Image(s)"}
-                  </button>
-                  {onSyncSteam && (
-                    <button onClick={handleSyncSteam} disabled={syncingSteam}
-                      style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${steamSynced ? "#4caf80" : steamError ? "#ff606066" : "#3a4a5a"}`, borderRadius: 6, color: steamSynced ? "#4caf80" : steamError ? "#ff8080" : syncingSteam ? "#333" : "#88aacc", fontSize: 12, cursor: syncingSteam ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                      {steamSynced ? "Synced!" : syncingSteam ? "Syncing…" : "Sync from Steam"}
-                    </button>
-                  )}
-                  {steamError && <div style={{ fontSize: 11, color: "#ff8080", marginTop: 4, width: "100%" }}>{steamError}</div>}
-                  {onSyncRawg && (
-                    <button onClick={handleSyncRawg} disabled={syncingRawg}
-                      style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${rawgSynced ? "#4caf80" : "#a78bfa44"}`, borderRadius: 6, color: rawgSynced ? "#4caf80" : syncingRawg ? "#333" : "#a78bfa", fontSize: 12, cursor: syncingRawg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                      {rawgSynced ? "Synced!" : syncingRawg ? "Syncing…" : "Sync from RAWG"}
-                    </button>
-                  )}
-                  {onSyncPsn && (
-                    <button onClick={handleSyncPsn} disabled={syncingPsn}
-                      style={{ padding: "5px 14px", background: "transparent", border: `1px solid ${psnSynced ? "#4caf80" : psnError ? "#ff606066" : "#003f8844"}`, borderRadius: 6, color: psnSynced ? "#4caf80" : psnError ? "#ff8080" : syncingPsn ? "#333" : "#006FCD", fontSize: 12, cursor: syncingPsn ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                      {psnSynced ? "Synced!" : syncingPsn ? "Syncing…" : "Sync from PSN"}
-                    </button>
-                  )}
-                  {psnError && <div style={{ fontSize: 11, color: "#ff8080", marginTop: 4, width: "100%" }}>{psnError}</div>}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, paddingTop: 8 }}>
-          {onDelete && (
-            confirmDelete
-              ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 12, color: "#e05a5a" }}>Remove from list?</span>
-                  <button onClick={() => { onDelete(gameId); onClose(); }} style={{ padding: "5px 14px", background: "#e05a5a", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Yes, delete</button>
-                  <button onClick={() => setConfirmDelete(false)} style={{ padding: "5px 12px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 6, color: "#666", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
-                </div>
-              : <button onClick={() => setConfirmDelete(true)} style={{ padding: "5px 14px", background: "transparent", border: "1px solid #e05a5a", borderRadius: 6, color: "#e05a5a", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Delete entry</button>
-          )}
-          <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-            <button onClick={handleRequestClose} style={{ padding: "7px 16px", background: "transparent", border: "1px solid #2a2a40", borderRadius: 8, color: "#666", cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>Cancel</button>
-            <button onClick={handleSave} disabled={uploadingImg} style={{ padding: "7px 20px", background: uploadingImg ? "#4a4a6a" : "#7c6ef7", border: "none", borderRadius: 8, color: uploadingImg ? "#888" : "#fff", fontWeight: 700, fontSize: 13, cursor: uploadingImg ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-              {uploadingImg ? "Uploading…" : "Save"}
-            </button>
-          </div>
-        </div>
-
-        {confirmClose && (
-          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.72)", borderRadius: 16, zIndex: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: "#0e0e20", border: "1px solid #2a2a45", borderRadius: 14, padding: "28px 32px", maxWidth: 340, width: "100%", textAlign: "center" }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: "#eeeeff", marginBottom: 8 }}>Unsaved changes</div>
-              <div style={{ fontSize: 12, color: "#666", marginBottom: 24, lineHeight: 1.6 }}>You have unsaved changes. Save them before closing or discard them.</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <button onClick={handleSave} style={{ padding: "9px 0", background: "#7c6ef7", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Save & Close</button>
-                <button onClick={onClose} style={{ padding: "9px 0", background: "transparent", border: "1px solid #e05c7a55", borderRadius: 8, color: "#e05c7a", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Discard changes</button>
-                <button onClick={() => setConfirmClose(false)} style={{ padding: "9px 0", background: "transparent", border: "1px solid #2a2a40", borderRadius: 8, color: "#666", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Keep editing</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-      </div>
-    </div>
-  );
-}
-
-/**
- * PSN library import panel.
- * Shows owned PSN games not yet in GamiList.
- * Status pre-filled: PS5 playtime > 0 → Played, else Backlog.
- */
-function PsnLibrarySection({ library, myList, onImport, onSyncPlaytime, onRefresh }) {
-  const [filter, setFilter]         = useState("new");
-  const [selections, setSelections] = useState({});
-  const [importing, setImporting]   = useState(false);
-  const [syncing, setSyncing]       = useState({});
-
-  useEffect(() => {
-    if (!library) return;
-    const init = {};
-    for (const g of library.games) {
-      if (g.gamilist_id) continue;
-      init[g.title_id] = { checked: true, status: g.play_duration_minutes > 0 ? 1 : 3 };
-    }
-    setSelections(init);
-  }, [library]);
-
-  const handleSyncPlaytime = async (g) => {
-    setSyncing(p => ({ ...p, [g.title_id]: true }));
-    await onSyncPlaytime(g.game_id, g.play_duration_minutes);
-    setSyncing(p => ({ ...p, [g.title_id]: false }));
-  };
-
-  if (!library) return null;
-
-  const displayed = filter === "new"
-    ? library.games.filter(g => !g.gamilist_id)
-    : library.games;
-
-  const checkedCount = Object.values(selections).filter(s => s.checked).length;
-
-  const handleImport = async () => {
-    setImporting(true);
-    const toImport = library.games
-      .filter(g => selections[g.title_id]?.checked)
-      .map(g => ({ ...g, ...selections[g.title_id] }));
-    await onImport(toImport);
-    setImporting(false);
-    onRefresh();
-  };
-
-  const setAll = (key, val) => {
-    setSelections(prev => {
-      const next = { ...prev };
-      for (const k of Object.keys(next)) next[k] = { ...next[k], [key]: val };
-      return next;
-    });
-  };
-
-  const formatHours = (mins) => {
-    if (!mins) return "—";
-    const h = Math.round(mins / 60);
-    return h < 1 ? `${mins}m` : `${h}h`;
-  };
-
-  return (
-    <div style={{ flex: 1, minWidth: 340, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>PSN Library</div>
-      <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
-        {library.total} games total · {library.games.filter(g => g.gamilist_id).length} already in GamiList · {library.games.filter(g => !g.gamilist_id).length} new
-      </div>
-
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {["new", "all"].map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            style={{ padding: "4px 12px", borderRadius: 6, border: "none", background: filter === f ? "#003087" + "55" : "transparent", color: filter === f ? "#0070cc" : "#555", cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>
-            {f === "new" ? "New only" : "All"}
-          </button>
-        ))}
-      </div>
-
-      {filter === "new" && displayed.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "8px 12px", background: "#080814", borderRadius: 8, border: "1px solid #1a1a2e" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#888", cursor: "pointer" }}>
-            <input type="checkbox" checked={checkedCount === displayed.length} onChange={e => setAll("checked", e.target.checked)} />
-            All
-          </label>
-          <span style={{ fontSize: 12, color: "#555" }}>{checkedCount} selected</span>
-          <select onChange={e => setAll("status", parseInt(e.target.value))} defaultValue=""
-            style={{ background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "4px 7px", color: "#e0e0f0", fontSize: 12, fontFamily: "inherit", outline: "none" }}>
-            <option value="" disabled>Set status…</option>
-            {STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
-          <button onClick={handleImport} disabled={importing || checkedCount === 0}
-            style={{ marginLeft: "auto", padding: "5px 16px", background: checkedCount > 0 ? "#0070cc" : "#1a1a2e", border: "none", borderRadius: 7, color: checkedCount > 0 ? "#fff" : "#444", fontWeight: 700, fontSize: 12, cursor: checkedCount > 0 ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
-            {importing ? "Importing…" : `Import ${checkedCount}`}
-          </button>
-        </div>
-      )}
-
-      <div style={{ maxHeight: 380, overflowY: "auto", border: "1px solid #1a1a2e", borderRadius: 8 }}>
-        {displayed.length === 0
-          ? <div style={{ padding: 32, textAlign: "center", color: "#444", fontSize: 13 }}>All PSN games are already in your GamiList!</div>
-          : displayed.map(g => {
-              const inList = !!g.gamilist_id;
-              const sel    = selections[g.title_id] || {};
-              return (
-                <div key={g.title_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "1px solid #0e0e1e", background: inList ? "#0a0c12" : "transparent" }}>
-                  {!inList
-                    ? <input type="checkbox" checked={sel.checked || false} onChange={e => setSelections(p => ({ ...p, [g.title_id]: { ...p[g.title_id], checked: e.target.checked } }))} />
-                    : <span style={{ fontSize: 11, color: "#0070cc", width: 14, textAlign: "center" }}>✓</span>}
-                  {g.image_url && <img src={g.image_url} alt="" style={{ width: 24, height: 24, borderRadius: 3, objectFit: "cover", flexShrink: 0 }} onError={e => e.target.style.display = "none"} />}
-                  <span style={{ flex: 1, fontSize: 13, color: inList ? "#0070cc99" : "#e0e0f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span>
-                  <span style={{ fontSize: 10, color: "#333", whiteSpace: "nowrap" }}>{g.platform.replace("ps5_native_game", "PS5").replace("ps4_game", "PS4").replace(/_/g, " ")}</span>
-                  <span style={{ fontSize: 11, color: "#444", whiteSpace: "nowrap", minWidth: 36, textAlign: "right" }}>{formatHours(g.play_duration_minutes)}</span>
-                  {!inList && (
-                    <span style={{ fontSize: 11, fontWeight: 600, color: STATUSES[sel.status ?? 3]?.color || "#555", whiteSpace: "nowrap", minWidth: 70, textAlign: "right" }}>
-                      {STATUSES[sel.status ?? 3]?.label ?? "—"}
-                    </span>
-                  )}
-                  {inList && g.play_duration_minutes > 0 && (
-                    <button onClick={() => handleSyncPlaytime(g)} disabled={syncing[g.title_id]}
-                      style={{ fontSize: 10, padding: "2px 8px", background: "transparent", border: "1px solid #1a2a3a", borderRadius: 4, color: syncing[g.title_id] ? "#333" : "#0070cc88", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>
-                      {syncing[g.title_id] ? "…" : "Sync playtime"}
-                    </button>
-                  )}
-                </div>
-              );
-            })
-        }
-      </div>
-    </div>
-  );
-}
-
-/**
- * Steam library import panel.
- * Shows owned Steam games not yet in GamiList.
- * Status is pre-filled by playtime: >0 → Played, 0 → Backlog.
- * Ratings are left blank — user sets them manually after import.
- */
-function SteamLibrarySection({ library, myList, onImport, onSyncPlaytime, onRefresh }) {
-  const [filter, setFilter]         = useState("new");  // "new" | "all"
-  const [selections, setSelections] = useState({});
-  const [importing, setImporting]   = useState(false);
-  const [syncing, setSyncing]       = useState({});  // appid → true while syncing
-
-  useEffect(() => {
-    if (!library) return;
-    const init = {};
-    for (const g of library.games) {
-      if (g.gamilist_id) continue;
-      init[g.appid] = { checked: true, status: g.playtime_forever > 0 ? 1 : 3 };
-    }
-    setSelections(init);
-  }, [library]);
-
-  const handleSyncPlaytime = async (g) => {
-    setSyncing(p => ({ ...p, [g.appid]: true }));
-    await onSyncPlaytime(g.appid, g.steam_playtime_minutes);
-    setSyncing(p => ({ ...p, [g.appid]: false }));
-  };
-
-  if (!library) return null;
-
-  const displayed = filter === "new"
-    ? library.games.filter(g => !g.gamilist_id)
-    : library.games;
-
-  const checkedCount = Object.values(selections).filter(s => s.checked).length;
-
-  const handleImport = async () => {
-    setImporting(true);
-    const toImport = library.games
-      .filter(g => selections[g.appid]?.checked)
-      .map(g => ({ ...g, ...selections[g.appid] }));
-    await onImport(toImport);
-    setImporting(false);
-    onRefresh();
-  };
-
-  const setAll = (key, val) => {
-    setSelections(prev => {
-      const next = { ...prev };
-      for (const k of Object.keys(next)) next[k] = { ...next[k], [key]: val };
-      return next;
-    });
-  };
-
-  const formatHours = (mins) => {
-    if (!mins) return "0h";
-    const h = Math.round(mins / 60);
-    return h < 1 ? `${mins}m` : `${h}h`;
-  };
-
-  return (
-    <div style={{ flex: 1, minWidth: 340, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Steam Library</div>
-      <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
-        {library.total} games total · {library.games.filter(g => g.gamilist_id).length} already in GamiList · {library.games.filter(g => !g.gamilist_id).length} new
-      </div>
-
-      {/* Filter toggle */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {["new", "all"].map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            style={{ padding: "4px 12px", borderRadius: 6, border: "none", background: filter === f ? "#7c6ef733" : "transparent", color: filter === f ? "#7c6ef7" : "#555", cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>
-            {f === "new" ? "New only" : "All"}
-          </button>
-        ))}
-      </div>
-
-      {/* Import toolbar */}
-      {filter === "new" && displayed.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "8px 12px", background: "#080814", borderRadius: 8, border: "1px solid #1a1a2e" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#888", cursor: "pointer" }}>
-            <input type="checkbox" checked={checkedCount === displayed.length} onChange={e => setAll("checked", e.target.checked)} />
-            All
-          </label>
-          <span style={{ fontSize: 12, color: "#555" }}>{checkedCount} selected</span>
-          <select onChange={e => setAll("status", parseInt(e.target.value))} defaultValue=""
-            style={{ background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "4px 7px", color: "#e0e0f0", fontSize: 12, fontFamily: "inherit", outline: "none" }}>
-            <option value="" disabled>Set status…</option>
-            {STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
-          <button onClick={handleImport} disabled={importing || checkedCount === 0}
-            style={{ marginLeft: "auto", padding: "5px 16px", background: checkedCount > 0 ? "#7c6ef7" : "#1a1a2e", border: "none", borderRadius: 7, color: checkedCount > 0 ? "#fff" : "#444", fontWeight: 700, fontSize: 12, cursor: checkedCount > 0 ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
-            {importing ? "Importing…" : `Import ${checkedCount}`}
-          </button>
-        </div>
-      )}
-
-      {/* Game list */}
-      <div style={{ maxHeight: 380, overflowY: "auto", border: "1px solid #1a1a2e", borderRadius: 8 }}>
-        {displayed.length === 0
-          ? <div style={{ padding: 32, textAlign: "center", color: "#444", fontSize: 13 }}>All Steam games are already in your GamiList!</div>
-          : displayed.map(g => {
-              const inList = !!g.gamilist_id;
-              const sel    = selections[g.appid] || {};
-              const iconUrl = g.img_icon_url
-                ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg`
-                : null;
-              return (
-                <div key={g.appid} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "1px solid #0e0e1e", background: inList ? "#0a120a" : "transparent" }}>
-                  {!inList
-                    ? <input type="checkbox" checked={sel.checked || false} onChange={e => setSelections(p => ({ ...p, [g.appid]: { ...p[g.appid], checked: e.target.checked } }))} />
-                    : <span style={{ fontSize: 11, color: "#4caf80", width: 14, textAlign: "center" }}>✓</span>}
-                  {iconUrl && <img src={iconUrl} alt="" style={{ width: 24, height: 24, borderRadius: 3, objectFit: "cover", flexShrink: 0 }} onError={e => e.target.style.display = "none"} />}
-                  <span style={{ flex: 1, fontSize: 13, color: inList ? "#4caf8099" : "#e0e0f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span>
-                  <span style={{ fontSize: 11, color: "#444", whiteSpace: "nowrap", minWidth: 36, textAlign: "right" }}>{formatHours(g.playtime_forever)}</span>
-                  {!inList && (
-                    <span style={{ fontSize: 11, fontWeight: 600, color: STATUSES[sel.status ?? 3]?.color || "#555", whiteSpace: "nowrap", minWidth: 70, textAlign: "right" }}>
-                      {STATUSES[sel.status ?? 3]?.label ?? "—"}
-                    </span>
-                  )}
-                  {inList && g.steam_playtime_minutes > 0 && (
-                    <button onClick={() => handleSyncPlaytime(g)} disabled={syncing[g.appid]}
-                      style={{ fontSize: 10, padding: "2px 8px", background: "transparent", border: "1px solid #2a3a2a", borderRadius: 4, color: syncing[g.appid] ? "#333" : "#4caf8088", cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>
-                      {syncing[g.appid] ? "…" : "Sync playtime"}
-                    </button>
-                  )}
-                </div>
-              );
-            })
-        }
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Root App component
-// ---------------------------------------------------------------------------
+// ── Domain constants ────────────────────────────────────────────────────────
+import {
+  STATUSES,
+  STATUSES_DISPLAY,
+  ALL_PLATFORMS,
+  PLATFORM_SHORT,
+  RAWG_PLATFORM_IDS,
+} from "./constants";
+
+// ── Pure utilities ──────────────────────────────────────────────────────────
+import { normName, formatPlaytime, rawgImgSrc, coverSrc } from "./utils";
+
+// ── API layer ───────────────────────────────────────────────────────────────
+import { API, apiFetch } from "./api";
+
+// ── Reusable UI primitives ──────────────────────────────────────────────────
+import { StarRating }      from "./components/ui/StarRating";
+import { FitTitle }        from "./components/ui/FitTitle";
+import { LockableSection } from "./components/ui/LockableSection";
+import { CollapseSection } from "./components/ui/CollapseSection";
+import { RatingInput }     from "./components/ui/RatingInput";
+import { Spinner }         from "./components/ui/Spinner";
+import { Toast }           from "./components/ui/Toast";
+import { GlowRow }         from "./components/ui/GlowRow";
+import { ToggleSwitch }    from "./components/ui/ToggleSwitch";
+import { SliderRow }       from "./components/ui/SliderRow";
+
+// ── Feature components ──────────────────────────────────────────────────────
+import { GameCard }             from "./components/game/GameCard";
+import { Grid, FavGrid }        from "./components/game/Grid";
+import { ActivityGraph,
+         ActivityGraphPreview } from "./components/activity/ActivityGraph";
+import { MetadataModal }        from "./components/modals/MetadataModal";
+import { PsnLibrarySection }    from "./components/library/PsnLibrarySection";
+import { SteamLibrarySection }  from "./components/library/SteamLibrarySection";
 
 export default function App() {
   const [tab, setTab]                     = useState("mylist");
@@ -1719,6 +67,7 @@ export default function App() {
     setLockedSections(prev => {
       const next = { ...prev, [id]: locked };
       localStorage.setItem("gamilist-locks", JSON.stringify(next));
+      apiFetch("/settings/locked", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) }).catch(() => {});
       return next;
     });
   };
@@ -1769,6 +118,12 @@ export default function App() {
   const [statusColors, setStatusColors]                   = useState({});
   const [activityColors, setActivityColors]               = useState({});
   const [ratingColors, setRatingColors]                   = useState({}); // key: "10"|"9.5"|...|"lt5" → color
+  const [themePageBg,       setThemePageBg]       = useState("#080814");
+  const [themeSurface,      setThemeSurface]      = useState("#0c0c1c");
+  const [themeBorder,       setThemeBorder]       = useState("#1a1a2e");
+  const [sectionDotColor,   setSectionDotColor]   = useState("#ffffff");
+  const [sectionDotOpacity, setSectionDotOpacity] = useState(1.0);
+  const [cardFillColor,     setCardFillColor]     = useState("#0c0c1c");
   const [selectedRatingColorKey, setSelectedRatingColorKey] = useState("10");
   const [showMorePlatformColors, setShowMorePlatformColors] = useState(false);
   const [syncingAllPlaytime, setSyncingAllPlaytime]       = useState(false);
@@ -1795,6 +150,8 @@ export default function App() {
   const [platItemSize,   setPlatItemSize]   = useState(18);
   const [actEditsSize,   setActEditsSize]   = useState(10);
   const [actEditsWeight, setActEditsWeight] = useState(800);
+  const [actThreshMid,   setActThreshMid]   = useState(2);
+  const [actThreshHigh,  setActThreshHigh]  = useState(3);
   const [saving, setSaving]               = useState(false);
   const [toast, setToast]                 = useState(null);
   const [statusFilter, setStatusFilter]   = useState(null);
@@ -1814,6 +171,9 @@ export default function App() {
     steamApiKey: "", steamId: "", psnNpsso: "", platformHighlightColor: "#7c6ef7", platformColors: { pc: "#ffffff" }, statusColors: {}, activityColors: {}, ratingColors: {},
     fav1Mult: 2.0, fav2Mult: 2.0, fav3Mult: 2.0,
     listStatsSize: 16, favStatsSize: 16, listNameOffset: 6, favNameOffset: 6, autoFitTitle: false,
+    actThreshMid: 2, actThreshHigh: 3,
+    sectionDotColor: "#ffffff", sectionDotOpacity: 1.0,
+    cardFillColor: "#0c0c1c",
   });
 
   const [query, setQuery]               = useState("");
@@ -1907,14 +267,25 @@ export default function App() {
       setTbCountSize(s.tbCountSize ?? 17); setTbCountWeight(s.tbCountWeight ?? 800);
       setPlatBtnSize(s.platBtnSize ?? 18); setPlatItemSize(s.platItemSize ?? 18);
       setActEditsSize(s.actEditsSize ?? 10); setActEditsWeight(s.actEditsWeight ?? 800);
+      setActThreshMid(s.actThreshMid ?? 2); setActThreshHigh(s.actThreshHigh ?? 3);
       setSteamApiKey(loaded.steamApiKey); setSteamId(loaded.steamId); setPsnNpsso(loaded.psnNpsso);
       setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
       setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
       setStatusColors(s.statusColors || {});
       setActivityColors(s.activityColors || {});
       setRatingColors(s.ratingColors || {});
+      setThemePageBg(s.themePageBg ?? "#080814");
+      setThemeSurface(s.themeSurface ?? "#0c0c1c");
+      setThemeBorder(s.themeBorder ?? "#1a1a2e");
+      setSectionDotColor(s.sectionDotColor ?? "#ffffff");
+      setSectionDotOpacity(s.sectionDotOpacity ?? 1.0);
+      setCardFillColor(s.cardFillColor ?? "#0c0c1c");
       setRawgCallsCount(s.rawgCallsCount || 0);
       setRawgCallsMonth(s.rawgCallsMonth || "");
+      if (s.lockedSections && Object.keys(s.lockedSections).length > 0) {
+        setLockedSections(s.lockedSections);
+        localStorage.setItem("gamilist-locks", JSON.stringify(s.lockedSections));
+      }
       dbSettings.current = {
         ...loaded,
         platformHighlightColor: s.platformHighlightColor ?? "#7c6ef7",
@@ -1940,6 +311,14 @@ export default function App() {
         platItemSize:    s.platItemSize    ?? 18,
         actEditsSize:    s.actEditsSize    ?? 10,
         actEditsWeight:  s.actEditsWeight  ?? 800,
+        themePageBg:     s.themePageBg     ?? "#080814",
+        themeSurface:    s.themeSurface    ?? "#0c0c1c",
+        themeBorder:     s.themeBorder     ?? "#1a1a2e",
+        actThreshMid:    s.actThreshMid    ?? 2,
+        actThreshHigh:   s.actThreshHigh   ?? 3,
+        sectionDotColor:   s.sectionDotColor   ?? "#ffffff",
+        sectionDotOpacity: s.sectionDotOpacity ?? 1.0,
+        cardFillColor:     s.cardFillColor     ?? "#0c0c1c",
       };
     }).catch(() => {});
 
@@ -1985,12 +364,19 @@ export default function App() {
     setTbCountSize(s.tbCountSize ?? 17); setTbCountWeight(s.tbCountWeight ?? 800);
     setPlatBtnSize(s.platBtnSize ?? 18); setPlatItemSize(s.platItemSize ?? 18);
     setActEditsSize(s.actEditsSize ?? 10); setActEditsWeight(s.actEditsWeight ?? 800);
+    setActThreshMid(s.actThreshMid ?? 2); setActThreshHigh(s.actThreshHigh ?? 3);
     setSteamApiKey(s.steamApiKey); setSteamId(s.steamId); setPsnNpsso(s.psnNpsso ?? "");
     setPlatformDefaultColor(s.platformHighlightColor ?? "#7c6ef7");
     setPlatformColors({ pc: "#ffffff", ...(s.platformColors || {}) });
     setStatusColors(s.statusColors || {});
     setActivityColors(s.activityColors || {});
     setRatingColors(s.ratingColors || {});
+    setThemePageBg(s.themePageBg ?? "#080814");
+    setThemeSurface(s.themeSurface ?? "#0c0c1c");
+    setThemeBorder(s.themeBorder ?? "#1a1a2e");
+    setSectionDotColor(s.sectionDotColor ?? "#ffffff");
+    setSectionDotOpacity(s.sectionDotOpacity ?? 1.0);
+    setCardFillColor(s.cardFillColor ?? "#0c0c1c");
     setSettingsDirty(false);
   }, []);
 
@@ -2003,6 +389,9 @@ export default function App() {
     platBtnSize, platItemSize, actEditsSize, actEditsWeight,
     steamApiKey, steamId, psnNpsso, platformHighlightColor: platformDefaultColor,
     platformColors, statusColors, activityColors, ratingColors,
+    themePageBg, themeSurface, themeBorder,
+    actThreshMid, actThreshHigh,
+    sectionDotColor, sectionDotOpacity, cardFillColor,
   });
 
   const persist = useCallback(async (gameId, entry) => {
@@ -2442,6 +831,14 @@ export default function App() {
   const updatePlatItemSize   = markDirty(setPlatItemSize);
   const updateActEditsSize   = markDirty(setActEditsSize);
   const updateActEditsWeight = markDirty(setActEditsWeight);
+  const updateActThreshMid  = markDirty(setActThreshMid);
+  const updateActThreshHigh = markDirty(setActThreshHigh);
+  const updateThemePageBg      = markDirty(setThemePageBg);
+  const updateThemeSurface     = markDirty(setThemeSurface);
+  const updateThemeBorder      = markDirty(setThemeBorder);
+  const updateSectionDotColor   = markDirty(setSectionDotColor);
+  const updateSectionDotOpacity = markDirty(setSectionDotOpacity);
+  const updateCardFillColor     = markDirty(setCardFillColor);
   const updateSteamKey          = markDirty(setSteamApiKey);
   const updateSteamId           = markDirty(setSteamId);
   const updatePsnNpsso          = markDirty(setPsnNpsso);
@@ -2456,7 +853,7 @@ export default function App() {
   const getPlatformColor = useCallback((slug) => platformColors[slug] ?? platformDefaultColor, [platformColors, platformDefaultColor]);
   const getStatusProps   = useCallback((id) => ({
     color: statusColors[id]?.color || STATUSES[id]?.color || "#888",
-    bg:    statusColors[id]?.bg    || STATUSES[id]?.bg    || "#141414",
+    bg:    statusColors[id]?.bg    || STATUSES[id]?.bg    || "#12121e",
   }), [statusColors]);
 
   const glowConfig = [
@@ -2491,9 +888,52 @@ export default function App() {
 
   const credentialsReady = steamApiKey.trim() && steamId.trim();
 
+  // Per-section dirty checks (computed from current state vs last saved)
+  const _db = dbSettings.current;
+  const cardsSection = !!_db && (
+    cardWMult !== (_db.cardWMult ?? 1.5) || cardHMult !== (_db.cardHMult ?? 1.5) ||
+    cardH2Mult !== (_db.cardH2Mult ?? 1.0) || altCardMode !== (_db.altCardMode ?? false) ||
+    showGalleryNav !== (_db.showGalleryNav ?? true) || favCardCustom !== (_db.favCardCustom ?? false) ||
+    favCardWMult !== (_db.favCardWMult ?? 1.5) || favCardHMult !== (_db.favCardHMult ?? 1.5) ||
+    favCardCount !== (_db.favCardCount ?? 0) || favAltCardMode !== (_db.favAltCardMode ?? false) ||
+    cardCount !== (_db.cardCount ?? 0) || modalWidthMult !== (_db.modalWidthMult ?? 1.0) ||
+    fav1Mult !== (_db.fav1Mult ?? 2.0) || fav2Mult !== (_db.fav2Mult ?? 2.0) || fav3Mult !== (_db.fav3Mult ?? 2.0) ||
+    listStatsSize !== (_db.listStatsSize ?? 16) || listNameOffset !== (_db.listNameOffset ?? 6) ||
+    autoFitTitle !== (_db.autoFitTitle ?? false)
+  );
+  const colorsSection = !!_db && (
+    glow1Enabled !== _db.glow1Enabled || glow1Color !== _db.glow1Color ||
+    glow2Enabled !== _db.glow2Enabled || glow2Color !== _db.glow2Color ||
+    glow3Enabled !== _db.glow3Enabled || glow3Color !== _db.glow3Color ||
+    platformDefaultColor !== (_db.platformHighlightColor ?? "#7c6ef7") ||
+    JSON.stringify(platformColors) !== JSON.stringify(_db.platformColors) ||
+    JSON.stringify(statusColors) !== JSON.stringify(_db.statusColors) ||
+    JSON.stringify(activityColors) !== JSON.stringify(_db.activityColors) ||
+    JSON.stringify(ratingColors) !== JSON.stringify(_db.ratingColors) ||
+    themePageBg !== (_db.themePageBg ?? "#080814") ||
+    themeSurface !== (_db.themeSurface ?? "#0c0c1c") ||
+    themeBorder !== (_db.themeBorder ?? "#1a1a2e") ||
+    sectionDotColor !== (_db.sectionDotColor ?? "#ffffff") ||
+    sectionDotOpacity !== (_db.sectionDotOpacity ?? 1.0) ||
+    cardFillColor !== (_db.cardFillColor ?? "#0c0c1c")
+  );
+  const displaySection = !!_db && (
+    tbLabelSize !== (_db.tbLabelSize ?? 17) || tbLabelWeight !== (_db.tbLabelWeight ?? 800) ||
+    tbInputSize !== (_db.tbInputSize ?? 18) || tbCountSize !== (_db.tbCountSize ?? 17) ||
+    tbCountWeight !== (_db.tbCountWeight ?? 800) || platBtnSize !== (_db.platBtnSize ?? 18) ||
+    platItemSize !== (_db.platItemSize ?? 18) || actEditsSize !== (_db.actEditsSize ?? 10) ||
+    actEditsWeight !== (_db.actEditsWeight ?? 800) || actThreshMid !== (_db.actThreshMid ?? 2) ||
+    actThreshHigh !== (_db.actThreshHigh ?? 3)
+  );
+  const platformDataSection = !!_db && (
+    steamApiKey !== (_db.steamApiKey ?? "") || steamId !== (_db.steamId ?? "") ||
+    psnNpsso !== (_db.psnNpsso ?? "")
+  );
+
   return (
-    <div style={{ minHeight: "100vh", background: "#080814", color: "#e0e0f0", fontFamily: "'Nunito', 'system-ui', sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: themePageBg, color: "#e0e0f0", fontFamily: "'Nunito', 'system-ui', sans-serif", position: "relative" }}>
       <style>{`
+        :root { --theme-surface: ${themeSurface}; --theme-border: ${themeBorder}; --card-fill: ${cardFillColor}; }
         @keyframes progressFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes toastIn  { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
@@ -2501,9 +941,8 @@ export default function App() {
         * { box-sizing: border-box; }
         input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
         input[type=color]::-webkit-color-swatch { border: none; border-radius: 3px; }
-        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #0c0c1c; } ::-webkit-scrollbar-thumb { background: #2a2a40; border-radius: 3px; }
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: var(--theme-surface, #0c0c1c); } ::-webkit-scrollbar-thumb { background: #2a2a40; border-radius: 3px; }
       `}</style>
-
       {toast && <Toast msg={toast.msg} ok={toast.ok} onDone={() => setToast(null)} />}
       {metadataGameId != null && (
         <MetadataModal
@@ -2531,9 +970,9 @@ export default function App() {
       )}
 
       {/* ── Sticky header ── */}
-      <div style={{ background: "#0c0c1c", borderBottom: "1px solid #16162a", padding: "0 28px", position: "sticky", top: 0, zIndex: 50 }}>
+      <div style={{ background: themeSurface, borderBottom: `1px solid ${themeBorder}`, padding: "0 28px", position: "sticky", top: 0, zIndex: 50 }}>
         <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", alignItems: "center", height: 62, gap: 20 }}>
-          <span style={{ fontFamily: "'Gloria Hallelujah', cursive", fontSize: 20, color: "#7c6ef7", whiteSpace: "nowrap" }}>GamiList</span>
+          <span style={{ fontFamily: "'Gloria Hallelujah', cursive", fontSize: 36, color: "#7c6ef7", whiteSpace: "nowrap" }}>GamiList</span>
           <div style={{ display: "flex", gap: 2 }}>
             {TABS.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
@@ -2561,7 +1000,7 @@ export default function App() {
 
       {backendOk === false && (
         <div style={{ background: "#1a0c0c", borderBottom: "1px solid #ff333333", padding: "10px 28px", fontSize: 13, color: "#ff8080" }}>
-          ⚠ Backend not detected. Run <code style={{ background: "#2a1010", padding: "1px 6px", borderRadius: 4 }}>python backend.py</code> then refresh.
+          ⚠ Backend not detected. Run <code style={{ background: "rgba(200,50,50,0.12)", padding: "1px 6px", borderRadius: 4 }}>python backend.py</code> then refresh.
         </div>
       )}
 
@@ -2570,15 +1009,15 @@ export default function App() {
         {/* ── My List ── */}
         {tab === "mylist" && (
           <>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 20, fontFamily: "'Gloria Hallelujah', cursive" }}>My List</div>
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${STATUSES.length}, 1fr)`, gap: 8, marginBottom: 28 }}>
-              {STATUSES.map(s => {
+            <div style={{ fontSize: 32, fontWeight: 800, color: "#eeeeff", marginBottom: 20, fontFamily: "'Gloria Hallelujah', cursive" }}>My List</div>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${STATUSES_DISPLAY.length}, 1fr)`, gap: 8, marginBottom: 28 }}>
+              {STATUSES_DISPLAY.map(s => {
                 const cnt = allEntries.filter(e => e.status === s.id).length;
                 const active = statusFilter === s.id;
                 const sp = getStatusProps(s.id);
                 return (
                   <div key={s.id} onClick={() => setStatusFilter(active ? null : s.id)}
-                    style={{ background: active ? sp.bg : "#0c0c1c", border: `1px solid ${active ? sp.color + "66" : "#1a1a2e"}`, borderRadius: 8, padding: "11px 10px", cursor: "pointer", transition: "all 0.15s", userSelect: "none", minWidth: 0 }}>
+                    style={{ background: active ? sp.bg : "var(--card-fill)", border: `1px solid ${active ? sp.color + "66" : "#1a1a2e"}`, borderRadius: 8, padding: "11px 10px", cursor: "pointer", transition: "all 0.15s", userSelect: "none", minWidth: 0 }}>
                     <div style={{ fontSize: 10, color: sp.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: sp.color }}>{cnt}</div>
                   </div>
@@ -2588,19 +1027,12 @@ export default function App() {
             {/* Sort + filter toolbar + Activity (same row) */}
             <div style={{ display: "flex", alignItems: "stretch", gap: 16, marginBottom: 20 }}>
               {/* Sort + filter toolbar */}
-              <div style={{ flex: 1, minWidth: 0, background: "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "8px 12px" }}>
-                {/* Row 1: status chip | sort | platform dropdown | count */}
+              <div style={{ flex: 1, minWidth: 0, background: "var(--theme-surface)", border: "1px solid #16162a", borderRadius: 10, padding: "8px 12px" }}>
+                {/* Row 1: sort | platform dropdown | count */}
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  {statusFilter !== null && (
-                    <>
-                      <span style={{ fontSize: 12, color: getStatusProps(statusFilter).color, fontWeight: 700 }}>{STATUSES[statusFilter].label}</span>
-                      <button onClick={() => setStatusFilter(null)} style={{ fontSize: 10, color: "#555", background: "transparent", border: "1px solid #1e1e30", borderRadius: 4, padding: "2px 7px", cursor: "pointer", fontFamily: "inherit" }}>×</button>
-                      <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
-                    </>
-                  )}
                   <span style={{ fontSize: tbLabelSize, color: "#fff", fontWeight: tbLabelWeight, textTransform: "uppercase", letterSpacing: 0.8 }}>Sort</span>
                   <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-                    style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "3px 6px", color: "#a0a0cc", fontSize: tbInputSize, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+                    style={{ background: "#080814", border: "1px solid var(--theme-border)", borderRadius: 5, padding: "3px 6px", color: "#a0a0cc", fontSize: tbInputSize, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
                     <option value="rating_desc">Rating ↓</option>
                     <option value="rating_asc">Rating ↑</option>
                     <option value="name_asc">Name A→Z</option>
@@ -2608,14 +1040,14 @@ export default function App() {
                     <option value="platform">Platform</option>
                     <option value="unrated">Unrated first</option>
                   </select>
-                  <div style={{ width: 1, height: 14, background: "#1e1e30" }} />
+                  <div style={{ width: 1, height: 14, background: "#1e1e35" }} />
                   <span style={{ fontSize: tbLabelSize, color: "#fff", fontWeight: tbLabelWeight, textTransform: "uppercase", letterSpacing: 0.8 }}>Filter</span>
                   {/* Platform searchable dropdown */}
                   {activePlatformSlugs.length > 0 && (
                     <div ref={platDropRef} style={{ position: "relative" }}>
                       <button
                         onClick={() => { setPlatDropOpen(o => !o); setPlatSearch(""); }}
-                        style={{ background: "#080814", border: `1px solid ${platformFilterSlugs.length > 0 ? "#7c6ef755" : "#1a1a2e"}`, borderRadius: 5, padding: "4px 24px 4px 8px", color: platformFilterSlugs.length > 0 ? "#a090ff" : "#666", fontSize: platBtnSize, fontFamily: "inherit", cursor: "pointer", minWidth: 180, textAlign: "left", position: "relative", whiteSpace: "nowrap" }}>
+                        style={{ background: "#080814", border: `1px solid ${platformFilterSlugs.length > 0 ? "#7c6ef755" : "var(--theme-border)"}`, borderRadius: 5, padding: "4px 24px 4px 8px", color: platformFilterSlugs.length > 0 ? "#a090ff" : "#555", fontSize: platBtnSize, fontFamily: "inherit", cursor: "pointer", minWidth: 180, textAlign: "left", position: "relative", whiteSpace: "nowrap" }}>
                         {platformFilterSlugs.length === 0
                           ? "All Platforms"
                           : platformFilterSlugs.length === 1
@@ -2624,14 +1056,14 @@ export default function App() {
                         <span style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", fontSize: 9, color: "#555" }}>{platDropOpen ? "▲" : "▼"}</span>
                       </button>
                       {platDropOpen && (
-                        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 7, minWidth: 180, boxShadow: "0 6px 24px #00000088", padding: "6px 0" }}>
+                        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200, background: "var(--theme-surface)", border: "1px solid var(--theme-border)", borderRadius: 7, minWidth: 180, boxShadow: "0 6px 24px #00000088", padding: "6px 0" }}>
                           <div style={{ padding: "4px 8px 6px" }}>
                             <input
                               autoFocus
                               value={platSearch}
                               onChange={e => setPlatSearch(e.target.value)}
                               placeholder="Type to filter…"
-                              style={{ width: "100%", background: "#080814", border: "1px solid #1a1a2e", borderRadius: 4, padding: "4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+                              style={{ width: "100%", background: "#080814", border: "1px solid var(--theme-border)", borderRadius: 4, padding: "4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
                             />
                           </div>
                           <div style={{ maxHeight: 220, overflowY: "auto" }}>
@@ -2657,7 +1089,7 @@ export default function App() {
                               })}
                           </div>
                           {platformFilterSlugs.length > 0 && (
-                            <div style={{ borderTop: "1px solid #1a1a2e", margin: "4px 0 0" }}>
+                            <div style={{ borderTop: "2px solid rgba(255,255,255,0.08)", margin: "4px 0 0" }}>
                               <div onClick={() => setPlatformFilterSlugs([])}
                                 style={{ padding: "5px 12px", cursor: "pointer", color: "#555", fontSize: Math.max(9, Math.round(platItemSize * 0.94)), fontFamily: "inherit" }}
                                 onMouseEnter={e => e.currentTarget.style.color = "#888"}
@@ -2673,28 +1105,59 @@ export default function App() {
                   <span style={{ fontSize: tbCountSize, color: "#fff", fontWeight: tbCountWeight, marginLeft: "auto" }}>{listEntries.length} / {allEntries.length} games</span>
                 </div>
 
-                {/* Row 2: Search */}
-                <div style={{ display: "flex", alignItems: "center", marginTop: 10 }}>
-                  <div style={{ position: "relative", display: "flex", alignItems: "center", flex: 1 }}>
-                    <input
-                      value={listSearch}
-                      onChange={e => setListSearch(e.target.value)}
-                      placeholder="Search my list…"
-                      style={{ background: "#080814", border: "1px solid #1a1a2e", borderRadius: 5, padding: "6px 42px 6px 12px", color: "#a0a0cc", fontSize: tbInputSize, fontFamily: "inherit", outline: "none", width: "100%" }}
-                    />
-                    {listSearch && (
-                      <button onClick={() => setListSearch("")}
-                        style={{ position: "absolute", right: 6, background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
-                    )}
-                  </div>
-                </div>
+                {/* Row 2: Search + active filter chips + reset — all stretch to same height */}
+                {(() => {
+                  const anyActive = statusFilter !== null || ratingFilter !== null || sortBy !== "rating_desc" || platformFilterSlugs.length > 0 || listSearch;
+                  return (
+                    <div style={{ display: "flex", alignItems: "stretch", gap: 6, marginTop: 10 }}>
+                      {/* Search input */}
+                      <div style={{ position: "relative", display: "flex", alignItems: "center", flex: 1 }}>
+                        <input
+                          value={listSearch}
+                          onChange={e => setListSearch(e.target.value)}
+                          placeholder="Search my list…"
+                          style={{ background: "#080814", border: "1px solid var(--theme-border)", borderRadius: 5, padding: "6px 36px 6px 12px", color: "#a0a0cc", fontSize: tbInputSize, fontFamily: "inherit", outline: "none", width: "100%", height: "100%", boxSizing: "border-box" }}
+                        />
+                        {listSearch && (
+                          <button onClick={() => setListSearch("")}
+                            style={{ position: "absolute", right: 6, background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>
+                        )}
+                      </div>
+                      {/* Status filter chip */}
+                      {statusFilter !== null && (() => {
+                        const sp = getStatusProps(statusFilter);
+                        return (
+                          <button onClick={() => setStatusFilter(null)}
+                            style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 12px", borderRadius: 5, border: `1px solid ${sp.color}44`, background: sp.color + "18", color: sp.color, fontWeight: 700, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>
+                            {STATUSES[statusFilter].label} <span style={{ opacity: 0.6, fontSize: 12 }}>×</span>
+                          </button>
+                        );
+                      })()}
+                      {/* Rating filter chip */}
+                      {ratingFilter !== null && (
+                        <button onClick={() => setRatingFilter(null)}
+                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 12px", borderRadius: 5, border: "1px solid #e6a63a44", background: "#e6a63a18", color: "#e6a63a", fontWeight: 700, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>
+                          {ratingFilter === "lt5" ? "< 5" : `★ ${ratingFilter}`} <span style={{ opacity: 0.6, fontSize: 12 }}>×</span>
+                        </button>
+                      )}
+                      {/* Reset all */}
+                      {anyActive && (
+                        <button onClick={() => { setStatusFilter(null); setRatingFilter(null); setSortBy("rating_desc"); setPlatformFilterSlugs([]); setListSearch(""); }}
+                          style={{ display: "flex", alignItems: "center", padding: "0 12px", borderRadius: 5, border: "1px solid #1e1e35", background: "transparent", color: "#555", fontSize: 13, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
+                          title="Reset all filters">
+                          ↺
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Global activity heatmap */}
               {allEntries.length > 0 && (
-                <div style={{ flexShrink: 0, background: activityColors.bg || "#0c0c1c", border: "1px solid #16162a", borderRadius: 10, padding: "8px 12px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                <div style={{ flexShrink: 0, alignSelf: "flex-start", width: "fit-content", background: activityColors.bg || "var(--theme-surface)", border: "1px solid #16162a", borderRadius: 10, padding: "8px 12px", display: "inline-flex", flexDirection: "column", justifyContent: "center" }}>
                   <div style={{ fontSize: tbLabelSize, color: "#fff", fontWeight: tbLabelWeight, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Activity</div>
-                  <ActivityGraph activityLog={globalActivityLog} colors={activityColors} editsSize={actEditsSize} editsWeight={actEditsWeight} />
+                  <ActivityGraph activityLog={globalActivityLog} colors={activityColors} editsSize={actEditsSize} editsWeight={actEditsWeight} threshMid={actThreshMid} threshHigh={actThreshHigh} />
                 </div>
               )}
             </div>
@@ -2723,7 +1186,7 @@ export default function App() {
                     const count = pool.filter(e => e.userRating === r).length;
                     return (
                       <button key={r} onClick={() => setRatingFilter(active ? null : r)}
-                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? col + "88" : "#1a1a2e"}`, background: active ? col + "18" : "#0c0c1c", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
+                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? col + "88" : "#1a1a2e"}`, background: active ? col + "18" : "var(--card-fill)", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: count > 0 || active ? col : col + "33" }}>{r % 1 === 0 ? `${r}/10` : r}</div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: count > 0 || active ? col : col + "22" }}>{count}</div>
                       </button>
@@ -2735,7 +1198,7 @@ export default function App() {
                     const count = pool.filter(e => e.userRating != null && e.userRating < 5).length;
                     return (
                       <button onClick={() => setRatingFilter(active ? null : "lt5")}
-                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? col + "88" : "#1a1a2e"}`, background: active ? col + "18" : "#0c0c1c", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
+                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", borderRadius: 8, border: `1px solid ${active ? col + "88" : "#1a1a2e"}`, background: active ? col + "18" : "var(--card-fill)", cursor: count > 0 || active ? "pointer" : "default", fontFamily: "inherit", transition: "all 0.15s", userSelect: "none" }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: count > 0 || active ? col : col + "33" }}>&lt;5</div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: count > 0 || active ? col : col + "22" }}>{count}</div>
                       </button>
@@ -2766,24 +1229,13 @@ export default function App() {
         {tab === "settings" && (
           <>
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: saving ? 8 : 28, flexWrap: "wrap" }}>
+            <div style={{ marginBottom: saving ? 8 : 28 }}>
               <div style={{ fontSize: 32, fontWeight: 800, color: "#eeeeff", fontFamily: "'Gloria Hallelujah', cursive" }}>Settings</div>
-              <button onClick={handleSave} disabled={!settingsDirty || saving}
-                style={{ padding: "8px 20px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 13, cursor: settingsDirty && !saving ? "pointer" : "not-allowed", background: settingsDirty && !saving ? "#7c6ef7" : "#1a1a2e", color: settingsDirty && !saving ? "#fff" : "#444", transition: "background 0.2s, color 0.2s", fontFamily: "inherit" }}>
-                {saving ? "Saving…" : "Save Settings"}
-              </button>
-              {settingsDirty && !saving && (
-                <button onClick={cancelSettings}
-                  style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>
-                  Cancel
-                </button>
-              )}
-              {settingsDirty && !saving && <span style={{ fontSize: 12, color: "#444" }}>Unsaved changes</span>}
             </div>
 
             {/* Progress bar */}
             {saving && (
-              <div style={{ height: 3, background: "#1a1a2e", borderRadius: 2, marginBottom: 28, overflow: "hidden" }}>
+              <div style={{ height: 3, background: "var(--theme-border)", borderRadius: 2, marginBottom: 28, overflow: "hidden" }}>
                 <div style={{ height: "100%", width: "100%", background: "linear-gradient(90deg, #7c6ef7, #a78bfa)", transformOrigin: "left", animation: "progressFill 0.5s ease-out forwards" }} />
               </div>
             )}
@@ -2794,9 +1246,9 @@ export default function App() {
               {/* ── Cards section header ── */}
               <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingBottom: 4 }}>
                 <div style={{ display: "flex", gap: 5 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
                 </div>
                 <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", textTransform: "uppercase", letterSpacing: 1.5 }}>Cards</div>
               </div>
@@ -2805,47 +1257,30 @@ export default function App() {
               <LockableSection sectionId="card-dimensions" title="Dimensions"
                 description="Scale card width and height. Set how much larger your top 3 favourites appear."
                 locked={!!lockedSections["card-dimensions"]} onToggle={toggleSectionLock}>
-                <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
+                <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
                   {[
-                    { label: "Width", desc: "Width scale (base 210px).", value: cardWMult, onChange: updateW, color: "#7c6ef7" },
-                    { label: "Height", desc: "Height scale (base 170px).", value: cardHMult, onChange: updateH, color: "#38bdf8" },
-                  ].map(({ label, desc, value, onChange, color }) => (
+                    { label: "Width",      desc: "Base 210px.",  value: cardWMult,  onChange: updateW,    color: "#7c6ef7", min: 0.25, max: 5, step: 0.05 },
+                    { label: "Height",     desc: "Base 170px.",  value: cardHMult,  onChange: updateH,    color: "#ffffff", min: 0.25, max: 5, step: 0.05 },
+                    { label: "Alt Height", desc: "Alt rows.",    value: cardH2Mult, onChange: updateH2,   color: "#e05c7a", min: 0.25, max: 5, step: 0.05 },
+                  ].map(({ label, desc, value, onChange, color, min, max, step }) => (
                     <div key={label} style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                        <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>{label}</div>
-                        <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value.toFixed(2)}×</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 1 }}>
+                        <div style={{ fontSize: 10, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
+                        <span style={{ fontSize: 10, color, fontWeight: 700 }}>{value.toFixed(2)}×</span>
                       </div>
-                      <div style={{ fontSize: 10, color: "#444", marginBottom: 4 }}>{desc}</div>
-                      <input type="range" min="0.25" max="5" step="0.05" value={value} onChange={e => onChange(parseFloat(e.target.value))} style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
+                      <div style={{ fontSize: 9, color: "#444", marginBottom: 4 }}>{desc}</div>
+                      <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(parseFloat(e.target.value))} style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
                     </div>
                   ))}
                 </div>
-                <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e", marginBottom: 0 }}>
-                  <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Alternating Heights</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: altCardMode ? 12 : 0 }}>
-                    <span style={{ fontSize: 11, color: "#444", flex: 1 }}>Even-indexed cards use a secondary height.</span>
-                    <button onClick={() => updateAltMode(!altCardMode)}
-                      style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: altCardMode ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-                      <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: altCardMode ? 19 : 3, transition: "left 0.2s" }} />
-                    </button>
-                  </div>
-                  {altCardMode && (
-                    <div style={{ marginTop: 12 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-                        <div>
-                          <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Secondary Height</div>
-                          <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Height scale for alternating cards.</div>
-                        </div>
-                        <span style={{ fontSize: 12, color: "#e05c7a", fontWeight: 700 }}>{cardH2Mult.toFixed(2)}×</span>
-                      </div>
-                      <input type="range" min="0.25" max="5" step="0.05" value={cardH2Mult} onChange={e => updateH2(parseFloat(e.target.value))} style={{ width: "100%", accentColor: "#e05c7a", cursor: "pointer" }} />
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
-                        {["0.25×","1×","2×","3×","5×"].map(m => <span key={m}>{m}</span>)}
-                      </div>
-                    </div>
-                  )}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 10, borderTop: "2px solid rgba(255,255,255,0.08)" }}>
+                  <span style={{ fontSize: 11, color: "#444", flex: 1 }}>Alternating Heights — enable to use Alt Height for even-indexed cards.</span>
+                  <button onClick={() => updateAltMode(!altCardMode)}
+                    style={{ width: 38, height: 22, borderRadius: 11, border: "none", background: altCardMode ? "#7c6ef7" : "#2a2a3a", cursor: "pointer", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                    <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: altCardMode ? 19 : 3, transition: "left 0.2s" }} />
+                  </button>
                 </div>
-                <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e", marginTop: 16 }}>
+                <div style={{ paddingTop: 16, borderTop: "2px solid rgba(255,255,255,0.08)", marginTop: 16 }}>
                   <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Favourite Card Size</div>
                   <div style={{ fontSize: 11, color: "#444", marginBottom: 12 }}>How much larger your top 3 favourites appear in the grid.</div>
                   <div style={{ display: "flex", gap: 12 }}>
@@ -2865,7 +1300,7 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: "2px solid rgba(255,255,255,0.08)" }}>
                     <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Custom Dimensions</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: favCardCustom ? 16 : 0 }}>
                       <span style={{ fontSize: 11, color: "#444", flex: 1 }}>Use separate card size and columns for the Favourites tab.</span>
@@ -2876,33 +1311,21 @@ export default function App() {
                     </div>
                     {favCardCustom && (
                       <>
-                        {[
-                          { label: "Width",  desc: "Card width scale for the Favourites tab.", value: favCardWMult, onChange: updateFavCardW, color: "#7c6ef7" },
-                          { label: "Height", desc: "Card height scale for the Favourites tab.", value: favCardHMult, onChange: updateFavCardH, color: "#38bdf8" },
-                        ].map(({ label, desc, value, onChange, color }) => (
-                          <div key={label} style={{ marginBottom: 14 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 2 }}>
-                              <div>
-                                <span style={{ fontSize: 11, color: "#888", fontWeight: 700 }}>{label}</span>
-                                <div style={{ fontSize: 11, color: "#444" }}>{desc}</div>
+                        <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+                          {[
+                            { label: "Width",   desc: "Width scale.", value: favCardWMult, onChange: updateFavCardW,    color: "#7c6ef7", min: 0.25, max: 5, step: 0.05, fmt: v => v.toFixed(2)+"×" },
+                            { label: "Height",  desc: "Height scale.", value: favCardHMult, onChange: updateFavCardH,   color: "#38bdf8", min: 0.25, max: 5, step: 0.05, fmt: v => v.toFixed(2)+"×" },
+                            { label: "Columns", desc: "0 = auto.",     value: Math.min(favCardCount, maxFitCols), onChange: v => updateFavCardCount(v), color: "#a78bfa", min: 0, max: maxFitCols, step: 1, fmt: v => v === 0 ? "Auto" : String(v) },
+                          ].map(({ label, desc, value, onChange, color, min, max, step, fmt }) => (
+                            <div key={label} style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 1 }}>
+                                <div style={{ fontSize: 10, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
+                                <span style={{ fontSize: 10, color, fontWeight: 700 }}>{fmt(value)}</span>
                               </div>
-                              <span style={{ fontSize: 11, color, fontWeight: 700 }}>{value.toFixed(2)}×</span>
+                              <div style={{ fontSize: 9, color: "#444", marginBottom: 4 }}>{desc}</div>
+                              <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(parseFloat(e.target.value))} style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
                             </div>
-                            <input type="range" min="0.25" max="5" step="0.05" value={value} onChange={e => onChange(parseFloat(e.target.value))} style={{ width: "100%", accentColor: color, cursor: "pointer" }} />
-                          </div>
-                        ))}
-                        <div style={{ marginBottom: 14 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 2 }}>
-                            <div>
-                              <span style={{ fontSize: 11, color: "#888", fontWeight: 700 }}>Columns</span>
-                              <div style={{ fontSize: 11, color: "#444" }}>Fixed column count. 0 = auto-fill.</div>
-                            </div>
-                            <span style={{ fontSize: 11, color: "#a78bfa", fontWeight: 700 }}>{favCardCount === 0 ? "Auto" : favCardCount}</span>
-                          </div>
-                          <input type="range" min="0" max={maxFitCols} step="1" value={Math.min(favCardCount, maxFitCols)} onChange={e => updateFavCardCount(parseInt(e.target.value))} style={{ width: "100%", accentColor: "#a78bfa", cursor: "pointer" }} />
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 3 }}>
-                            <span>Auto</span><span style={{ marginLeft: "auto" }}>Max {maxFitCols}</span>
-                          </div>
+                          ))}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div style={{ flex: 1 }}>
@@ -2922,24 +1345,9 @@ export default function App() {
 
               {/* ── Grid ── */}
               <LockableSection sectionId="card-grid" title="Grid"
-                description="Column count, gallery arrows, and detail popup width."
+                description="Gallery navigation arrows and detail popup width."
                 locked={!!lockedSections["card-grid"]} onToggle={toggleSectionLock}>
-                <div style={{ marginBottom: 20 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-                    <div>
-                      <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Columns</div>
-                      <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Fixed column count. 0 = auto-fill to fit screen.</div>
-                    </div>
-                    <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700 }}>
-                      {cardCount === 0 ? "Auto" : `${effectiveCardCount}${effectiveCardCount < cardCount ? ` (max ${maxFitCols})` : ""}`}
-                    </span>
-                  </div>
-                  <input type="range" min="0" max={maxFitCols} step="1" value={Math.min(cardCount, maxFitCols)} onChange={e => updateCount(parseInt(e.target.value))} style={{ width: "100%", accentColor: "#a78bfa", cursor: "pointer" }} />
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
-                    <span>Auto</span><span style={{ marginLeft: "auto" }}>Max {maxFitCols}</span>
-                  </div>
-                </div>
-                <div style={{ marginBottom: 20, paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+                <div style={{ marginBottom: 20, paddingTop: 0 }}>
                   <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Gallery Navigation</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ fontSize: 11, color: "#444", flex: 1 }}>Show arrow and dot controls on hover to browse card images.</span>
@@ -2949,7 +1357,7 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-                <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+                <div style={{ paddingTop: 16, borderTop: "2px solid rgba(255,255,255,0.08)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
                     <div>
                       <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Detail Panel Width</div>
@@ -2963,6 +1371,50 @@ export default function App() {
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#333", marginTop: 4 }}>
                     <span>0.8×</span><span>1.0×</span><span>1.5×</span><span>2.0×</span>
                   </div>
+                  {orderedFavEntries.length > 0 ? (() => {
+                    const fav = orderedFavEntries[0];
+                    const favGame = fav.game;
+                    const coverUrl = fav.hasCover
+                      ? `${API}/list/${favGame.id}/cover?v=${fav.coverVersion ?? 0}`
+                      : rawgImgSrc(favGame?.background_image);
+                    const statusInfo = fav.status != null ? STATUSES[fav.status] : null;
+                    const sp = statusInfo ? (statusColors[statusInfo.id] || statusInfo) : {};
+                    const favPlats = (fav.platformsPlayed || []).slice(0, 4);
+                    const favTags  = (fav.tags || []).slice(0, 4);
+                    const widthPct = Math.round(60 + (modalWidthMult - 0.8) / 1.2 * 40);
+                    return (
+                      <div style={{ marginTop: 4, background: themePageBg, border: "1px solid var(--theme-border)", borderRadius: 8, padding: 8, overflow: "hidden" }}>
+                        <div style={{ margin: "0 auto", background: "var(--theme-surface)", border: "1px solid #2a2a40", borderRadius: 8, overflow: "hidden", transition: "width 0.15s", width: `${widthPct}%` }}>
+                          {coverUrl
+                            ? <img src={coverUrl} alt={favGame.name} style={{ width: "100%", height: 68, objectFit: "cover", display: "block" }} />
+                            : <div style={{ width: "100%", height: 68, background: "#12121e", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🎮</div>}
+                          <div style={{ padding: "6px 8px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 3 }}>
+                              <div style={{ fontSize: 11, fontWeight: 800, color: "#eeeeff", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{favGame.name}</div>
+                              {sp.color && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 4, background: sp.color + "22", color: sp.color, fontWeight: 700, flexShrink: 0, marginLeft: 4 }}>{statusInfo?.label}</span>}
+                            </div>
+                            {favPlats.length > 0 && (
+                              <div style={{ display: "flex", gap: 2, marginBottom: 3, flexWrap: "wrap" }}>
+                                {favPlats.map(slug => {
+                                  const pc = getPlatformColor(slug); return (
+                                  <span key={slug} style={{ fontSize: 8, padding: "1px 4px", borderRadius: 2, background: pc + "22", color: pc, fontWeight: 700 }}>{PLATFORM_SHORT[slug] || slug.slice(0,4).toUpperCase()}</span>
+                                );})}
+                              </div>
+                            )}
+                            {fav.userRating != null && <div style={{ fontSize: 10, color: "#e6a63a", fontWeight: 800, marginBottom: 2 }}>★ {fav.userRating}</div>}
+                            {fav.playtimeMinutes > 0 && <div style={{ fontSize: 9, color: "#888" }}>⏱ {formatPlaytime(fav.playtimeMinutes)}{fav.replayCount > 0 ? ` · ↺ ×${fav.replayCount}` : ""}</div>}
+                            {favTags.length > 0 && (
+                              <div style={{ display: "flex", gap: 2, marginTop: 4, flexWrap: "wrap" }}>
+                                {favTags.map(t => <span key={t} style={{ fontSize: 8, padding: "1px 5px", borderRadius: 10, background: "#12121e", color: "#888" }}>{t}</span>)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })() : (
+                    <div style={{ marginTop: 4, background: themePageBg, border: "1px solid var(--theme-border)", borderRadius: 8, padding: 8, fontSize: 11, color: "#444", textAlign: "center" }}>Add a favourite to see a preview</div>
+                  )}
                 </div>
               </LockableSection>
 
@@ -2980,9 +1432,33 @@ export default function App() {
                     <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: autoFitTitle ? 19 : 3, transition: "left 0.2s" }} />
                   </button>
                 </div>
-                <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e", marginBottom: 20 }}>
-                  <div style={{ fontSize: 12, color: "#eeeeff", fontWeight: 700, marginBottom: 8 }}>Preview</div>
-                  <div style={{ background: "#070710", border: "1px solid #1a1a2e", borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
+                <div style={{ paddingTop: 16, borderTop: "2px solid rgba(255,255,255,0.08)", marginBottom: 20 }}>
+                  <div style={{ display: "flex", gap: 16, marginBottom: 14 }}>
+                    {/* Base size */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, marginBottom: 1 }}>Base</div>
+                      <div style={{ fontSize: 10, color: "#444", marginBottom: 6 }}>Stats, platforms, playtime text size.</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <input type="range" min="8" max="32" step="1" value={listStatsSize}
+                          onChange={e => { const v = parseInt(e.target.value); setListStatsSize(v); setFavStatsSize(v); setSettingsDirty(true); }}
+                          style={{ flex: 1, accentColor: "#7c6ef7", cursor: "pointer" }} />
+                        <span style={{ fontSize: 10, color: "#7c6ef7", fontWeight: 700, width: 30, textAlign: "right", flexShrink: 0 }}>{listStatsSize}px</span>
+                      </div>
+                    </div>
+                    {/* Title offset */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, marginBottom: 1 }}>Title Offset</div>
+                      <div style={{ fontSize: 10, color: "#444", marginBottom: 6 }}>Extra size added to the title only, on top of Base.</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <input type="range" min="0" max="16" step="1" value={listNameOffset}
+                          onChange={e => { const v = parseInt(e.target.value); setListNameOffset(v); setFavNameOffset(v); setSettingsDirty(true); }}
+                          style={{ flex: 1, accentColor: "#7c6ef7", cursor: "pointer" }} />
+                        <span style={{ fontSize: 10, color: "#7c6ef7", fontWeight: 700, width: 30, textAlign: "right", flexShrink: 0 }}>{listNameOffset >= 0 ? `+${listNameOffset}` : listNameOffset}px</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Preview — always visible below the sliders */}
+                  <div style={{ background: themePageBg, border: "1px solid var(--theme-border)", borderRadius: 8, padding: "10px 12px" }}>
                     {autoFitTitle
                       ? <FitTitle targetSize={listStatsSize + listNameOffset} style={{ fontWeight: 700, color: "#eeeeff", marginBottom: 4 }}>A Very Long Game Title That May Not Fit</FitTitle>
                       : <div style={{ fontSize: listStatsSize + listNameOffset, fontWeight: 700, color: "#eeeeff", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>A Very Long Game Title That May Not Fit</div>
@@ -3000,29 +1476,30 @@ export default function App() {
                       <span style={{ fontSize: listStatsSize, color: "#eeeeff", fontWeight: 700, whiteSpace: "nowrap" }}>↺ ×2</span>
                     </div>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                    <span style={{ fontSize: 11, color: "#444" }}>Base — stats, platforms, playtime</span>
-                    <span style={{ fontSize: 10, color: "#7c6ef7", fontWeight: 700 }}>{listStatsSize}px</span>
-                  </div>
-                  <input type="range" min="8" max="32" step="1" value={listStatsSize}
-                    onChange={e => { const v = parseInt(e.target.value); setListStatsSize(v); setFavStatsSize(v); setSettingsDirty(true); }}
-                    style={{ width: "100%", accentColor: "#7c6ef7", cursor: "pointer", marginBottom: 10 }} />
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                    <span style={{ fontSize: 11, color: "#444" }}>Title offset — added on top of base for the title only</span>
-                    <span style={{ fontSize: 10, color: "#7c6ef7", fontWeight: 700 }}>{listNameOffset >= 0 ? `+${listNameOffset}` : listNameOffset}px</span>
-                  </div>
-                  <input type="range" min="0" max="16" step="1" value={listNameOffset}
-                    onChange={e => { const v = parseInt(e.target.value); setListNameOffset(v); setFavNameOffset(v); setSettingsDirty(true); }}
-                    style={{ width: "100%", accentColor: "#7c6ef7", cursor: "pointer" }} />
                 </div>
               </LockableSection>
 
+              {/* Cards save bar */}
+              {cardsSection && (
+                <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingTop: 14 }}>
+                  <button onClick={handleSave} disabled={saving}
+                    style={{ padding: "7px 18px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 12, cursor: saving ? "not-allowed" : "pointer", background: saving ? "#1a1a2e" : "#7c6ef7", color: saving ? "#444" : "#fff", fontFamily: "inherit" }}>
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                  <button onClick={cancelSettings}
+                    style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
+                    Cancel
+                  </button>
+                  <span style={{ fontSize: 11, color: "#444" }}>Unsaved changes in Cards</span>
+                </div>
+              )}
+
               {/* ── Preview section header ── */}
-              <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingBottom: 4, paddingTop: 8 }}>
+              <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingBottom: 4, paddingTop: 8, borderTop: "2px solid rgba(255,255,255,0.1)", marginTop: 8 }}>
                 <div style={{ display: "flex", gap: 5 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
                 </div>
                 <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", textTransform: "uppercase", letterSpacing: 1.5 }}>
                   Preview{effectiveCardCount > 0 ? ` — ${effectiveCardCount} column${effectiveCardCount > 1 ? "s" : ""}` : ""}
@@ -3030,7 +1507,7 @@ export default function App() {
               </div>
 
               {/* ── Card Preview — full-width break inside flex row ── */}
-              <div style={{ flexBasis: "100%", background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px", marginBottom: 0 }}>
+              <div style={{ flexBasis: "100%", background: themePageBg, border: "1px solid var(--theme-border, #1a1a2e)", borderRadius: 12, padding: "24px 28px", marginBottom: 0 }}>
 
                 {previewEntries.length > 0
                   ? (() => {
@@ -3042,7 +1519,7 @@ export default function App() {
                           {entries.map((e, i) => (
                             <GameCard key={i} game={e.game} listEntry={e}
                               cardH={altCardMode && i % 2 === 1 ? cardH2 : cardH}
-                              glowColor={i < 3 && glowConfig[i]?.enabled ? glowConfig[i].color : null}
+                              glowColor={null}
                               showGalleryNav={showGalleryNav}
                               statsTextSize={listStatsSize} nameOffset={listNameOffset} autoFitTitle={autoFitTitle}
                               getPlatformColor={getPlatformColor} getStatusProps={getStatusProps}
@@ -3061,21 +1538,83 @@ export default function App() {
               </div>
 
               {/* ── Colors section header ── */}
-              <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingBottom: 4, paddingTop: 8 }}>
+              <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingBottom: 4, paddingTop: 28, borderTop: "2px solid rgba(255,255,255,0.1)", marginTop: 16 }}>
                 <div style={{ display: "flex", gap: 5 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
                 </div>
                 <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", textTransform: "uppercase", letterSpacing: 1.5 }}>Colors</div>
               </div>
+
+              {/* ── Theme ── */}
+              <LockableSection sectionId="colors-theme" title="Theme"
+                description="Core colors for the page background, surfaces, and borders."
+                locked={!!lockedSections["colors-theme"]} onToggle={toggleSectionLock}>
+                {[
+                  { key: "page",    label: "Page Background", desc: "Main canvas behind all content.",      value: themePageBg,  update: updateThemePageBg,  def: "#080814" },
+                  { key: "surface", label: "Surface",         desc: "Nav bar and settings panel fill.",     value: themeSurface, update: updateThemeSurface, def: "#0c0c1c" },
+                  { key: "border",  label: "Border",          desc: "Card outlines and section dividers.",  value: themeBorder,  update: updateThemeBorder,  def: "#1a1a2e" },
+                ].map(({ key, label, desc, value, update, def }) => (
+                  <div key={key} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, color: "#eeeeff", fontWeight: 600, marginBottom: 1 }}>{label}</div>
+                      <div style={{ fontSize: 10, color: "#555" }}>{desc}</div>
+                    </div>
+                    <input type="color" value={value} onChange={e => update(e.target.value)}
+                      style={{ width: 28, height: 24, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1, flexShrink: 0 }} />
+                    {value !== def && (
+                      <button onClick={() => update(def)}
+                        style={{ fontSize: 22, color: "#ffffff", background: "transparent", border: "none", cursor: "pointer", padding: "0 4px", flexShrink: 0, lineHeight: 1 }} title="Reset">↺</button>
+                    )}
+                  </div>
+                ))}
+                {/* Card fill color */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, paddingTop: 14, borderTop: "2px solid rgba(255,255,255,0.1)" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, color: "#eeeeff", fontWeight: 600, marginBottom: 1 }}>Card Fill</div>
+                    <div style={{ fontSize: 10, color: "#555" }}>Background of cards, status tabs, and rating cells.</div>
+                  </div>
+                  <input type="color" value={cardFillColor} onChange={e => updateCardFillColor(e.target.value)}
+                    style={{ width: 28, height: 24, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1, flexShrink: 0 }} />
+                  {cardFillColor !== "#0c0c1c" && (
+                    <button onClick={() => updateCardFillColor("#0c0c1c")}
+                      style={{ fontSize: 22, color: "#ffffff", background: "transparent", border: "none", cursor: "pointer", padding: "0 4px", flexShrink: 0, lineHeight: 1 }} title="Reset">↺</button>
+                  )}
+                </div>
+                {/* Section header dots */}
+                <div style={{ paddingTop: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, color: "#eeeeff", fontWeight: 600, marginBottom: 1 }}>Section Dots</div>
+                      <div style={{ fontSize: 10, color: "#555" }}>The ● ● ● decorators before section titles.</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 5, alignItems: "center", marginRight: 4 }}>
+                      {[0,1,2].map(i => <span key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />)}
+                    </div>
+                    <input type="color" value={sectionDotColor} onChange={e => updateSectionDotColor(e.target.value)}
+                      style={{ width: 28, height: 24, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1, flexShrink: 0 }} />
+                    {(sectionDotColor !== "#ffffff" || sectionDotOpacity !== 1.0) && (
+                      <button onClick={() => { updateSectionDotColor("#ffffff"); updateSectionDotOpacity(1.0); }}
+                        style={{ fontSize: 22, color: "#ffffff", background: "transparent", border: "none", cursor: "pointer", padding: "0 4px", flexShrink: 0, lineHeight: 1 }} title="Reset">↺</button>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 10, color: "#555", flexShrink: 0 }}>Intensity</span>
+                    <input type="range" min={0} max={1} step={0.05} value={sectionDotOpacity}
+                      onChange={e => updateSectionDotOpacity(parseFloat(e.target.value))}
+                      style={{ flex: 1, accentColor: "#7c6ef7", cursor: "pointer" }} />
+                    <span style={{ fontSize: 10, color: "#7c6ef7", fontWeight: 700, width: 30, textAlign: "right", flexShrink: 0 }}>{Math.round(sectionDotOpacity * 100)}%</span>
+                  </div>
+                </div>
+              </LockableSection>
 
               {/* ── Status ── */}
               <LockableSection sectionId="colors-status" title="Status"
                 description="Customize label and background color for every game status."
                 locked={!!lockedSections["colors-status"]} onToggle={toggleSectionLock}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                  {STATUSES.map(s => {
+                  {STATUSES_DISPLAY.map(s => {
                     const sp = getStatusProps(s.id);
                     const hasOverride = !!statusColors[s.id];
                     return (
@@ -3091,7 +1630,7 @@ export default function App() {
                           style={{ width: 22, height: 18, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1, flexShrink: 0 }} title="Background" />
                         {hasOverride
                           ? <button onClick={() => resetStatusColor(s.id)}
-                              style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px", flexShrink: 0 }} title="Reset">↺</button>
+                              style={{ fontSize: 22, color: "#ffffff", background: "transparent", border: "none", cursor: "pointer", padding: "0 4px", flexShrink: 0, lineHeight: 1 }} title="Reset">↺</button>
                           : <div style={{ width: 18, flexShrink: 0 }} />
                         }
                       </div>
@@ -3127,12 +1666,12 @@ export default function App() {
                           return (
                             <div key={p.slug} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <span style={{ fontSize: 9, fontWeight: 700, color: c, minWidth: 28 }}>{p.short}</span>
-                              <span style={{ fontSize: 11, color: "#666", flex: 1 }}>{p.name}</span>
+                              <span style={{ fontSize: 11, color: "#555", flex: 1 }}>{p.name}</span>
                               <input type="color" value={c} onChange={e => setPlatformColorDirty(p.slug, e.target.value)}
                                 style={{ width: 22, height: 16, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
                               {platformColors[p.slug] && platformColors[p.slug] !== platformDefaultColor && (
                                 <button onClick={() => { const n = { ...platformColors }; delete n[p.slug]; setPlatformColors(n); setSettingsDirty(true); }}
-                                  style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset">↺</button>
+                                  style={{ fontSize: 22, color: "#ffffff", background: "transparent", border: "none", cursor: "pointer", padding: "0 4px", lineHeight: 1 }} title="Reset">↺</button>
                               )}
                             </div>
                           );
@@ -3149,12 +1688,12 @@ export default function App() {
                             return (
                               <div key={p.slug} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <span style={{ fontSize: 9, fontWeight: 700, color: c, minWidth: 28 }}>{p.short}</span>
-                                <span style={{ fontSize: 11, color: "#666", flex: 1 }}>{p.name}</span>
+                                <span style={{ fontSize: 11, color: "#555", flex: 1 }}>{p.name}</span>
                                 <input type="color" value={c} onChange={e => setPlatformColorDirty(p.slug, e.target.value)}
                                   style={{ width: 22, height: 16, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
                                 {platformColors[p.slug] && platformColors[p.slug] !== platformDefaultColor && (
                                   <button onClick={() => { const n = { ...platformColors }; delete n[p.slug]; setPlatformColors(n); setSettingsDirty(true); }}
-                                    style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset">↺</button>
+                                    style={{ fontSize: 22, color: "#ffffff", background: "transparent", border: "none", cursor: "pointer", padding: "0 4px", lineHeight: 1 }} title="Reset">↺</button>
                                 )}
                               </div>
                             );
@@ -3204,7 +1743,7 @@ export default function App() {
                             style={{ width: 28, height: 24, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
                           {hasOverride && (
                             <button onClick={() => resetRatingColor(sel)}
-                              style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset to default">↺</button>
+                              style={{ fontSize: 22, color: "#ffffff", background: "transparent", border: "none", cursor: "pointer", padding: "0 4px", lineHeight: 1 }} title="Reset to default">↺</button>
                           )}
                         </div>
                         <div style={{ display: "flex", gap: 3 }}>
@@ -3220,7 +1759,7 @@ export default function App() {
                     );
                   })()}
                 </div>
-                <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+                <div style={{ paddingTop: 16, borderTop: "2px solid rgba(255,255,255,0.08)" }}>
                   <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>Favourite Glow</div>
                   <div style={{ fontSize: 11, color: "#444", marginBottom: 12 }}>Colored border glow on top-ranked favourite cards. Toggle and pick color per rank.</div>
                   <GlowRow rank="1" label="1st place" enabled={glow1Enabled} color={glow1Color} onToggle={() => updateGlow1E(!glow1Enabled)} onColor={updateGlow1C} />
@@ -3229,102 +1768,85 @@ export default function App() {
                 </div>
               </LockableSection>
 
+              {/* Colors save bar */}
+              {colorsSection && (
+                <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingTop: 14 }}>
+                  <button onClick={handleSave} disabled={saving}
+                    style={{ padding: "7px 18px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 12, cursor: saving ? "not-allowed" : "pointer", background: saving ? "#1a1a2e" : "#7c6ef7", color: saving ? "#444" : "#fff", fontFamily: "inherit" }}>
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                  <button onClick={cancelSettings}
+                    style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
+                    Cancel
+                  </button>
+                  <span style={{ fontSize: 11, color: "#444" }}>Unsaved changes in Colors</span>
+                </div>
+              )}
+
               {/* ── Display section header ── */}
-              <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingBottom: 4, paddingTop: 8 }}>
+              <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingBottom: 4, paddingTop: 28, borderTop: "2px solid rgba(255,255,255,0.1)", marginTop: 16 }}>
                 <div style={{ display: "flex", gap: 5 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
                 </div>
                 <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", textTransform: "uppercase", letterSpacing: 1.5 }}>Display</div>
               </div>
 
               {/* ── Typography ── */}
-              <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Typography</div>
-                <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.6 }}>Font sizes and weights for toolbar labels, sort controls, and the activity panel.</div>
+              <LockableSection sectionId="display-typography" title="Typography"
+                description="Font sizes and weights for toolbar labels, sort controls, and platform filter."
+                locked={!!lockedSections["display-typography"]} onToggle={toggleSectionLock}>
                 {[
-                  {
-                    group: "Toolbar Labels",
-                    desc: "Sort, Filter, and Activity heading text.",
-                    defaultOpen: true,
-                    rows: [
-                      { label: "Sort / Filter / Activity", preview: "Filter", size: tbLabelSize, onSize: updateTbLabelSize, weight: tbLabelWeight, onWeight: updateTbLabelWeight },
-                      { label: "Games count", preview: "42 / 100 games", size: tbCountSize, onSize: updateTbCountSize, weight: tbCountWeight, onWeight: updateTbCountWeight },
-                    ],
-                  },
-                  {
-                    group: "Toolbar Controls",
-                    desc: "Sort dropdown and search input text.",
-                    defaultOpen: false,
-                    rows: [
-                      { label: "Sort select & Search input", preview: "Search my list…", size: tbInputSize, onSize: updateTbInputSize },
-                    ],
-                  },
-                  {
-                    group: "Platform Filter",
-                    desc: "Platform filter button and dropdown list.",
-                    defaultOpen: false,
-                    rows: [
-                      { label: "Button", preview: "All Platforms", size: platBtnSize, onSize: updatePlatBtnSize },
-                      { label: "Dropdown items", preview: "PlayStation 5", size: platItemSize, onSize: updatePlatItemSize },
-                    ],
-                  },
-                  {
-                    group: "Activity Graph",
-                    desc: "Edits summary label below the heatmap.",
-                    defaultOpen: false,
-                    rows: [
-                      { label: "Edits count label", preview: "142 edits in the last year", size: actEditsSize, onSize: updateActEditsSize, weight: actEditsWeight, onWeight: updateActEditsWeight },
-                    ],
-                  },
-                ].map(({ group, desc, defaultOpen, rows }) => (
-                  <CollapseSection key={group} title={group} defaultOpen={defaultOpen}>
-                    <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.4 }}>{desc}</div>
-                    {rows.map(({ label, preview, size, onSize, weight, onWeight }) => (
-                      <div key={label} style={{ marginBottom: 14 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6, gap: 8 }}>
-                          <span style={{ fontSize: 10, color: "#555", flexShrink: 0 }}>{label}</span>
-                          <span style={{ fontSize: size, fontWeight: weight ?? 400, color: "#9a9ab8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160, display: "inline-block" }}>{preview}</span>
+                  { label: "Sort / Filter / Activity", preview: "Filter",          size: tbLabelSize, onSize: updateTbLabelSize, weight: tbLabelWeight, onWeight: updateTbLabelWeight },
+                  { label: "Games count",              preview: "42 / 100 games",  size: tbCountSize, onSize: updateTbCountSize, weight: tbCountWeight, onWeight: updateTbCountWeight },
+                  { label: "Sort & Search input",      preview: "Search my list…", size: tbInputSize, onSize: updateTbInputSize },
+                  { label: "Platform button",          preview: "All Platforms",   size: platBtnSize, onSize: updatePlatBtnSize },
+                  { label: "Platform items",           preview: "PlayStation 5",   size: platItemSize, onSize: updatePlatItemSize },
+                ].map(({ label, preview, size, onSize, weight, onWeight }, i) => (
+                  <div key={label} style={{ marginBottom: i < 4 ? 18 : 0 }}>
+                    {/* Title row */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</span>
+                      {onWeight && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 3, marginLeft: "auto" }}>
+                          {[{ l: "Reg", v: 400 }, { l: "Bold", v: 700 }, { l: "Heavy", v: 800 }].map(({ l, v }) => (
+                            <button key={v} onClick={() => onWeight(v)}
+                              style={{ padding: "1px 6px", borderRadius: 4, fontSize: 8, fontFamily: "inherit", cursor: "pointer",
+                                border: `1px solid ${weight === v ? "#7c6ef799" : "#1e1e35"}`,
+                                background: weight === v ? "#7c6ef722" : "transparent",
+                                color: weight === v ? "#9a8ef7" : "#444" }}>
+                              {l}
+                            </button>
+                          ))}
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: onWeight ? 5 : 0 }}>
-                          <span style={{ fontSize: 9, color: "#333", width: 22, flexShrink: 0 }}>Size</span>
-                          <input type="range" min={8} max={36} step={1} value={size}
-                            onChange={e => onSize(parseInt(e.target.value))}
-                            style={{ flex: 1, accentColor: "#7c6ef7", cursor: "pointer" }} />
-                          <span style={{ fontSize: 9, color: "#7c6ef7", fontWeight: 700, width: 22, textAlign: "right", flexShrink: 0 }}>{size}px</span>
-                        </div>
-                        {onWeight && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                            <span style={{ fontSize: 9, color: "#333", width: 22, flexShrink: 0 }}>Weight</span>
-                            {[{ l: "Regular", v: 400 }, { l: "Bold", v: 700 }, { l: "Heavy", v: 800 }].map(({ l, v }) => (
-                              <button key={v} onClick={() => onWeight(v)}
-                                style={{ padding: "2px 7px", borderRadius: 4, fontSize: 9, fontFamily: "inherit", cursor: "pointer",
-                                  border: `1px solid ${weight === v ? "#7c6ef799" : "#1e1e30"}`,
-                                  background: weight === v ? "#7c6ef722" : "transparent",
-                                  color: weight === v ? "#9a8ef7" : "#444" }}>
-                                {l}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </CollapseSection>
+                      )}
+                      <span style={{ fontSize: 9, color: "#7c6ef7", fontWeight: 700, marginLeft: onWeight ? 4 : "auto", flexShrink: 0 }}>{size}px</span>
+                    </div>
+                    {/* Slider */}
+                    <input type="range" min={8} max={36} step={1} value={size}
+                      onChange={e => onSize(parseInt(e.target.value))}
+                      style={{ width: "100%", accentColor: "#7c6ef7", cursor: "pointer", marginBottom: 6 }} />
+                    {/* Live preview */}
+                    <div style={{ background: themePageBg, border: "1px solid var(--theme-border)", borderRadius: 6, padding: "6px 10px", overflow: "hidden" }}>
+                      <span style={{ fontSize: size, fontWeight: weight ?? 400, color: "#e0e0f0", whiteSpace: "nowrap" }}>{preview}</span>
+                    </div>
+                  </div>
                 ))}
-              </div>
+              </LockableSection>
+
 
               {/* ── Activity Graph ── */}
-              <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Activity Graph</div>
-                <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.6 }}>Colors for the activity heatmap shown on the My List tab.</div>
+              <LockableSection sectionId="display-activity" title="Activity Graph"
+                description="Colors and label size for the activity heatmap shown on the My List tab."
+                locked={!!lockedSections["display-activity"]} onToggle={toggleSectionLock}>
                 <div>
                 {[
-                  { key: "bg",    label: "Background", desc: "Panel background color.",       default: "#0c0c1c" },
-                  { key: "empty", label: "Empty",       desc: "Days with no edits.",           default: "#0d0d1a" },
-                  { key: "low",   label: "Low",         desc: "1 edit in a day.",              default: "#2d1f6b" },
-                  { key: "mid",   label: "Mid",         desc: "2 edits in a day.",             default: "#5040a0" },
-                  { key: "high",  label: "High",        desc: "3 or more edits in a day.",     default: "#7c6ef7" },
+                  { key: "bg",    label: "Background", desc: "Panel background color.",       default: "var(--theme-surface)" },
+                  { key: "empty", label: "Empty",       desc: "Days with no edits.",           default: "#080814" },
+                  { key: "low",   label: "Low",         desc: `Below ${actThreshMid} edit${actThreshMid !== 1 ? "s" : ""} in a day.`, default: "#2d1f6b" },
+                  { key: "mid",   label: "Mid",         desc: `${actThreshMid}–${actThreshHigh - 1} edits in a day.`, default: "#5040a0" },
+                  { key: "high",  label: "High",        desc: `${actThreshHigh}+ edits in a day.`, default: "#7c6ef7" },
                 ].map(({ key, label, desc, default: def }) => {
                   const val = activityColors[key] || def;
                   return (
@@ -3338,51 +1860,113 @@ export default function App() {
                         style={{ width: 26, height: 20, border: "1px solid #2a2a40", borderRadius: 3, cursor: "pointer", background: "none", padding: 1 }} />
                       {activityColors[key] && activityColors[key] !== def && (
                         <button onClick={() => setActivityColors(p => { const n = { ...p }; delete n[key]; return n; })}
-                          style={{ fontSize: 10, color: "#333", background: "transparent", border: "none", cursor: "pointer", padding: "0 2px" }} title="Reset">↺</button>
+                          style={{ fontSize: 22, color: "#ffffff", background: "transparent", border: "none", cursor: "pointer", padding: "0 4px", lineHeight: 1 }} title="Reset">↺</button>
                       )}
                     </div>
                   );
                 })}
-                <div style={{ marginTop: 12, padding: "10px", background: activityColors.bg || "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 8, overflowX: "hidden" }}>
-                  <ActivityGraph activityLog={exampleActivityLog} colors={activityColors} numWeeks={20} editsSize={actEditsSize} editsWeight={actEditsWeight} />
+                {/* Thresholds + edits label size — all three in one row */}
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: "2px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    {/* Mid threshold */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                        <span style={{ fontSize: 9, color: "#888", fontWeight: 700 }}>Mid color starts at</span>
+                        <span style={{ fontSize: 9, color: "#7c6ef7", fontWeight: 700 }}>{actThreshMid} edits</span>
+                      </div>
+                      <div style={{ fontSize: 9, color: "#444", marginBottom: 4 }}>Days with this many edits turn Mid color.</div>
+                      <input type="range" min={2} max={10} step={1} value={actThreshMid}
+                        onChange={e => updateActThreshMid(parseInt(e.target.value))}
+                        style={{ width: "100%", accentColor: "#7c6ef7", cursor: "pointer" }} />
+                    </div>
+                    {/* High threshold */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                        <span style={{ fontSize: 9, color: "#888", fontWeight: 700 }}>High color starts at</span>
+                        <span style={{ fontSize: 9, color: "#7c6ef7", fontWeight: 700 }}>{actThreshHigh} edits</span>
+                      </div>
+                      <div style={{ fontSize: 9, color: "#444", marginBottom: 4 }}>Days with this many edits turn High color.</div>
+                      <input type="range" min={3} max={20} step={1} value={actThreshHigh}
+                        onChange={e => updateActThreshHigh(parseInt(e.target.value))}
+                        style={{ width: "100%", accentColor: "#7c6ef7", cursor: "pointer" }} />
+                    </div>
+                    {/* Edits label size */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                        <span style={{ fontSize: 9, color: "#888", fontWeight: 700 }}>Edits label size</span>
+                        <span style={{ fontSize: 9, color: "#7c6ef7", fontWeight: 700 }}>{actEditsSize}px</span>
+                      </div>
+                      <div style={{ fontSize: 9, color: "#444", marginBottom: 4 }}>Size of the "N edits in the last year" text.</div>
+                      <input type="range" min={8} max={24} step={1} value={actEditsSize}
+                        onChange={e => updateActEditsSize(parseInt(e.target.value))}
+                        style={{ width: "100%", accentColor: "#7c6ef7", cursor: "pointer" }} />
+                      <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 4 }}>
+                        {[{ l: "Reg", v: 400 }, { l: "Bold", v: 700 }, { l: "Heavy", v: 800 }].map(({ l, v }) => (
+                          <button key={v} onClick={() => updateActEditsWeight(v)}
+                            style={{ padding: "1px 6px", borderRadius: 4, fontSize: 8, fontFamily: "inherit", cursor: "pointer",
+                              border: `1px solid ${actEditsWeight === v ? "#7c6ef799" : "#1e1e35"}`,
+                              background: actEditsWeight === v ? "#7c6ef722" : "transparent",
+                              color: actEditsWeight === v ? "#9a8ef7" : "#444" }}>
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
+                {/* Preview — full-width, auto-adjusting numWeeks */}
+                <ActivityGraphPreview activityLog={exampleActivityLog} colors={activityColors} editsSize={actEditsSize} editsWeight={actEditsWeight} threshMid={actThreshMid} threshHigh={actThreshHigh} themePageBg={themePageBg} />
                 </div>
-              </div>
+              </LockableSection>
 
+              {/* Display save bar */}
+              {displaySection && (
+                <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 10, paddingTop: 14 }}>
+                  <button onClick={handleSave} disabled={saving}
+                    style={{ padding: "7px 18px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 12, cursor: saving ? "not-allowed" : "pointer", background: saving ? "#1a1a2e" : "#7c6ef7", color: saving ? "#444" : "#fff", fontFamily: "inherit" }}>
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                  <button onClick={cancelSettings}
+                    style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
+                    Cancel
+                  </button>
+                  <span style={{ fontSize: 11, color: "#444" }}>Unsaved changes in Display</span>
+                </div>
+              )}
             </div>
 
 
             {/* ── Platform Data ── */}
-            <div style={{ borderTop: "1px solid #16162a", paddingTop: 28, marginBottom: 40 }}>
+            <div style={{ borderTop: "2px solid rgba(255,255,255,0.1)", paddingTop: 28, marginBottom: 40 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
                 <div style={{ display: "flex", gap: 5 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: sectionDotColor, opacity: sectionDotOpacity, display: "inline-block" }} />
                 </div>
                 <div style={{ fontSize: 24, fontWeight: 700, color: "#eeeeff", textTransform: "uppercase", letterSpacing: 1.5 }}>Platform Data</div>
               </div>
               <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap" }}>
 
                 {/* Accounts */}
-                <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                <div style={{ flex: 1, minWidth: 240, background: "var(--theme-surface)", border: "1px solid var(--theme-border)", borderRadius: 12, padding: "24px 28px" }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 16 }}>Accounts</div>
                   {/* Steam */}
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Steam</div>
                     <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.5 }}>API key from steamcommunity.com/dev/apikey. Set profile to Public.</div>
                     <input type="password" value={steamApiKey} onChange={e => updateSteamKey(e.target.value)} placeholder="API key"
-                      style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit", marginBottom: 6, boxSizing: "border-box" }} />
+                      style={{ width: "100%", background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit", marginBottom: 6, boxSizing: "border-box" }} />
                     <input type="text" value={steamId} onChange={e => updateSteamId(e.target.value)} placeholder="Steam ID or vanity URL"
-                      style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+                      style={{ width: "100%", background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
                     {credentialsReady && (
                       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                         <button onClick={syncSteam} disabled={steamSyncing}
-                          style={{ width: "100%", padding: "8px 0", background: steamSyncing ? "#1a1a2e" : "#1db954", border: "none", borderRadius: 8, color: steamSyncing ? "#444" : "#fff", fontWeight: 700, fontSize: 12, cursor: steamSyncing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                          style={{ width: "100%", padding: "8px 0", background: steamSyncing ? "var(--theme-border)" : "#1db954", border: "none", borderRadius: 8, color: steamSyncing ? "#444" : "#fff", fontWeight: 700, fontSize: 12, cursor: steamSyncing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                           {steamSyncing ? "Fetching…" : "Sync Library"}
                         </button>
                         <button onClick={syncAllSteamPlaytime} disabled={syncingAllPlaytime}
-                          style={{ width: "100%", padding: "8px 0", background: syncingAllPlaytime ? "#1a1a2e" : "#0a2a1a", border: "1px solid #1db95444", borderRadius: 8, color: syncingAllPlaytime ? "#444" : "#1db954", fontWeight: 700, fontSize: 12, cursor: syncingAllPlaytime ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                          style={{ width: "100%", padding: "8px 0", background: syncingAllPlaytime ? "var(--theme-border)" : "#0a2a1a", border: "1px solid #1db95444", borderRadius: 8, color: syncingAllPlaytime ? "#444" : "#1db954", fontWeight: 700, fontSize: 12, cursor: syncingAllPlaytime ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                           {syncingAllPlaytime ? "Syncing…" : "Sync Playtime"}
                         </button>
                         {steamError && <div style={{ fontSize: 11, color: "#ff8080" }}>{steamError}</div>}
@@ -3390,15 +1974,15 @@ export default function App() {
                     )}
                   </div>
                   {/* PSN */}
-                  <div style={{ paddingTop: 16, borderTop: "1px solid #1a1a2e" }}>
+                  <div style={{ paddingTop: 16, borderTop: "2px solid rgba(255,255,255,0.08)" }}>
                     <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>PSN</div>
                     <div style={{ fontSize: 11, color: "#444", marginBottom: 10, lineHeight: 1.5 }}>Visit <a href="https://ca.account.sony.com/api/v1/ssocookie" target="_blank" rel="noopener noreferrer" style={{ color: "#0070cc" }}>ca.account.sony.com/api/v1/ssocookie</a> and paste the npsso value.</div>
                     <input type="password" value={psnNpsso} onChange={e => updatePsnNpsso(e.target.value)} placeholder="NPSSO token"
-                      style={{ width: "100%", background: "#0a0a14", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+                      style={{ width: "100%", background: "#080814", border: "1px solid #1e1e35", borderRadius: 6, padding: "6px 10px", color: "#e0e0f0", fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
                     {psnNpsso.trim() && (
                       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                         <button onClick={syncPsn} disabled={psnSyncing}
-                          style={{ width: "100%", padding: "8px 0", background: psnSyncing ? "#1a1a2e" : "#003087", border: "none", borderRadius: 8, color: psnSyncing ? "#444" : "#fff", fontWeight: 700, fontSize: 12, cursor: psnSyncing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                          style={{ width: "100%", padding: "8px 0", background: psnSyncing ? "var(--theme-border)" : "#003087", border: "none", borderRadius: 8, color: psnSyncing ? "#444" : "#fff", fontWeight: 700, fontSize: 12, cursor: psnSyncing ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                           {psnSyncing ? "Fetching…" : "Sync Library"}
                         </button>
                         <button onClick={syncAllPsnPlaytime}
@@ -3421,7 +2005,7 @@ export default function App() {
                 )}
 
                 {/* Platforms */}
-                <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                <div style={{ flex: 1, minWidth: 240, background: "var(--theme-surface)", border: "1px solid var(--theme-border)", borderRadius: 12, padding: "24px 28px" }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Platforms</div>
                   <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.6 }}>
                     Fill or re-sync platform data. Blank entries default to PC.
@@ -3437,7 +2021,7 @@ export default function App() {
                       } catch { setToast({ msg: "Failed to fill platforms", ok: false }); }
                       finally { setResyncingPlatforms(false); }
                     }} disabled={resyncingPlatforms}
-                      style={{ width: "100%", padding: "9px 0", background: resyncingPlatforms ? "#1a1a2e" : "#0a1a2a", border: "1px solid #38bdf844", borderRadius: 8, color: resyncingPlatforms ? "#444" : "#38bdf8", fontWeight: 700, fontSize: 13, cursor: resyncingPlatforms ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      style={{ width: "100%", padding: "9px 0", background: resyncingPlatforms ? "var(--theme-border)" : "#0a1a2a", border: "1px solid #38bdf844", borderRadius: 8, color: resyncingPlatforms ? "#444" : "#38bdf8", fontWeight: 700, fontSize: 13, cursor: resyncingPlatforms ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                       {resyncingPlatforms ? "Filling…" : "Fill Missing Platforms"}
                     </button>
                     <button onClick={async () => {
@@ -3450,12 +2034,12 @@ export default function App() {
                       } catch { setToast({ msg: "Failed to re-sync from RAWG", ok: false }); }
                       finally { setResyncingPlatforms(false); }
                     }} disabled={resyncingPlatforms}
-                      style={{ width: "100%", padding: "9px 0", background: resyncingPlatforms ? "#1a1a2e" : "#0a1a14", border: "1px solid #4caf8044", borderRadius: 8, color: resyncingPlatforms ? "#444" : "#4caf80", fontWeight: 700, fontSize: 13, cursor: resyncingPlatforms ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      style={{ width: "100%", padding: "9px 0", background: resyncingPlatforms ? "var(--theme-border)" : "#0a1a14", border: "1px solid #4caf8044", borderRadius: 8, color: resyncingPlatforms ? "#444" : "#4caf80", fontWeight: 700, fontSize: 13, cursor: resyncingPlatforms ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                       {resyncingPlatforms ? "Syncing…" : "Re-sync Platforms from RAWG"}
                     </button>
 
 
-                  <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 12, paddingTop: 12 }}>
+                  <div style={{ borderTop: "2px solid rgba(255,255,255,0.08)", marginTop: 12, paddingTop: 12 }}>
                     <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>RAWG Usage</div>
                     {(() => {
                       const pct = Math.min(100, Math.round((rawgCallsCount / 20000) * 100));
@@ -3465,7 +2049,7 @@ export default function App() {
                           <span style={{ fontSize: 20, fontWeight: 800, color: pct >= 90 ? "#ff6060" : "#eeeeff" }}>{rawgCallsCount.toLocaleString()}</span>
                           <span style={{ fontSize: 11, color: "#555" }}>/ 20,000{rawgCallsMonth && ` · ${rawgCallsMonth}`}</span>
                         </div>
-                        <div style={{ height: 4, borderRadius: 2, background: "#1a1a2e", overflow: "hidden", marginBottom: 4 }}>
+                        <div style={{ height: 4, borderRadius: 2, background: "var(--theme-border)", overflow: "hidden", marginBottom: 4 }}>
                           <div style={{ height: "100%", width: `${pct}%`, borderRadius: 2, background: barColor }} />
                         </div>
                         <div style={{ fontSize: 10, color: "#555" }}>{pct}% used</div>
@@ -3473,7 +2057,7 @@ export default function App() {
                       </>);
                     })()}
                   </div>
-                  <div style={{ borderTop: "1px solid #1a1a2e", marginTop: 12, paddingTop: 12 }}>
+                  <div style={{ borderTop: "2px solid rgba(255,255,255,0.08)", marginTop: 12, paddingTop: 12 }}>
                     <div style={{ fontSize: 11, color: "#eeeeff", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Duplicates</div>
                     <div style={{ fontSize: 11, color: "#444", marginBottom: 8, lineHeight: 1.5 }}>Find entries with similar names. Check what to keep, uncheck to delete.</div>
                     <button onClick={async () => {
@@ -3487,7 +2071,7 @@ export default function App() {
                       } catch { setToast({ msg: "Failed to detect duplicates", ok: false }); }
                       finally { setDetectingDuplicates(false); }
                     }} disabled={detectingDuplicates}
-                      style={{ width: "100%", padding: "9px 0", background: detectingDuplicates ? "#1a1a2e" : "#1a0a1a", border: "1px solid #e05a5a44", borderRadius: 8, color: detectingDuplicates ? "#444" : "#e05a5a", fontWeight: 700, fontSize: 13, cursor: detectingDuplicates ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      style={{ width: "100%", padding: "9px 0", background: detectingDuplicates ? "var(--theme-border)" : "#1a0a1a", border: "1px solid #e05a5a44", borderRadius: 8, color: detectingDuplicates ? "#444" : "#e05a5a", fontWeight: 700, fontSize: 13, cursor: detectingDuplicates ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                       {detectingDuplicates ? "Scanning…" : "Detect Duplicates"}
                     </button>
                     {duplicateGroups !== null && (
@@ -3495,7 +2079,7 @@ export default function App() {
                         {duplicateGroups.length === 0
                           ? <div style={{ fontSize: 12, color: "#444" }}>No duplicates found.</div>
                           : <>
-                              <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #1a1a2e", borderRadius: 8, marginBottom: 8, marginTop: 8 }}>
+                              <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--theme-border)", borderRadius: 8, marginBottom: 8, marginTop: 8 }}>
                                 {duplicateGroups.map((group, gi) => (
                                   <div key={gi} style={{ borderBottom: "1px solid #0e0e1e", padding: "8px 12px" }}>
                                     <div style={{ fontSize: 10, color: "#555", marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Group {gi + 1}</div>
@@ -3532,16 +2116,16 @@ export default function App() {
                 </div>
 
                 {/* Images */}
-                <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                <div style={{ flex: 1, minWidth: 240, background: "var(--theme-surface)", border: "1px solid var(--theme-border)", borderRadius: 12, padding: "24px 28px" }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Images</div>
                   <div style={{ fontSize: 11, color: "#444", marginBottom: 16, lineHeight: 1.6 }}>
                     Sync cover art from Steam or RAWG. Skips Dropped games and entries below the threshold. Custom covers are never overwritten.
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                    <span style={{ fontSize: 12, color: "#666" }}>Rating threshold</span>
+                    <span style={{ fontSize: 12, color: "#555" }}>Rating threshold</span>
                     <input type="number" min={0} max={10} step={0.5} value={pruneThreshold}
                       onChange={e => setPruneThreshold(parseFloat(e.target.value) || 0)}
-                      style={{ width: 52, background: "#080814", border: "1px solid #2a2a50", borderRadius: 5, padding: "3px 6px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit", textAlign: "center" }} />
+                      style={{ width: 52, background: "#080814", border: "1px solid #2a2a40", borderRadius: 5, padding: "3px 6px", color: "#e0e0f0", fontSize: 13, outline: "none", fontFamily: "inherit", textAlign: "center" }} />
                     <span style={{ fontSize: 12, color: "#444" }}>/ 10</span>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -3554,7 +2138,7 @@ export default function App() {
                       } catch { setToast({ msg: "Failed to sync Steam images", ok: false }); }
                       finally { setResyncingSteamImages(false); }
                     }} disabled={resyncingSteamImages}
-                      style={{ width: "100%", padding: "9px 0", background: resyncingSteamImages ? "#1a1a2e" : "#0a1a2a", border: "1px solid #38bdf844", borderRadius: 8, color: resyncingSteamImages ? "#444" : "#38bdf8", fontWeight: 700, fontSize: 13, cursor: resyncingSteamImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      style={{ width: "100%", padding: "9px 0", background: resyncingSteamImages ? "var(--theme-border)" : "#0a1a2a", border: "1px solid #38bdf844", borderRadius: 8, color: resyncingSteamImages ? "#444" : "#38bdf8", fontWeight: 700, fontSize: 13, cursor: resyncingSteamImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                       {resyncingSteamImages ? "Syncing…" : "Sync from Steam"}
                     </button>
                     <button onClick={async () => {
@@ -3566,7 +2150,7 @@ export default function App() {
                       } catch { setToast({ msg: "Failed to sync RAWG images", ok: false }); }
                       finally { setResyncingImages(false); }
                     }} disabled={resyncingImages}
-                      style={{ width: "100%", padding: "9px 0", background: resyncingImages ? "#1a1a2e" : "#1a0a2a", border: "1px solid #a78bfa44", borderRadius: 8, color: resyncingImages ? "#444" : "#a78bfa", fontWeight: 700, fontSize: 13, cursor: resyncingImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      style={{ width: "100%", padding: "9px 0", background: resyncingImages ? "var(--theme-border)" : "#1a0a2a", border: "1px solid #a78bfa44", borderRadius: 8, color: resyncingImages ? "#444" : "#a78bfa", fontWeight: 700, fontSize: 13, cursor: resyncingImages ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                       {resyncingImages ? "Syncing…" : "Sync from RAWG"}
                     </button>
                     <button onClick={async () => {
@@ -3578,17 +2162,17 @@ export default function App() {
                       } catch { setToast({ msg: "Failed to prune images", ok: false }); }
                       finally { setPruning(false); }
                     }} disabled={pruning}
-                      style={{ width: "100%", padding: "9px 0", background: pruning ? "#1a1a2e" : "#1a0a0a", border: "1px solid #e05a5a44", borderRadius: 8, color: pruning ? "#444" : "#e05a5a", fontWeight: 700, fontSize: 13, cursor: pruning ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                      style={{ width: "100%", padding: "9px 0", background: pruning ? "var(--theme-border)" : "#1a0a0a", border: "1px solid #e05a5a44", borderRadius: 8, color: pruning ? "#444" : "#e05a5a", fontWeight: 700, fontSize: 13, cursor: pruning ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
                       {pruning ? "Pruning…" : "Prune Extra Images"}
                     </button>
                   </div>
                 </div>
 
                 {/* Backup & Import */}
-                <div style={{ flex: 1, minWidth: 240, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 12, padding: "24px 28px" }}>
+                <div style={{ flex: 1, minWidth: 240, background: "var(--theme-surface)", border: "1px solid var(--theme-border)", borderRadius: 12, padding: "24px 28px" }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: "#eeeeff", marginBottom: 6 }}>Backup & Import</div>
                   <div style={{ fontSize: 11, color: "#888", marginBottom: 20, lineHeight: 1.6 }}>
-                    Download a full backup, or load a <code style={{ color: "#666" }}>.sql.gz</code> file to verify and restore.
+                    Download a full backup, or load a <code style={{ color: "#555" }}>.sql.gz</code> file to verify and restore.
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <button disabled={downloading} onClick={async () => {
@@ -3641,7 +2225,7 @@ export default function App() {
                   <div onClick={() => { setVerifyResult(null); setVerifyFile(null); setRestoreConfirm(false); }}
                     style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.80)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
                     <div onClick={e => e.stopPropagation()}
-                      style={{ background: "#0c0c1c", border: "1px solid #1e1e35", borderRadius: 16, width: "100%", maxWidth: 640, maxHeight: "88vh", overflowY: "auto", padding: 32, position: "relative" }}>
+                      style={{ background: "var(--theme-surface)", border: "1px solid #1e1e35", borderRadius: 16, width: "100%", maxWidth: 640, maxHeight: "88vh", overflowY: "auto", padding: 32, position: "relative" }}>
 
                       {/* Header */}
                       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
@@ -3679,9 +2263,9 @@ export default function App() {
                               <div style={{ fontSize: 11, fontWeight: 700, color: "#4caf80", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
                                 Added ({verifyResult.added.length}) — in backup, not in current DB
                               </div>
-                              <div style={{ border: "1px solid #1a1a2e", borderRadius: 8, overflow: "hidden" }}>
+                              <div style={{ border: "1px solid var(--theme-border)", borderRadius: 8, overflow: "hidden" }}>
                                 {verifyResult.added.map((g, i) => (
-                                  <div key={g.game_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: i < verifyResult.added.length - 1 ? "1px solid #0e0e1e" : "none", background: i % 2 === 0 ? "#080812" : "transparent" }}>
+                                  <div key={g.game_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: i < verifyResult.added.length - 1 ? "1px solid #0e0e1e" : "none", background: i % 2 === 0 ? "#080814" : "transparent" }}>
                                     <div style={{ flex: 1, fontSize: 12, color: "#ccc" }}>{g.name}</div>
                                     {g.platform && <div style={{ fontSize: 10, color: "#555" }}>{g.platform}</div>}
                                     {g.status != null && <div style={{ fontSize: 10, color: STATUSES[g.status]?.color || "#888", minWidth: 70, textAlign: "right" }}>{STATUSES[g.status]?.label}</div>}
@@ -3697,9 +2281,9 @@ export default function App() {
                               <div style={{ fontSize: 11, fontWeight: 700, color: "#e05c7a", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
                                 Removed ({verifyResult.removed.length}) — in current DB, not in backup
                               </div>
-                              <div style={{ border: "1px solid #1a1a2e", borderRadius: 8, overflow: "hidden" }}>
+                              <div style={{ border: "1px solid var(--theme-border)", borderRadius: 8, overflow: "hidden" }}>
                                 {verifyResult.removed.map((g, i) => (
-                                  <div key={g.game_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: i < verifyResult.removed.length - 1 ? "1px solid #0e0e1e" : "none", background: i % 2 === 0 ? "#080812" : "transparent" }}>
+                                  <div key={g.game_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: i < verifyResult.removed.length - 1 ? "1px solid #0e0e1e" : "none", background: i % 2 === 0 ? "#080814" : "transparent" }}>
                                     <div style={{ flex: 1, fontSize: 12, color: "#ccc" }}>{g.name}</div>
                                     {g.platform && <div style={{ fontSize: 10, color: "#555" }}>{g.platform}</div>}
                                     {g.status != null && <div style={{ fontSize: 10, color: STATUSES[g.status]?.color || "#888", minWidth: 70, textAlign: "right" }}>{STATUSES[g.status]?.label}</div>}
@@ -3715,9 +2299,9 @@ export default function App() {
                               <div style={{ fontSize: 11, fontWeight: 700, color: "#e6a63a", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
                                 Modified ({verifyResult.modified.length}) — field changes
                               </div>
-                              <div style={{ border: "1px solid #1a1a2e", borderRadius: 8, overflow: "hidden" }}>
+                              <div style={{ border: "1px solid var(--theme-border)", borderRadius: 8, overflow: "hidden" }}>
                                 {verifyResult.modified.map((g, i) => (
-                                  <div key={g.game_id} style={{ padding: "10px 14px", borderBottom: i < verifyResult.modified.length - 1 ? "1px solid #0e0e1e" : "none", background: i % 2 === 0 ? "#080812" : "transparent" }}>
+                                  <div key={g.game_id} style={{ padding: "10px 14px", borderBottom: i < verifyResult.modified.length - 1 ? "1px solid #0e0e1e" : "none", background: i % 2 === 0 ? "#080814" : "transparent" }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
                                       <div style={{ flex: 1, fontSize: 12, color: "#ccc" }}>{g.name}</div>
                                       {g.platform && <div style={{ fontSize: 10, color: "#555" }}>{g.platform}</div>}
@@ -3735,8 +2319,8 @@ export default function App() {
                                           return String(v);
                                         };
                                         return (
-                                          <div key={field} style={{ fontSize: 10, background: "#0e0e1e", border: "1px solid #1a1a2e", borderRadius: 5, padding: "3px 8px", color: "#888" }}>
-                                            <span style={{ color: "#666" }}>{label}: </span>
+                                          <div key={field} style={{ fontSize: 10, background: "#16162a", border: "1px solid var(--theme-border)", borderRadius: 5, padding: "3px 8px", color: "#888" }}>
+                                            <span style={{ color: "#555" }}>{label}: </span>
                                             <span style={{ color: "#e05c7a" }}>{fmtVal(field, cv)}</span>
                                             <span style={{ color: "#555" }}> → </span>
                                             <span style={{ color: "#4caf80" }}>{fmtVal(field, bv)}</span>
@@ -3751,13 +2335,13 @@ export default function App() {
                           )}
 
                           {verifyResult.stats.added === 0 && verifyResult.stats.removed === 0 && verifyResult.stats.modified === 0 && (
-                            <div style={{ padding: "16px 20px", background: "#080814", border: "1px solid #1a1a2e", borderRadius: 10, color: "#555", fontSize: 13, textAlign: "center", marginBottom: 20 }}>
+                            <div style={{ padding: "16px 20px", background: "#080814", border: "1px solid var(--theme-border)", borderRadius: 10, color: "#555", fontSize: 13, textAlign: "center", marginBottom: 20 }}>
                               Backup is identical to the current database — no changes would be made.
                             </div>
                           )}
 
                           {/* Restore section */}
-                          <div style={{ borderTop: "1px solid #1a1a2e", paddingTop: 20, marginTop: 4 }}>
+                          <div style={{ borderTop: "2px solid rgba(255,255,255,0.08)", paddingTop: 20, marginTop: 4 }}>
                             {!restoreConfirm ? (
                               <button onClick={() => setRestoreConfirm(true)}
                                 style={{ width: "100%", padding: "10px 0", background: "#1a0808", border: "1px solid #e05c7a55", borderRadius: 8, color: "#e05c7a", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
@@ -3770,7 +2354,7 @@ export default function App() {
                                 </div>
                                 <div style={{ display: "flex", gap: 10 }}>
                                   <button onClick={() => setRestoreConfirm(false)}
-                                    style={{ flex: 1, padding: "8px 0", background: "transparent", border: "1px solid #333", borderRadius: 7, color: "#666", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                                    style={{ flex: 1, padding: "8px 0", background: "transparent", border: "1px solid #333", borderRadius: 7, color: "#555", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
                                     Cancel
                                   </button>
                                   <button
@@ -3815,6 +2399,21 @@ export default function App() {
 
 
               </div>
+
+              {/* Platform Data save bar */}
+              {platformDataSection && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
+                  <button onClick={handleSave} disabled={saving}
+                    style={{ padding: "7px 18px", borderRadius: 8, border: "none", fontWeight: 700, fontSize: 12, cursor: saving ? "not-allowed" : "pointer", background: saving ? "#1a1a2e" : "#7c6ef7", color: saving ? "#444" : "#fff", fontFamily: "inherit" }}>
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                  <button onClick={cancelSettings}
+                    style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #2a2a40", background: "transparent", color: "#888", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
+                    Cancel
+                  </button>
+                  <span style={{ fontSize: 11, color: "#444" }}>Unsaved changes in Platform Data</span>
+                </div>
+              )}
             </div>
 
         </>
@@ -3828,16 +2427,16 @@ export default function App() {
               {/* Platform dropdown */}
               <div ref={searchPlatDropRef} style={{ position: "relative" }}>
                 <button onClick={() => { setSearchPlatDropOpen(o => !o); setSearchPlatSearch(""); }}
-                  style={{ background: "#0c0c1c", border: `1px solid ${searchPlatSlug ? "#7c6ef755" : "#1a1a2e"}`, borderRadius: 6, padding: "5px 26px 5px 10px", color: searchPlatSlug ? "#a090ff" : "#666", fontSize: 12, fontFamily: "inherit", cursor: "pointer", minWidth: 140, textAlign: "left", position: "relative", whiteSpace: "nowrap" }}>
+                  style={{ background: "var(--theme-surface)", border: `1px solid ${searchPlatSlug ? "#7c6ef755" : "var(--theme-border)"}`, borderRadius: 6, padding: "5px 26px 5px 10px", color: searchPlatSlug ? "#a090ff" : "#555", fontSize: 12, fontFamily: "inherit", cursor: "pointer", minWidth: 140, textAlign: "left", position: "relative", whiteSpace: "nowrap" }}>
                   {searchPlatSlug ? (ALL_PLATFORMS.find(p => p.slug === searchPlatSlug)?.name || searchPlatSlug) : "All Platforms"}
                   <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 9, color: "#555" }}>{searchPlatDropOpen ? "▲" : "▼"}</span>
                 </button>
                 {searchPlatDropOpen && (
-                  <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 300, background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 7, minWidth: 200, boxShadow: "0 6px 24px #00000088", padding: "6px 0" }}>
+                  <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 300, background: "var(--theme-surface)", border: "1px solid var(--theme-border)", borderRadius: 7, minWidth: 200, boxShadow: "0 6px 24px #00000088", padding: "6px 0" }}>
                     <div style={{ padding: "4px 8px 6px" }}>
                       <input autoFocus value={searchPlatSearch} onChange={e => setSearchPlatSearch(e.target.value)}
                         placeholder="Type to filter…"
-                        style={{ width: "100%", background: "#080814", border: "1px solid #1a1a2e", borderRadius: 4, padding: "4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                        style={{ width: "100%", background: "#080814", border: "1px solid var(--theme-border)", borderRadius: 4, padding: "4px 8px", color: "#a0a0cc", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
                     </div>
                     <div style={{ maxHeight: 260, overflowY: "auto" }}>
                       {/* All platforms option */}
@@ -3894,10 +2493,10 @@ export default function App() {
               {searched && searchTotal > 50 && !searchLoading && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <button onClick={() => doSearch(searchPage - 1)} disabled={searchPage <= 1}
-                    style={{ padding: "4px 12px", background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 5, color: searchPage <= 1 ? "#333" : "#a0a0cc", fontSize: 12, cursor: searchPage <= 1 ? "not-allowed" : "pointer", fontFamily: "inherit" }}>← Prev</button>
+                    style={{ padding: "4px 12px", background: "var(--theme-surface)", border: "1px solid var(--theme-border)", borderRadius: 5, color: searchPage <= 1 ? "#333" : "#a0a0cc", fontSize: 12, cursor: searchPage <= 1 ? "not-allowed" : "pointer", fontFamily: "inherit" }}>← Prev</button>
                   <span style={{ fontSize: 12, color: "#555" }}>{searchPage} / {Math.ceil(searchTotal / 50)}</span>
                   <button onClick={() => doSearch(searchPage + 1)} disabled={searchPage >= Math.ceil(searchTotal / 50)}
-                    style={{ padding: "4px 12px", background: "#0c0c1c", border: "1px solid #1a1a2e", borderRadius: 5, color: searchPage >= Math.ceil(searchTotal / 50) ? "#333" : "#a0a0cc", fontSize: 12, cursor: searchPage >= Math.ceil(searchTotal / 50) ? "not-allowed" : "pointer", fontFamily: "inherit" }}>Next →</button>
+                    style={{ padding: "4px 12px", background: "var(--theme-surface)", border: "1px solid var(--theme-border)", borderRadius: 5, color: searchPage >= Math.ceil(searchTotal / 50) ? "#333" : "#a0a0cc", fontSize: 12, cursor: searchPage >= Math.ceil(searchTotal / 50) ? "not-allowed" : "pointer", fontFamily: "inherit" }}>Next →</button>
                 </div>
               )}
             </div>
