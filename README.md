@@ -2,6 +2,9 @@
 
 A self-hosted game tracking app. Search for games, track your play status, rate them, add custom cover art, and mark favourites — all stored in your own PostgreSQL database.
 
+<img width="2076" height="1233" alt="image" src="https://github.com/user-attachments/assets/402b49d2-dbb8-49a3-8ca3-9541a1e0bced" />
+
+
 ```
 Browser → kubectl port-forward (localhost:8080)
             → ingress-nginx
